@@ -15,24 +15,13 @@ decisions are deliberately not the pragmatic choice; they are marked
 
 ## Clone
 
-This repo uses a **submodule** for the React Native app, so a plain `git clone`
-gives you an empty `app-client/` and nothing will build:
-
 ```bash
-git clone --recurse-submodules https://github.com/SarunaZ/soundboard.git
+git clone https://github.com/SarunaZ/soundboard.git
 ```
 
-Already cloned without it?
-
-```bash
-git submodule update --init --recursive
-```
-
-`app-client/` lives at [SarunaZ/soundboard-app-client](https://github.com/SarunaZ/soundboard-app-client).
-It is a Yarn workspace member of this repo and imports `@soundboard/shared`, so
-the two are coupled: a change spanning `shared/` and the app is two commits plus
-a pointer bump here. Commit and push inside `app-client/` first, then commit the
-updated pointer in this repo.
+`app-client/` is a plain directory in this repo and a Yarn workspace member, so
+it clones with everything else. It imports `@soundboard/shared`, and a change
+spanning the two is a single commit.
 
 ## Build
 
@@ -65,7 +54,7 @@ Copy `.env.example` to `.env` before running Metro or the service.
 shared/       Clip, Pad, Source and manifest types (DESIGN §4)
 service/      Express API + a separate worker process; SQLite is both
               metadata store and job queue (DESIGN #12)
-app-client/   Expo React Native soundboard  [submodule]
+app-client/   Expo React Native soundboard
 sb.ps1 sb.sh  Docker-only task runner
 ```
 

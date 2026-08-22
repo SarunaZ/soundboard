@@ -8,24 +8,19 @@ This file is the short checklist — the flat list of what to actually do next.
 This folder is the monorepo root: `shared/`, `service/` and `app-client/` live here
 (PLAN §1 calls the app `app/`; it is `app-client/` on disk).
 
-**`app-client/` is a git submodule, not a plain folder.** It has its own repo, so
-a plain `git clone` gives you an empty directory and nothing builds:
+Everything is in one repo — [SarunaZ/soundboard](https://github.com/SarunaZ/soundboard) —
+so a plain clone builds:
 
 ```
-git clone --recurse-submodules https://github.com/SarunaZ/soundboard.git
+git clone https://github.com/SarunaZ/soundboard.git
 ```
 
-| Repo | Contains |
-|---|---|
-| [SarunaZ/soundboard](https://github.com/SarunaZ/soundboard) | this checklist, DESIGN, PLAN, `shared/`, `service/`, docker + `sb` |
-| [SarunaZ/soundboard-app-client](https://github.com/SarunaZ/soundboard-app-client) | the Expo app, pinned here as a submodule |
+It is **public** (DESIGN §11 notes the yt-dlp path breaches YouTube ToS, so the
+repo being public is a deliberate, accepted trade). Branch is `master`.
 
-Both are **public** (DESIGN §11 notes the yt-dlp path breaches YouTube ToS, so
-the repo being public is a deliberate, accepted trade). Branch is `master`.
-
-**Editing the app is two commits.** Commit and push inside `app-client/` first,
-then commit the moved pointer in this repo. Skip the second and your clone works
-while everyone else gets the old app.
+*`app-client/` was a submodule until 2026-08-22, which made every app edit two
+commits; it is now a plain directory and the separate `soundboard-app-client`
+repo is no longer used. On an older clone: `rm -rf app-client` then `git pull`.*
 
 **Docker is the only prerequisite.** No Node, Yarn, corepack, JDK or Android SDK
 is needed to build. `.\sb.ps1 build` (or `./sb.sh build`) does everything:
@@ -60,8 +55,7 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
 - `sb.ps1` / `sb.sh`: Docker-only task runner. `build` does dependencies + service image + APK.
 - AVD `soundboard` (Pixel 6, Android 36, x86_64). Boot it, then
   `adb reverse tcp:8081 tcp:8081` to reach Metro running in Docker.
-- Git: two public repos (above), `README.md` leading with the submodule clone
-  requirement. `.env`, `node_modules` and `app-client/android` are all untracked;
+- Git: one public repo (above). `.env`, `node_modules` and `app-client/android` are all untracked;
   verified by cloning fresh and listing what shipped.
 - The `apk` service runs `expo prebuild` when `app-client/android` is absent, so
   a bare checkout still builds — that directory is gitignored by design (CNG).
