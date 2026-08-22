@@ -1,12 +1,31 @@
 # Soundboard — Steps
 
-**Status:** setup done; M0 in progress. Blocked on the R2 bucket (step 2).
+**Status:** setup done; step 7 done; published to GitHub. Blocked on the R2 bucket (step 2).
 **Date:** 2026-08-15, revised 2026-08-22
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
 
 This folder is the monorepo root: `shared/`, `service/` and `app-client/` live here
 (PLAN §1 calls the app `app/`; it is `app-client/` on disk).
+
+**`app-client/` is a git submodule, not a plain folder.** It has its own repo, so
+a plain `git clone` gives you an empty directory and nothing builds:
+
+```
+git clone --recurse-submodules https://github.com/SarunaZ/soundboard.git
+```
+
+| Repo | Contains |
+|---|---|
+| [SarunaZ/soundboard](https://github.com/SarunaZ/soundboard) | this checklist, DESIGN, PLAN, `shared/`, `service/`, docker + `sb` |
+| [SarunaZ/soundboard-app-client](https://github.com/SarunaZ/soundboard-app-client) | the Expo app, pinned here as a submodule |
+
+Both are **public** (DESIGN §11 notes the yt-dlp path breaches YouTube ToS, so
+the repo being public is a deliberate, accepted trade). Branch is `master`.
+
+**Editing the app is two commits.** Commit and push inside `app-client/` first,
+then commit the moved pointer in this repo. Skip the second and your clone works
+while everyone else gets the old app.
 
 **Docker is the only prerequisite.** No Node, Yarn, corepack, JDK or Android SDK
 is needed to build. `.\sb.ps1 build` (or `./sb.sh build`) does everything:
@@ -41,12 +60,30 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
 - `sb.ps1` / `sb.sh`: Docker-only task runner. `build` does dependencies + service image + APK.
 - AVD `soundboard` (Pixel 6, Android 36, x86_64). Boot it, then
   `adb reverse tcp:8081 tcp:8081` to reach Metro running in Docker.
+- Git: two public repos (above), `README.md` leading with the submodule clone
+  requirement. `.env`, `node_modules` and `app-client/android` are all untracked;
+  verified by cloning fresh and listing what shipped.
+- The `apk` service runs `expo prebuild` when `app-client/android` is absent, so
+  a bare checkout still builds — that directory is gitignored by design (CNG).
 
 ## M0 — Playback shell *(no server code at all)*
 
 - [ ] 6. Hand-upload ~5 myinstants clips; hand-write `manifest/v1.json` beside them.
-- [ ] 7. 4×4 pad grid. Engine per DESIGN §8: trigger on **`onPressIn`**, monophonic, ~8 ms fade on the outgoing voice, **gain node per voice**, LRU of ~30 decoded buffers.
-- [ ] 8. Instrumentation from the first tap: `onPressIn → first audible sample`, tagged with cache hit/miss + connection type, buffered on device and POSTed in batches to a stub endpoint.
+- [x] 7. **4×4 pad grid + engine — done.** `app-client/src/audio/engine.ts` implements
+  §8 as written: `onPressIn`, monophonic with an 8 ms fade on the outgoing voice,
+  a gain node per voice, a fresh `AudioBufferSourceNode` per retrigger, LRU of 30
+  buffers, no debouncing, plus concurrent-decode dedup so spamming a cold pad
+  cannot start N decodes.
+  *Measured on the emulator:* **246 ms cold, 11 ms warm** — the bimodal split §6
+  predicts, visible on the very first thing built.
+  *Placeholder audio:* 16 bundled AAC tones (mono/44.1k/64k per #14). Step 6
+  swaps in R2 URLs and only `pads.ts` changes — the engine takes a URI either way.
+  *Library workaround:* the package root pulls in `AudioControls`, which imports
+  `react-native-gesture-handler` and `react-native-reanimated` (neither a declared
+  peer dep), so the engine deep-imports `lib/module/core/AudioContext`. The ambient
+  declaration must use a plain `import`, not `import type` — otherwise
+  `typeof AudioContext` silently resolves to the DOM one.
+- [ ] 8. **Next.** Instrumentation from the first tap: `onPressIn → first audible sample`, tagged with cache hit/miss + connection type, buffered on device and POSTed in batches to a stub endpoint.
 
 **Exit:** a tap on a real phone on cellular plays the sound, and the timing is in a dataset.
 
