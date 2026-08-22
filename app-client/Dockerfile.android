@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1
+#
+# Android build toolchain ONLY — deliberately contains no project source.
+# The repo is bind-mounted at run time (the `apk` service in docker-compose.yml),
+# so editing app code never rebuilds this image and the APK lands in your
+# working tree at android/app/build/outputs/apk/.
+#
+# What this image cannot do, and why:
+#   - Run the app. It is an Android binary; it runs on the phone.
+#   - Run an emulator. That needs KVM, which Docker Desktop on Windows has not got.
+#   - Talk to a USB device. adb stays on the host.
+# Metro also stays on the host: it is plain Node, needs none of this SDK, and
+# bind-mount file watching from Windows into Linux is unreliable.
+
+FROM eclipse-temurin:21-jdk-noble
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl unzip git ca-certificates python3 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Gradle's React Native plugin shells out to node to bundle the JS.
+ARG NODE_MAJOR=24
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/* \
+ && corepack enable
+
+ENV ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk
+
+ARG CMDLINE_TOOLS=13114758
+RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" \
+ && curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS}_latest.zip" -o /tmp/cmdline.zip \
+ && unzip -q /tmp/cmdline.zip -d "${ANDROID_HOME}/cmdline-tools" \
+ && mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" \
+ && rm /tmp/cmdline.zip
+ENV PATH="${PATH}:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools"
+
+# Versions are the ones `expo prebuild` actually pinned — compileSdk/targetSdk 36
+# and NDK 27.1.12297006 (expo's ExpoRootProjectPlugin.kt). react-native-audio-api
+# ships C++, so the NDK and CMake are not optional here.
+ARG ANDROID_SDK=36
+ARG BUILD_TOOLS=36.0.0
+ARG NDK_VERSION=27.1.12297006
+
+# NOTE: this line accepts Google's Android SDK licence agreements non-interactively.
+RUN yes | sdkmanager --licenses > /dev/null \
+ && sdkmanager --install \
+      "platform-tools" \
+      "platforms;android-${ANDROID_SDK}" \
+      "build-tools;${BUILD_TOOLS}" \
+      "ndk;${NDK_VERSION}" \
+      "cmake;3.22.1" > /dev/null
+
+# Gradle's cache lives in a named volume, not in the image or the bind mount.
+ENV GRADLE_USER_HOME=/gradle
+
+WORKDIR /workspace/app-client/android
+CMD ["./gradlew", "assembleDebug", "--no-daemon"]
