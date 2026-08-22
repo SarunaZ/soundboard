@@ -122,9 +122,14 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   now measures 54–64 ms. **Neither number is a cold-network baseline; none exists
   yet.** Caught on the instrumentation's first real use, which is the point of it.
 
-  *Schema gap this exposes:* `cacheHit` cannot separate "cached and just played"
-  from "cached but switching pads", and those differ by 4×. Recording the previous
-  padId (or a `sameAsPrevious` flag) would close it. **Not yet done.**
+  *Schema gap this exposed — closed.* `cacheHit` could not separate "cached and
+  just played" from "cached but switching pads", which differ by 4×, so a warm p50
+  moved with how the user tapped rather than with the app. **`sameAsPrevious`**
+  (`boolean | null`, null on the first tap of a session) now splits them; records
+  are **schema v2**. Verified on the emulator: same pad `true` → 3.35 ms, switch
+  back to an equally-cached pad `false` → 11.66 ms.
+  *Note the mixed file:* `taps.jsonl` on the emulator holds v1 records from before
+  the change, plus some hand-tapped ones. Filter on `v` before drawing anything.
 
 **Exit:** a tap on a real phone on cellular plays the sound, and the timing is in a dataset.
 

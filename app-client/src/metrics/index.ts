@@ -21,7 +21,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { currentConnection, startConnectionWatch, type Connection } from './connection';
 import { writeBatch } from './sink';
 
-const SCHEMA = 1;
+const SCHEMA = 2;
 
 /** Flush once this many samples are waiting. */
 const BATCH = 25;
@@ -48,6 +48,16 @@ export interface TapSample {
    */
   idleMs: number | null;
   connection: Connection;
+  /**
+   * Was the previous tap the same pad? null on the first of a session.
+   *
+   * Without this, "warm" is one bucket holding two regimes that differ by 4x:
+   * retriggering a pad (~3 ms) and switching to a different cached pad (~14 ms),
+   * both with cacheHit true and comparable idle gaps. Which one dominates depends
+   * on how the user happens to tap, so an unsplit warm p50 moves with behaviour
+   * rather than with the app - useless as a before/after for M5's ladder.
+   */
+  sameAsPrevious: boolean | null;
   /** false when play() rejected. A failure is a data point, not a gap. */
   ok: boolean;
 }
@@ -65,6 +75,7 @@ const session = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2
 
 let buffer: TapSample[] = [];
 let lastTapAt: number | null = null;
+let lastPadId: string | null = null;
 let flushing = false;
 
 export interface TapHandle {
@@ -82,7 +93,9 @@ export interface TapHandle {
 export function beginTap(padId: string, cacheHit: boolean): TapHandle {
   const t0 = clock();
   const idleMs = lastTapAt === null ? null : Math.round(t0 - lastTapAt);
+  const sameAsPrevious = lastPadId === null ? null : padId === lastPadId;
   lastTapAt = t0;
+  lastPadId = padId;
 
   // Read synchronously: connection.ts keeps a pushed snapshot precisely so this
   // costs nothing here.
@@ -98,6 +111,7 @@ export function beginTap(padId: string, cacheHit: boolean): TapHandle {
       pressToScheduledMs: Math.round((clock() - t0) * 1000) / 1000,
       cacheHit,
       idleMs,
+      sameAsPrevious,
       connection,
       ok,
     };
