@@ -109,10 +109,22 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   is its own category at 64 ms, since it constructs the AudioContext; worth keeping
   separate rather than letting it inflate the cold p95 forever.
 
-  **Unreconciled:** step 7 records *246 ms cold* on the emulator. That does not
-  reproduce — cold taps here are 11–17 ms, with only the session's first tap at 64 ms.
-  Same emulator, same placeholder tones. Worth knowing which measurement was wrong
-  before either number is trusted as a before/after reference.
+  **Reconciled with step 7 — and step 7 read its own number wrong.** There are
+  *three* regimes here, not two. Measured in one session: first tap **53.7 ms**
+  (constructs the AudioContext), switching to an already-cached pad **14.2 ms**,
+  retriggering the same pad **3.3 ms** — the last two with identical `cacheHit`
+  and near-identical idle gaps, so neither field explains the 4× between them.
+  Step 7's *"246 ms cold, 11 ms warm — the bimodal split §6 predicts"* is not that
+  split. §6's is a **network** split, and bundled tones put no network in the path;
+  a cold asset cache cannot inflate a sample either, because `resolveUri` finishes
+  in the startup effect and a tap before it lands is dropped without recording.
+  246 ms was a first-tap-of-session on a colder machine — the same category that
+  now measures 54–64 ms. **Neither number is a cold-network baseline; none exists
+  yet.** Caught on the instrumentation's first real use, which is the point of it.
+
+  *Schema gap this exposes:* `cacheHit` cannot separate "cached and just played"
+  from "cached but switching pads", and those differ by 4×. Recording the previous
+  padId (or a `sameAsPrevious` flag) would close it. **Not yet done.**
 
 **Exit:** a tap on a real phone on cellular plays the sound, and the timing is in a dataset.
 
