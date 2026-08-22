@@ -1,6 +1,6 @@
 # Soundboard — Steps
 
-**Status:** setup done; steps 7 and 8 built. Blocked on the R2 bucket (step 2).
+**Status:** setup done; steps 7 and 8 done. Blocked on the R2 bucket (step 2).
 **Date:** 2026-08-15, revised 2026-08-22
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
@@ -53,8 +53,13 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
 ### Also built, not in the original plan
 - `docker-compose.yml`: `api` + `worker` (service), `deps` + `metro` (tools), `apk` (android).
 - `sb.ps1` / `sb.sh`: Docker-only task runner. `build` does dependencies + service image + APK.
-- AVD `soundboard` (Pixel 6, Android 36, x86_64). Boot it, then
-  `adb reverse tcp:8081 tcp:8081` to reach Metro running in Docker.
+- AVD `soundboard` (Pixel 6, Android 36, x86_64). Boot it **from the SDK's own
+  `emulator/` directory** — launched by absolute path from elsewhere it cannot
+  find its engine binaries. Then `adb reverse tcp:8081 tcp:8081` to reach Metro
+  running in Docker. **`sb apk` alone will not run on it:** the default APK is
+  arm64-only, so SoLoader cannot find its libraries on x86_64 and the app dies
+  in `MainApplication.onCreate` before any JS runs — looking exactly like a JS
+  crash and costing an hour if you read it that way. Use `sb apk --all-abis`.
 - Git: one public repo (above). `.env`, `node_modules` and `app-client/android` are all untracked;
   verified by cloning fresh and listing what shipped.
 - The `apk` service runs `expo prebuild` when `app-client/android` is absent, so
@@ -68,8 +73,10 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   a gain node per voice, a fresh `AudioBufferSourceNode` per retrigger, LRU of 30
   buffers, no debouncing, plus concurrent-decode dedup so spamming a cold pad
   cannot start N decodes.
-  *Measured on the emulator:* **246 ms cold, 11 ms warm** — the bimodal split §6
-  predicts, visible on the very first thing built.
+  *Measured on the emulator:* **246 ms cold, 11 ms warm** — read at the time as
+  §6's bimodal split. **It is not** (step 8 reconciles it): with bundled tones
+  there is no network in the path, so no cold/warm network split can exist yet.
+  246 ms was a first-tap-of-session, which constructs the AudioContext.
   *Placeholder audio:* 16 bundled AAC tones (mono/44.1k/64k per #14). Step 6
   swaps in R2 URLs and only `pads.ts` changes — the engine takes a URI either way.
   *Library workaround:* the package root pulls in `AudioControls`, which imports
@@ -77,59 +84,47 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   peer dep), so the engine deep-imports `lib/module/core/AudioContext`. The ambient
   declaration must use a plain `import`, not `import type` — otherwise
   `typeof AudioContext` silently resolves to the DOM one.
-- [~] 8. **Instrumentation — built and running on the emulator.**
-  `app-client/src/metrics/` records a sample per tap: elapsed ms, cache hit/miss,
-  connection type + cellular generation, and **ms since the previous tap** (not in
-  the original list — §6's radio-wake trap is a function of idle time, and without
-  that column the largest source of cold-tap variance reads as unexplained scatter).
-  Buffered in memory, flushed at 25 samples / 30 s / on backgrounding, appended as
-  JSONL to `Paths.document/metrics/taps.jsonl`. A failed flush puts the samples back
-  rather than dropping them — this dataset exists to characterise bad networks, so
-  the sink must not censor the tail it is measuring. Setting `METRICS_ENDPOINT` in
-  `metrics/sink.ts` switches the same batches to an HTTP POST — that is all of step 13.
-  *Measures `onPressIn → source scheduled`, NOT "first audible sample":*
+- [x] 8. **Instrumentation — done, running on the emulator.** `app-client/src/metrics/`
+  records one sample per tap: `pressToScheduledMs`, `cacheHit`, `sameAsPrevious`,
+  `idleMs`, connection type + cellular generation, session id, and `ok`. Buffered
+  in memory; flushed at 25 samples, every 30 s, and on backgrounding; appended as
+  JSONL to `Paths.document/metrics/taps.jsonl`. Flushing is never inline — the
+  write is synchronous and would otherwise run with a finger on the glass. A failed
+  flush returns samples to the buffer instead of dropping them: this dataset exists
+  to characterise bad networks, so the sink must not censor the tail it measures.
+  Setting `METRICS_ENDPOINT` in `metrics/sink.ts` sends the same batches over HTTP
+  — that is all of step 13.
+
+  Two columns beyond the original list, both earned by the data:
+  **`idleMs`** because §6's radio-wake trap is a function of idle time, and
+  **`sameAsPrevious`** because `cacheHit` alone cannot tell a retrigger from a
+  switch between two equally-cached pads — they differ by 4×, which would have made
+  warm p50 move with how someone taps rather than with the app. Records are
+  **schema v2**.
+
+  *Measures `onPressIn → source scheduled`, not "first audible sample".*
   react-native-audio-api exposes neither `outputLatency` nor `baseLatency`, so the
-  hardware output buffer (~10–40 ms on Oboe) is invisible from inside the app. It is
-  a constant, so it does not distort comparisons between ladder rungs, but it sits
-  under any absolute p95 < 150 ms claim. **Calibrate it once** against an external
-  recording (tap transient → audio onset) and subtract it knowingly.
-  *Needs a rebuild:* `@react-native-community/netinfo` is a new native dependency,
-  so run `sb build` (or `sb apk --clean`). Until then NetInfo is absent and samples
-  are tagged `unknown` rather than crashing the app.
-  *Verified on the emulator 2026-08-22:* 26 taps recorded and flushed, every field
-  populated — `connection.type` reads `wifi` (so NetInfo is genuinely linked),
-  `generation` null off-cellular, `idleMs` null on exactly the first tap, 0 failures.
-  Threshold flush at 25 and the 30 s timer both fired. Pull a dataset with:
+  output buffer (~10–40 ms on Oboe) is invisible from inside the app. Constant, so
+  ladder comparisons hold — but it sits under any absolute p95 < 150 ms claim.
+  **Calibrate it once** against an external recording (tap transient → audio onset).
+
+  *Verified on the emulator 2026-08-22.* Every field populates; `connection.type`
+  reads `wifi`, so NetInfo is genuinely linked rather than degrading to `unknown`.
+  Both flush paths fire. **Three regimes, measured in one session:** first tap
+  **53.7 ms** (constructs the AudioContext) · switch to a cached pad **14.2 ms** ·
+  same-pad retrigger **3.3 ms**. §6 says "retrigger is free" and the 3.3 ms agrees;
+  the 14 ms for a *cached* pad is the part nobody predicted.
+
+  **These are not a baseline.** Bundled tones put no network in the path, so §6's
+  bimodal split cannot appear until step 6. Treat every number above as a plumbing
+  test. **Still unmet:** the real dataset needs a phone on cellular (step 1, R6).
+
+  Pull a dataset with
   `adb exec-out run-as dev.sarunas.soundboard cat files/metrics/taps.jsonl > taps.jsonl`
+  — the emulator's file mixes v1 and v2 records plus hand taps, so filter on `v`.
 
-  **Two things the first dataset already says.** Cold and warm are indistinguishable
-  — p50 14.7 ms vs 13.6 ms — because with bundled tones there is *no network in the
-  path at all*. §6's bimodal split cannot appear until step 6 puts R2 URLs in, so
-  these numbers are a plumbing test, not a baseline. And the first tap of a session
-  is its own category at 64 ms, since it constructs the AudioContext; worth keeping
-  separate rather than letting it inflate the cold p95 forever.
-
-  **Reconciled with step 7 — and step 7 read its own number wrong.** There are
-  *three* regimes here, not two. Measured in one session: first tap **53.7 ms**
-  (constructs the AudioContext), switching to an already-cached pad **14.2 ms**,
-  retriggering the same pad **3.3 ms** — the last two with identical `cacheHit`
-  and near-identical idle gaps, so neither field explains the 4× between them.
-  Step 7's *"246 ms cold, 11 ms warm — the bimodal split §6 predicts"* is not that
-  split. §6's is a **network** split, and bundled tones put no network in the path;
-  a cold asset cache cannot inflate a sample either, because `resolveUri` finishes
-  in the startup effect and a tap before it lands is dropped without recording.
-  246 ms was a first-tap-of-session on a colder machine — the same category that
-  now measures 54–64 ms. **Neither number is a cold-network baseline; none exists
-  yet.** Caught on the instrumentation's first real use, which is the point of it.
-
-  *Schema gap this exposed — closed.* `cacheHit` could not separate "cached and
-  just played" from "cached but switching pads", which differ by 4×, so a warm p50
-  moved with how the user tapped rather than with the app. **`sameAsPrevious`**
-  (`boolean | null`, null on the first tap of a session) now splits them; records
-  are **schema v2**. Verified on the emulator: same pad `true` → 3.35 ms, switch
-  back to an equally-cached pad `false` → 11.66 ms.
-  *Note the mixed file:* `taps.jsonl` on the emulator holds v1 records from before
-  the change, plus some hand-tapped ones. Filter on `v` before drawing anything.
+  *Rebuild note:* `@react-native-community/netinfo` is a native dependency; a JS
+  bundle newer than the installed APK tags samples `unknown` rather than crashing.
 
 **Exit:** a tap on a real phone on cellular plays the sound, and the timing is in a dataset.
 
