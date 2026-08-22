@@ -77,7 +77,7 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   peer dep), so the engine deep-imports `lib/module/core/AudioContext`. The ambient
   declaration must use a plain `import`, not `import type` — otherwise
   `typeof AudioContext` silently resolves to the DOM one.
-- [~] 8. **Instrumentation — built, not yet validated on a device.**
+- [~] 8. **Instrumentation — built and running on the emulator.**
   `app-client/src/metrics/` records a sample per tap: elapsed ms, cache hit/miss,
   connection type + cellular generation, and **ms since the previous tap** (not in
   the original list — §6's radio-wake trap is a function of idle time, and without
@@ -96,10 +96,23 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   *Needs a rebuild:* `@react-native-community/netinfo` is a new native dependency,
   so run `sb build` (or `sb apk --clean`). Until then NetInfo is absent and samples
   are tagged `unknown` rather than crashing the app.
-  *Verified so far:* typecheck clean, and the buffer/flush/failure-recovery logic
-  passes a Node harness with stubbed native modules. **Nothing has run on a device.**
-  Pull a dataset with:
-  `adb exec-out run-as <applicationId> cat files/metrics/taps.jsonl > taps.jsonl`
+  *Verified on the emulator 2026-08-22:* 26 taps recorded and flushed, every field
+  populated — `connection.type` reads `wifi` (so NetInfo is genuinely linked),
+  `generation` null off-cellular, `idleMs` null on exactly the first tap, 0 failures.
+  Threshold flush at 25 and the 30 s timer both fired. Pull a dataset with:
+  `adb exec-out run-as dev.sarunas.soundboard cat files/metrics/taps.jsonl > taps.jsonl`
+
+  **Two things the first dataset already says.** Cold and warm are indistinguishable
+  — p50 14.7 ms vs 13.6 ms — because with bundled tones there is *no network in the
+  path at all*. §6's bimodal split cannot appear until step 6 puts R2 URLs in, so
+  these numbers are a plumbing test, not a baseline. And the first tap of a session
+  is its own category at 64 ms, since it constructs the AudioContext; worth keeping
+  separate rather than letting it inflate the cold p95 forever.
+
+  **Unreconciled:** step 7 records *246 ms cold* on the emulator. That does not
+  reproduce — cold taps here are 11–17 ms, with only the session's first tap at 64 ms.
+  Same emulator, same placeholder tones. Worth knowing which measurement was wrong
+  before either number is trusted as a before/after reference.
 
 **Exit:** a tap on a real phone on cellular plays the sound, and the timing is in a dataset.
 
