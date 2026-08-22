@@ -1,6 +1,6 @@
 # Soundboard — Steps
 
-**Status:** setup done; step 7 done; published to GitHub. Blocked on the R2 bucket (step 2).
+**Status:** setup done; steps 7 and 8 built. Blocked on the R2 bucket (step 2).
 **Date:** 2026-08-15, revised 2026-08-22
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
@@ -77,7 +77,29 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   peer dep), so the engine deep-imports `lib/module/core/AudioContext`. The ambient
   declaration must use a plain `import`, not `import type` — otherwise
   `typeof AudioContext` silently resolves to the DOM one.
-- [ ] 8. **Next.** Instrumentation from the first tap: `onPressIn → first audible sample`, tagged with cache hit/miss + connection type, buffered on device and POSTed in batches to a stub endpoint.
+- [~] 8. **Instrumentation — built, not yet validated on a device.**
+  `app-client/src/metrics/` records a sample per tap: elapsed ms, cache hit/miss,
+  connection type + cellular generation, and **ms since the previous tap** (not in
+  the original list — §6's radio-wake trap is a function of idle time, and without
+  that column the largest source of cold-tap variance reads as unexplained scatter).
+  Buffered in memory, flushed at 25 samples / 30 s / on backgrounding, appended as
+  JSONL to `Paths.document/metrics/taps.jsonl`. A failed flush puts the samples back
+  rather than dropping them — this dataset exists to characterise bad networks, so
+  the sink must not censor the tail it is measuring. Setting `METRICS_ENDPOINT` in
+  `metrics/sink.ts` switches the same batches to an HTTP POST — that is all of step 13.
+  *Measures `onPressIn → source scheduled`, NOT "first audible sample":*
+  react-native-audio-api exposes neither `outputLatency` nor `baseLatency`, so the
+  hardware output buffer (~10–40 ms on Oboe) is invisible from inside the app. It is
+  a constant, so it does not distort comparisons between ladder rungs, but it sits
+  under any absolute p95 < 150 ms claim. **Calibrate it once** against an external
+  recording (tap transient → audio onset) and subtract it knowingly.
+  *Needs a rebuild:* `@react-native-community/netinfo` is a new native dependency,
+  so run `sb build` (or `sb apk --clean`). Until then NetInfo is absent and samples
+  are tagged `unknown` rather than crashing the app.
+  *Verified so far:* typecheck clean, and the buffer/flush/failure-recovery logic
+  passes a Node harness with stubbed native modules. **Nothing has run on a device.**
+  Pull a dataset with:
+  `adb exec-out run-as <applicationId> cat files/metrics/taps.jsonl > taps.jsonl`
 
 **Exit:** a tap on a real phone on cellular plays the sound, and the timing is in a dataset.
 

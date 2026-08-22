@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native';
 
 import { PADS, resolveUri, type Pad } from './src/pads';
 import { isWarm, play, stop } from './src/audio/engine';
+import { beginTap, pendingCount, startMetrics } from './src/metrics';
 
 /**
  * M0 playback shell — STEPS.md step 7.
@@ -16,6 +17,9 @@ export default function App() {
   const uris = useRef<Map<string, string>>(new Map());
   const [playing, setPlaying] = useState<string | null>(null);
   const [last, setLast] = useState<string>('');
+
+  // Collect tap latencies for as long as the app is up (STEPS step 8).
+  useEffect(startMetrics, []);
 
   // Resolve every asset URI up front so a tap never waits on the filesystem.
   useEffect(() => {
@@ -36,15 +40,22 @@ export default function App() {
     const uri = uris.current.get(pad.id);
     if (!uri) return;
 
-    const t0 = Date.now();
-    const warm = isWarm(uri);
+    // Opened before anything else, so the clock starts as close to the press
+    // as it can get (STEPS step 8).
+    const tap = beginTap(pad.id, isWarm(uri));
     setPlaying(pad.id);
 
-    // Step 8 replaces this with a real buffered metric. The shape is here so
-    // the number exists from the first tap rather than being retrofitted.
     play(uri)
-      .then(() => setLast(`${pad.name}  ${Date.now() - t0} ms  ${warm ? 'warm' : 'cold'}`))
+      .then(() => {
+        // The header shows the sample that was actually recorded, so what you
+        // read on the device is exactly what is in the dataset.
+        const s = tap.scheduled();
+        setLast(
+          `${pad.name}  ${s.pressToScheduledMs.toFixed(0)} ms  ${s.cacheHit ? 'warm' : 'cold'}  ·  ${pendingCount()} buffered`,
+        );
+      })
       .catch((err) => {
+        tap.failed();
         console.warn(`[audio] ${pad.id} failed`, err);
         setLast(`${pad.name}  failed`);
       });
