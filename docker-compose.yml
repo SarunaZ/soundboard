@@ -1,0 +1,163 @@
+name: soundboard
+
+# The API and the worker are separate processes on purpose (DESIGN §7):
+# better-sqlite3 is synchronous and would block the API's event loop, and an
+# ffmpeg crash should take the worker down, not the API. One image, two commands.
+#
+# mem_limit is this stack's version of the `systemd MemoryMax=` in DESIGN §7 and
+# PLAN R1 — the droplet has 1 GB shared with imli-system, and the OOM killer
+# picks its own victim. These caps mean *this* project dies first. Raising them
+# is not the fix if ffmpeg won't fit; a second box is.
+
+x-service: &service
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: soundboard-service:local
+  init: true            # reap ffmpeg/yt-dlp zombies
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    NODE_ENV: production
+    DB_PATH: /data/soundboard.db
+    TEMP_DIR: /var/tmp/soundboard
+  volumes:
+    - db:/data
+    - temp:/var/tmp/soundboard
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  api:
+    <<: *service
+    command: ["node", "service/dist/api/index.js"]
+    # Bound to loopback — a reverse proxy on the droplet terminates TLS.
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 192m
+    memswap_limit: 384m
+    cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    <<: *service
+    command: ["node", "service/dist/worker/index.js"]
+    # Concurrency is 1 — never scale this above a single replica (DESIGN §7).
+    scale: 1
+    # More headroom than the API because ffmpeg lives here, still capped well
+    # under what imli-system needs to survive.
+    mem_limit: 384m
+    memswap_limit: 768m
+    cpus: "0.75"
+    pids_limit: 256
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ---- tooling: nothing below runs on `docker compose up` -------------------
+  # Docker is the only thing this repo needs installed. No Node, no corepack,
+  # no Yarn, no JDK, no Android SDK on the host.
+
+  # Installs node_modules INSIDE Linux, into the bind-mounted tree.
+  #
+  #   docker compose --profile tools run --rm deps
+  #
+  # --mode=skip-build skips native compilation on purpose: better-sqlite3 is
+  # built inside the service image (see Dockerfile), where it belongs. Nothing
+  # in the mounted tree ever needs a compiled binding.
+  deps:
+    profiles: ["tools"]
+    image: node:24-bookworm-slim
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - yarn-cache:/root/.yarn/berry/cache
+    environment:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["corepack enable && yarn install --mode=skip-build"]
+
+  # Metro dev server. Plain Node — none of the Android SDK is involved.
+  #
+  #   docker compose --profile tools up metro
+  #
+  # LAN_IP must be set in .env to your machine's LAN address, or the phone will
+  # be handed a container IP it cannot reach.
+  #
+  # CAVEAT: inotify events do not cross a Windows bind mount, so file watching
+  # can miss edits. Press `r` in the Metro console to reload manually if a save
+  # doesn't take. This is the one thing that genuinely works better on the host.
+  metro:
+    profiles: ["tools"]
+    image: node:24-bookworm-slim
+    working_dir: /workspace/app-client
+    ports:
+      - "8081:8081"
+    volumes:
+      - .:/workspace
+      - yarn-cache:/root/.yarn/berry/cache
+    environment:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      REACT_NATIVE_PACKAGER_HOSTNAME: "${LAN_IP:-}"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["corepack enable && yarn expo start --dev-client --host lan"]
+
+  # Android build. The image holds the toolchain only; the repo is bind-mounted,
+  # so app edits never rebuild it.
+  #
+  #   docker compose --profile android run --rm apk
+  #
+  # Installs dependencies first if the tree is empty, so this works from a clean
+  # checkout with nothing but Docker present.
+  #
+  # Output: app-client/android/app/build/outputs/apk/debug/app-debug.apk
+  apk:
+    profiles: ["android"]
+    build:
+      context: .
+      dockerfile: app-client/Dockerfile.android
+    image: soundboard-android:local
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - gradle:/gradle
+      - yarn-cache:/root/.yarn/berry/cache
+    environment:
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx3g"
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      # arm64-v8a only: every Android phone since ~2018. Building all four ABIs
+      # roughly quadruples the build for architectures you do not own. Override
+      # with ABIS=armeabi-v7a,arm64-v8a,x86,x86_64 for an emulator.
+      ABIS: "${ABIS:-arm64-v8a}"
+      GRADLE_TASK: "${GRADLE_TASK:-assembleDebug}"
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - |
+        set -euo pipefail
+        corepack enable
+        if [ ! -d node_modules ]; then
+          echo "-> node_modules missing; installing inside the container"
+          yarn install --mode=skip-build
+        fi
+        # android/ is gitignored: Expo regenerates it from app.json (CNG), so a
+        # fresh clone has no native project until prebuild runs.
+        if [ ! -d app-client/android ]; then
+          echo "-> app-client/android missing; running expo prebuild"
+          cd app-client && yarn expo prebuild --platform android && cd ..
+        fi
+        cd app-client/android
+        exec ./gradlew "$${GRADLE_TASK}" --no-daemon "-PreactNativeArchitectures=$${ABIS}"
+
+volumes:
+  db:          # SQLite. Back this up nightly to R2 under db/ (PLAN §2, M3).
+  temp:        # Masters, 24 h TTL. Disposable by design (#5).
+  gradle:      # Gradle + Maven cache for the APK build. Safe to delete, slow to refill.
+  yarn-cache:  # Yarn's package cache. Safe to delete, slow to refill.

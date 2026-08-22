@@ -1,0 +1,23 @@
+{
+  "name": "@soundboard/service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/api/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "api": "node dist/api/index.js",
+    "worker": "node dist/worker/index.js"
+  },
+  "dependencies": {
+    "@soundboard/shared": "workspace:^",
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5",
+    "@types/node": "^26.2.0",
+    "typescript": "^5.9.2"
+  }
+}

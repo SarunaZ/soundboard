@@ -1,0 +1,22 @@
+**/node_modules
+**/dist
+**/.expo
+**/.yarn/cache
+**/.yarn/install-state.gz
+.git
+.gitignore
+
+# The RN app is not in the image. Its package.json IS needed (Yarn requires
+# every workspace manifest to resolve the lockfile), so the folder is trimmed
+# rather than excluded.
+app-client/android
+app-client/ios
+app-client/assets
+app-client/App.tsx
+app-client/app.json
+app-client/index.ts
+app-client/tsconfig.json
+
+.env
+*.log
+data/

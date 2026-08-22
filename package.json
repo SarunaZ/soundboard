@@ -1,0 +1,22 @@
+{
+  "name": "soundboard",
+  "private": true,
+  "packageManager": "yarn@4.18.0",
+  "workspaces": [
+    "shared",
+    "service",
+    "app-client"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "dependenciesMeta": {
+    "better-sqlite3": {
+      "built": true
+    }
+  },
+  "scripts": {
+    "install:nobuild": "yarn install --mode=skip-build",
+    "build": "yarn workspace @soundboard/shared build && yarn workspace @soundboard/service build"
+  }
+}
