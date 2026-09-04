@@ -4,8 +4,10 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native';
 
 import { PADS, resolveUri, type Pad } from './src/pads';
-import { isWarm, play, stop } from './src/audio/engine';
+import { isWarm, play, stop, warm } from './src/audio/engine';
 import { beginTap, pendingCount, startMetrics } from './src/metrics';
+
+type RemoteState = 'warming' | 'ready' | 'failed' | 'unconfigured';
 
 /**
  * M0 playback shell — STEPS.md step 7.
@@ -17,21 +19,57 @@ export default function App() {
   const uris = useRef<Map<string, string>>(new Map());
   const [playing, setPlaying] = useState<string | null>(null);
   const [last, setLast] = useState<string>('');
+  const [remoteState, setRemoteState] = useState<RemoteState>(
+    PADS.some((pad) => pad.uri !== undefined) ? 'warming' : 'unconfigured',
+  );
 
   // Collect tap latencies for as long as the app is up (STEPS step 8).
   useEffect(startMetrics, []);
 
   // Resolve every asset URI up front so a tap never waits on the filesystem.
+  // Remote pads are also fetched and decoded at launch. Keep their controls
+  // disabled until this finishes so the first enabled press takes the warm path.
   useEffect(() => {
-    (async () => {
-      for (const pad of PADS) {
-        try {
-          uris.current.set(pad.id, await resolveUri(pad));
-        } catch (err) {
-          console.warn(`[pads] could not resolve ${pad.id}`, err);
-        }
+    let active = true;
+
+    const resolve = async (pad: Pad): Promise<string | null> => {
+      try {
+        const uri = await resolveUri(pad);
+        uris.current.set(pad.id, uri);
+        return uri;
+      } catch (err) {
+        console.warn(`[pads] could not resolve ${pad.id}`, err);
+        return null;
       }
-    })();
+    };
+
+    const remotePads = PADS.filter((pad) => pad.uri !== undefined);
+    const bundledPads = PADS.filter((pad) => pad.uri === undefined);
+
+    // Bundled resolution does not need to hold up remote warming.
+    Promise.all(bundledPads.map(resolve)).catch((err) => {
+      console.warn('[pads] bundled asset resolution failed', err);
+    });
+
+    const warmRemotePads = async (): Promise<void> => {
+      if (remotePads.length === 0) return;
+
+      const remoteUris = await Promise.all(remotePads.map(resolve));
+      await Promise.all(remoteUris.filter((uri): uri is string => uri !== null).map(warm));
+
+      if (!active) return;
+      const ready = remoteUris.length > 0 && remoteUris.every((uri) => uri !== null && isWarm(uri));
+      setRemoteState(ready ? 'ready' : 'failed');
+    };
+
+    warmRemotePads().catch((err) => {
+      console.warn('[pads] remote preload failed', err);
+      if (active) setRemoteState('failed');
+    });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   // onPressIn, NOT onPress. onPress fires on release - 100 ms+ of dead air, and
@@ -66,12 +104,21 @@ export default function App() {
     setPlaying(null);
   }, []);
 
+  const startupStatus =
+    remoteState === 'warming'
+      ? 'Preparing REMOTE audio…'
+      : remoteState === 'ready'
+        ? 'REMOTE preloaded · Worker → private R2'
+        : remoteState === 'failed'
+          ? 'REMOTE preload failed · tap to retry'
+          : 'Bundled pads only · configure the remote clip URL to test R2';
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
       <View style={styles.header}>
         <Text style={styles.title}>Soundboard</Text>
-        <Text style={styles.meta}>{last || 'placeholder tones — step 6 swaps in R2 clips'}</Text>
+        <Text style={styles.meta}>{last || startupStatus}</Text>
       </View>
 
       <View style={styles.grid}>
@@ -80,10 +127,12 @@ export default function App() {
             {row.map((pad) => (
               <Pressable
                 key={pad.id}
+                disabled={pad.uri !== undefined && remoteState === 'warming'}
                 onPressIn={() => trigger(pad)}
                 style={({ pressed }) => [
                   styles.pad,
                   { backgroundColor: pad.color },
+                  pad.uri !== undefined && remoteState === 'warming' && styles.padDisabled,
                   pressed && styles.padPressed,
                 ]}
               >
@@ -130,6 +179,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   padPressed: { opacity: 0.6 },
+  padDisabled: { opacity: 0.45 },
   padName: { color: '#ffffff', fontSize: 18, fontWeight: '600' },
   kill: {
     margin: GAP,

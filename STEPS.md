@@ -1,7 +1,8 @@
 # Soundboard — Steps
 
-**Status:** setup done; steps 7 and 8 done. Blocked on the R2 bucket (step 2).
-**Date:** 2026-08-15, revised 2026-08-22
+**Status:** setup done; steps 2, 3, 7 and 8 done. M0's remote path works;
+next is step 6 (seed the initial clip set and manifest).
+**Date:** 2026-08-15, revised 2026-09-04
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
 
@@ -42,8 +43,23 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   which is redirected into a package container).
   **Still unmet:** the planned exit was a real phone over USB. The emulator
   cannot tell you anything about DESIGN §6 radio-wake latency.
-- [ ] 2. R2 bucket: public dev domain, `Cache-Control: public, max-age=31536000, immutable`. Upload one file, fetch it from the phone's browser. **← THE BLOCKER: needs a Cloudflare login. Steps 3 and 6 sit behind it.**
-- [ ] 3. `react-native-audio-api` playing one hard-coded R2 URL. If this fights, revisit amendment A1 before building anything else. *The toolchain compiles the library; nothing has yet made a sound.*
+- [x] 2. **R2 read path — done.** A private bucket is exposed through the
+  `soundboard-media` Cloudflare Worker, with
+  `Cache-Control: public, max-age=31536000, immutable`. A hand-uploaded clip
+  plays from an Android phone's browser. The client never receives R2 API
+  credentials or an R2 bucket endpoint.
+- [x] 3. **Remote native playback — done.** `react-native-audio-api` plays the
+  Worker-backed clip in the Android emulator. The public Worker clip URL comes
+  from ignored `app-client/.env.local` as
+  `EXPO_PUBLIC_REMOTE_CLIP_URL`; Git contains only the blank
+  `app-client/.env.example`.
+
+  Launch preloading fetches and decodes configured remote pads before enabling
+  them. After clearing app data, the original first press measured **1191 ms
+  cold**; with preloading, the first enabled press measured **43 ms warm**
+  (**3 ms** on the immediate retrigger). These emulator/wifi numbers prove the
+  path only. They do not satisfy the real-phone/cellular baseline required by
+  R6 or complete M5 step 26.
 - [ ] 4. Droplet: 2 GB swap + `systemd MemoryMax=` on both units — **before the first ffmpeg run**, so the OOM killer can't pick imli's Mongo (§7, R1).
   *Partial:* `docker-compose.yml` sets `mem_limit` (api 192m, worker 384m), which
   is this stack's version of `MemoryMax`. The droplet itself is untouched — no
@@ -77,8 +93,10 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   §6's bimodal split. **It is not** (step 8 reconciles it): with bundled tones
   there is no network in the path, so no cold/warm network split can exist yet.
   246 ms was a first-tap-of-session, which constructs the AudioContext.
-  *Placeholder audio:* 16 bundled AAC tones (mono/44.1k/64k per #14). Step 6
-  swaps in R2 URLs and only `pads.ts` changes — the engine takes a URI either way.
+  *Current audio:* pad 1 uses the configured Worker clip; the other 15 pads are
+  bundled AAC tones (mono/44.1k/64k per #14). Step 6 replaces this smoke-test
+  arrangement with the initial manifest-backed clip set — the engine still
+  takes a URI either way.
   *Library workaround:* the package root pulls in `AudioControls`, which imports
   `react-native-gesture-handler` and `react-native-reanimated` (neither a declared
   peer dep), so the engine deep-imports `lib/module/core/AudioContext`. The ambient

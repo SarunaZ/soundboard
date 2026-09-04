@@ -1,16 +1,19 @@
 import { Asset } from 'expo-asset';
 
 /**
- * The pad list. Placeholder tones for now — step 6 replaces `module` with a
- * remote R2 URL from the manifest, and nothing else here changes, because the
- * engine only ever sees a URI string.
+ * The pad list. Pad 1 is the M0 remote-path smoke test through the Cloudflare
+ * Worker; the remaining pads stay bundled so remote and local playback can be
+ * compared without changing the audio engine.
  */
 export interface Pad {
   id: string;
   name: string;
   color: string;
-  module: number;
+  module?: number;
+  uri?: string;
 }
+
+const REMOTE_TEST_URI = process.env.EXPO_PUBLIC_REMOTE_CLIP_URL?.trim();
 
 const MODULES = [
   require('../assets/audio/pad-01.m4a'),
@@ -52,12 +55,26 @@ export const PADS: Pad[] = MODULES.map((module, i) => ({
   module,
 }));
 
+if (REMOTE_TEST_URI) {
+  PADS[0] = {
+    id: 'pad-01',
+    name: 'REMOTE',
+    color: COLORS[0]!,
+    uri: REMOTE_TEST_URI,
+  };
+}
+
 /**
  * Bundled assets are served by Metro over http in dev and live on disk in a
  * release build, so resolve rather than assume. Once clips come from R2 this
  * whole function collapses to returning the manifest URL.
  */
 export async function resolveUri(pad: Pad): Promise<string> {
+  if (pad.uri) return pad.uri;
+  if (pad.module === undefined) {
+    throw new Error(`Pad ${pad.id} has neither a remote URI nor a bundled asset`);
+  }
+
   const asset = Asset.fromModule(pad.module);
   if (!asset.localUri) await asset.downloadAsync();
   return asset.localUri ?? asset.uri;
