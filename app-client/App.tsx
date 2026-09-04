@@ -9,6 +9,13 @@ import { beginTap, pendingCount, startMetrics } from './src/metrics';
 
 type RemoteState = 'warming' | 'ready' | 'failed' | 'unconfigured';
 
+const REMOTE_STATUS: Record<RemoteState, string> = {
+  warming: 'Preparing REMOTE audio…',
+  ready: 'REMOTE preloaded · Worker → private R2',
+  failed: 'REMOTE preload failed · tap to retry',
+  unconfigured: 'Bundled pads only · configure the remote clip URL to test R2',
+};
+
 /**
  * M0 playback shell — STEPS.md step 7.
  *
@@ -104,14 +111,7 @@ export default function App() {
     setPlaying(null);
   }, []);
 
-  const startupStatus =
-    remoteState === 'warming'
-      ? 'Preparing REMOTE audio…'
-      : remoteState === 'ready'
-        ? 'REMOTE preloaded · Worker → private R2'
-        : remoteState === 'failed'
-          ? 'REMOTE preload failed · tap to retry'
-          : 'Bundled pads only · configure the remote clip URL to test R2';
+  const startupStatus = REMOTE_STATUS[remoteState];
 
   return (
     <SafeAreaView style={styles.safe}>
