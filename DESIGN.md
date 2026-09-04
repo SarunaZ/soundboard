@@ -1,7 +1,9 @@
 # Soundboard — Design
 
-**Status:** design settled, not yet implemented
-**Date:** 2026-08-15
+**Status:** architecture settled; M0 implementation is in progress. See
+[STEPS.md](STEPS.md) for authoritative implementation status and [PLAN.md](PLAN.md)
+for amendments to the original design.
+**Date:** 2026-08-15, revised 2026-09-04
 
 ---
 
@@ -40,12 +42,12 @@ tradeoff was made on purpose.
                                      │  upload
                                      ▼
                      ┌──────────────────────────────┐
-                     │  Cloudflare R2 (free tier)   │
-                     │  public · content-addressed  │
+                     │  Worker + Cloudflare R2      │
+                     │  public reads · private data │
                      └───────────────┬──────────────┘
-                                     │  direct fetch
+                                     │  direct Worker fetch
                      ┌───────────────┴──────────────┐
-                     │  Soundboard (PWA, Android)   │
+                     │  Soundboard (React Native)   │
                      │  home board · search · pads  │
                      └──────────────────────────────┘
 ```
@@ -73,17 +75,17 @@ to hack on the server.
 
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
-| 1 | Client platform | **PWA first**, React Native deferred | Port later with evidence, not upfront. Android ⇒ an RN port is free (sideload APK, no $99/yr). Data model, sync, grid, search all port; only the audio shell changes, and `react-native-audio-api` mirrors the Web Audio interface. |
+| 1 | Client platform | **React Native on Android** (PLAN A1) | Native playback was proven early with `react-native-audio-api`; the Android client is built as a custom Expo development build because Expo Go cannot load the audio module. |
 | 2 | Output target | Phone speaker, into the room | Not into calls — no OS allows injecting audio into another app's mic stream. If that were ever the goal, the project would have to be desktop. |
 | 3 | Server | Existing $5 DO droplet | 1 GB / 1 vCPU / 25 GB, **shared with another project**. See §7. |
 | 4 | Sources | Direct-file first, yt-dlp behind the same interface | myinstants-class sources are static MP3s behind a UA check — trivial and unbreakable. YouTube is the fragile path and must degrade gracefully, not take the app down. |
 | 5 | Master retention | **Discard after render** — the clip is the master | **[learning choice]** Forces real lifecycle work: TTL sweeps, abandoned-session cleanup, orphan detection, failure paths where the master is already gone. Cost: the codec choice becomes permanent, and re-editing depends entirely on decision #13. |
-| 6 | Permanent storage | Cloudflare R2 free tier | 10 GB free, S3-compatible, **zero egress** — so aggressive prefetching has no bill attached, and only one axis (latency) is being optimized at a time. Also puts clips off-droplet, so a rebuild can't destroy the library. |
+| 6 | Permanent storage | Private Cloudflare R2 bucket behind a read-only Worker | R2 provides 10 GB free, S3 compatibility and **zero egress**. The Worker exposes immutable, content-addressed reads without exposing the bucket endpoint or credentials. Clips remain off-droplet, so a rebuild can't destroy the library. |
 | 7 | Trim UI | Waveform + draggable handles | Plus live-looping selection and ±10/±100 ms nudge buttons. |
 | 8 | Sync | **Online-first — stream per tap** | **[learning choice]** Full-mirror is 54 MB and obviously better as a product. Chosen to learn cold-path optimization and its caveats. See §6. |
 | 9 | Playback | Monophonic, retrigger from 0 | Airhorn spam must work. New pad cuts the current one. Persistent kill-bar while playing. |
 | 10 | Navigation | Stable home board + search replaces grid | Muscle memory for the ~16 sounds used constantly; search for the long tail. |
-| 11 | Authorization | Public bucket, content-addressed keys, authenticated manifest | Presigned URLs would put the droplet on the cold path (+50–200 ms per first tap) — building the exact latency problem #8 exists to solve. |
+| 11 | Authorization | Public Worker clip URLs, private bucket, authenticated manifest | Presigned URLs would put the droplet on the cold path (+50–200 ms per first tap) — building the exact latency problem #8 exists to solve. The Worker is the public read boundary; the app never receives R2 credentials or an R2 bucket endpoint. |
 | 12 | Persistence & jobs | SQLite for metadata *and* the job queue | **[learning choice]** BullMQ would hide atomic claim, lease recovery, backoff, dead-lettering — the concepts worth learning. Also near-zero RAM, which #3 requires. |
 | 13 | Renditions | Tight clip + **±4 s padded edit copy** | Restores re-editability that #5 gave away. Phone fetches the tight one; only the editor fetches the padded one. |
 | 14 | Codec | AAC-LC, mono, 44.1 kHz, 64 kbps, loudness-normalised | Opus would save ~6 KB/clip — noise against a 100–500 ms radio wake — while making the permanent choice from #5 riskier. Mono because a phone speaker has one driver. |
@@ -227,7 +229,7 @@ than "the network is in my hot path".
 ### Optimization ladder
 
 1. `Cache-Control: immutable, max-age=31536000` — free, because keys are content hashes
-2. CDN in front of R2
+2. Cloudflare edge caching for Worker-backed R2 reads
 3. `preconnect` on app load — pay DNS/TLS before the first tap
 4. Viewport prefetch — warm pads as they scroll in
 5. Frequency-weighted prefetch of the home board on launch (16 × 24 KB ≈ **384 KB**)
@@ -300,11 +302,23 @@ are the same decision — a sign the design is sound.
 Each is independently useful. Do not build the editor before something can play
 its output.
 
-- **M0 — Playback shell.** Manifest endpoint + grid + tap-to-play, R2 hand-seeded with ~5 clips pulled straight from myinstants. **Instrumentation from day one.** Proves the hot path and starts the latency dataset.
-- **M1 — Navigation.** Home board, pinning, ⋯ → Edit reorder, local manifest, search.
-- **M2 — Ingest without trimming.** SQLite jobs table, separate worker, direct-file + HTML-scrape adapters, whole file rendered to AAC, uploaded, manifest bumped. End-to-end pipeline against a source that always works.
-- **M3 — Editor.** Waveform, peaks, preview rendition, draggable handles, live loop, nudge buttons, dual render (tight + ±4 s padded), GC of temp.
-- **M4 — yt-dlp adapter.** Behind the existing interface. Expect bot challenges from a DO IP — cookies first, residential proxy only if it becomes annoying.
+- **M0 — Playback shell.** Versioned bootstrap manifest + grid + tap-to-play,
+  private R2 hand-seeded with ~5 clips served through the read-only Worker.
+  **Instrumentation from day one.** Proves the hot path and starts the latency
+  dataset. The bootstrap manifest may be public during M0; M1's authenticated
+  API becomes the canonical manifest source.
+- **M1 — Service skeleton + pipeline end-to-end.** SQLite jobs table, separate
+  worker, direct-file adapter, whole file rendered to AAC, uploaded, manifest
+  bumped, authenticated manifest and metrics endpoints. Proves the pipeline
+  against a source that should not break.
+- **M2 — YouTube adapter.** Behind M1's existing adapter interface. Expect bot
+  challenges from a DO IP — cookies first, residential proxy only if it becomes
+  annoying.
+- **M3 — Editor.** Waveform, peaks, preview rendition, draggable handles, live
+  loop, nudge buttons, dual render (tight + ±4 s padded), GC of temp and nightly
+  SQLite backup.
+- **M4 — Navigation.** Home board, pinning, ⋯ → Edit reorder, local manifest,
+  stable search and result prefetch.
 - **M5 — Optimization.** Climb §6's ladder against measured p95, one rung at a time, keeping the numbers.
 
 ---
@@ -324,4 +338,4 @@ its output.
 ## 12. Open
 
 - Manifest auth: static bearer token in the app. Sufficient for single-user; revisit only if the board is ever shared.
-- React Native port: deferred until PWA use shows whether haptics and background audio are actually missed. Android ⇒ cheap whenever.
+- Distribution remains a sideloaded Android APK; revisit a Play internal track only if sideloading becomes tedious.

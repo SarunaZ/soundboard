@@ -1,6 +1,6 @@
 # Soundboard — Steps
 
-**Status:** setup done; steps 2, 3, 7 and 8 done. M0's remote path works;
+**Status (authoritative):** setup done; steps 2, 3, 7 and 8 done. M0's remote path works;
 next is step 6 (seed the initial clip set and manifest).
 **Date:** 2026-08-15, revised 2026-09-04
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).

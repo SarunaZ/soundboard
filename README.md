@@ -73,7 +73,8 @@ sb.ps1 sb.sh  Docker-only task runner
 
 ## Status
 
-Setup is done and M0 is in progress; see [STEPS.md](STEPS.md). The R2 read path
+Setup is done and M0 is in progress; [STEPS.md](STEPS.md) is the authoritative
+implementation status. The R2 read path
 and remote native playback are proven through a Cloudflare Worker. Next is to
 seed the initial clip set and manifest; the other 15 pads remain bundled
 placeholders for comparison.

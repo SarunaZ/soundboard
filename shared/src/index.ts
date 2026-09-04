@@ -69,7 +69,7 @@ export interface Pad {
 export interface Manifest {
   version: number;
   generatedAt: string;
-  /** Absolute R2 URLs. Content-addressed, so cacheable forever. */
+  /** Public Worker base URL. Clip keys are content-addressed and cacheable forever. */
   baseUrl: string;
   pads: ManifestEntry[];
 }

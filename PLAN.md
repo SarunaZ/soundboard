@@ -1,7 +1,8 @@
 # Soundboard — Plan of Action
 
-**Status:** plan drafted, not yet implemented
-**Date:** 2026-08-15
+**Status:** setup complete; M0 implementation is in progress. See
+[STEPS.md](STEPS.md) for authoritative implementation status.
+**Date:** 2026-08-15, revised 2026-09-04
 **Reads with:** [DESIGN.md](DESIGN.md) — that doc holds the *why*; this one holds the *order*.
 
 ---
@@ -42,8 +43,9 @@ soundboard/
 ```
 
 One origin for the editor and the API means no CORS and no second deploy target.
-The RN app talks to the same API for the manifest only — and to R2 directly for
-every byte of audio.
+The RN app talks to the same API for the canonical manifest only — and to the
+public `soundboard-media` Worker for every byte of audio. The Worker reads from
+private R2; the droplet is never on the playback path.
 
 ### Stack
 
@@ -61,8 +63,10 @@ every byte of audio.
 
 ## 2. Bucket layout
 
-One R2 bucket, public read, content-addressed keys, `Cache-Control:
-public, max-age=31536000, immutable` on every object.
+One private R2 bucket with content-addressed keys. The read-only
+`soundboard-media` Worker exposes clip objects with `Cache-Control: public,
+max-age=31536000, immutable`; neither the bucket endpoint nor credentials reach
+the client.
 
 ```
 clips/<sha256>.m4a     tight clip      ~24 KB   ← the phone fetches only these
@@ -79,10 +83,12 @@ the recipe against it. Losing SQLite would leave orphaned audio with no
 provenance, so: **nightly `sqlite3 .backup` to the bucket under `db/`.** That's
 the one piece of state that isn't reconstructible, and it's ~1 MB.
 
-Manifest is served by the API (bearer token, §12) rather than from the bucket,
-because it's the one thing that legitimately needs auth. It is small enough
-(~40 KB at 200 clips) that this never touches the playback path — the app
-mirrors it locally and refreshes in the background.
+Manifest is served by the API (bearer token, §12) rather than from the Worker
+once M1 exists, because it's the one thing that legitimately needs auth. M0 uses
+a hand-written, versioned bootstrap manifest through the Worker to prove the hot
+path without droplet code. It is small enough (~40 KB at 200 clips) that the
+eventual authenticated fetch never touches the playback path — the app mirrors
+it locally and refreshes in the background.
 
 ---
 
@@ -92,7 +98,8 @@ Ordering rule from DESIGN §10 is preserved: **nothing gets built before somethi
 can play its output.**
 
 ### M0 — Bucket + RN playback shell *(no droplet work at all)*
-- Create the R2 bucket, enable the public dev domain, set the immutable cache header.
+- Create the private R2 bucket and read-only Worker route; set the immutable
+  cache header on public clip responses.
 - Hand-upload ~5 clips from myinstants; hand-write `manifest/v1.json` next to them.
 - Expo prebuild + dev client + `react-native-audio-api`; 4×4 grid of pads.
 - Playback engine per §8: trigger on **`onPressIn`** (the RN equivalent of
@@ -178,8 +185,9 @@ Ordered so nothing blocks on a thing that takes a day to install.
 1. Android Studio + JDK; `npx create-expo-app`, `expo prebuild`, dev client on a
    real device over USB. **Do this first** — it's the longest-poled setup item
    and A1 is worthless if the toolchain fights.
-2. R2 bucket + API token + public dev domain; upload one file; fetch it from the
-   phone's browser.
+2. Private R2 bucket + API token + public read-only Worker route; upload one
+   file; fetch the Worker URL from the phone's browser without exposing an R2
+   endpoint or credentials.
 3. `react-native-audio-api` playing one hard-coded URL. If this doesn't work,
    the whole of A1 needs revisiting before anything else is built.
 4. Only then: droplet swap + `MemoryMax`, and the repo skeleton in §1.
