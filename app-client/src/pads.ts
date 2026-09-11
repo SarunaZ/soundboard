@@ -1,9 +1,10 @@
 import { Asset } from 'expo-asset';
 
+import { clipUrl, fetchManifest } from './manifest';
+
 /**
- * The pad list. Pad 1 is the M0 remote-path smoke test through the Cloudflare
- * Worker; the remaining pads stay bundled so remote and local playback can be
- * compared without changing the audio engine.
+ * The initial board uses bundled comparison tones. Step 6 replaces positions
+ * present in the configured manifest with Worker-backed clips.
  */
 export interface Pad {
   id: string;
@@ -13,7 +14,7 @@ export interface Pad {
   uri?: string;
 }
 
-const REMOTE_TEST_URI = process.env.EXPO_PUBLIC_REMOTE_CLIP_URL?.trim();
+export const MANIFEST_URL = process.env.EXPO_PUBLIC_MANIFEST_URL?.trim();
 
 const MODULES = [
   require('../assets/audio/pad-01.m4a'),
@@ -55,13 +56,25 @@ export const PADS: Pad[] = MODULES.map((module, i) => ({
   module,
 }));
 
-if (REMOTE_TEST_URI) {
-  PADS[0] = {
-    id: 'pad-01',
-    name: 'REMOTE',
-    color: COLORS[0]!,
-    uri: REMOTE_TEST_URI,
-  };
+export async function loadManifestPads(): Promise<Pad[]> {
+  if (!MANIFEST_URL) {
+    throw new Error('EXPO_PUBLIC_MANIFEST_URL is not configured');
+  }
+
+  const manifest = await fetchManifest(MANIFEST_URL);
+  const pads = PADS.map((pad) => ({ ...pad }));
+
+  for (const entry of manifest.pads) {
+    if (!entry.pinned || entry.gridPos >= pads.length) continue;
+    pads[entry.gridPos] = {
+      id: entry.padId,
+      name: entry.name,
+      color: entry.color ?? COLORS[entry.gridPos]!,
+      uri: clipUrl(manifest.baseUrl, entry.clipKey),
+    };
+  }
+
+  return pads;
 }
 
 /**

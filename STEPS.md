@@ -1,8 +1,9 @@
 # Soundboard — Steps
 
-**Status (authoritative):** setup done; steps 2, 3, 7 and 8 done. M0's remote path works;
-next is step 6 (seed the initial clip set and manifest).
-**Date:** 2026-08-15, revised 2026-09-04
+**Status (authoritative):** setup done; steps 2, 3, 6, 7 and 8 done. M0's feature
+path is complete; next is its real-phone/cellular exit measurement, then step 4
+before M1's first ffmpeg run.
+**Date:** 2026-08-15, revised 2026-09-11
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
 
@@ -49,10 +50,11 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   plays from an Android phone's browser. The client never receives R2 API
   credentials or an R2 bucket endpoint.
 - [x] 3. **Remote native playback — done.** `react-native-audio-api` plays the
-  Worker-backed clip in the Android emulator. The public Worker clip URL comes
-  from ignored `app-client/.env.local` as
-  `EXPO_PUBLIC_REMOTE_CLIP_URL`; Git contains only the blank
-  `app-client/.env.example`.
+  Worker-backed clip in the Android emulator. That original single-clip smoke
+  test has been superseded by step 6's manifest loader. The current public
+  manifest URL comes from ignored `app-client/.env.local` as
+  `EXPO_PUBLIC_MANIFEST_URL`; Git contains a safe public example and no R2
+  credentials.
 
   Launch preloading fetches and decodes configured remote pads before enabling
   them. After clearing app data, the original first press measured **1191 ms
@@ -83,7 +85,21 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
 
 ## M0 — Playback shell *(no server code at all)*
 
-- [ ] 6. Hand-upload ~5 myinstants clips; hand-write `manifest/v1.json` beside them.
+- [x] 6. **Initial clip set + manifest — done.** Five source MP3s were normalized
+  to AAC-LC, mono, 44.1 kHz, 64 kbps; named 1–5; uploaded to private R2 under
+  content-addressed `clips/<sha256>.m4a` keys; and described by immutable
+  `manifest/v1.json`. The public Worker exposes only versioned manifests and
+  clip keys, with byte-range support and immutable cache headers.
+
+  The app fetches and validates the untrusted manifest, maps its five pinned
+  entries into frozen grid positions 0–4, constructs Worker URLs from
+  `baseUrl + clipKey`, and preloads/decodes all five before enabling them. The
+  remaining 11 pads stay bundled comparison tones. Verified with validator
+  tests, strict TypeScript, all five live Worker objects, an all-ABI APK, and the
+  Android 36 x86_64 emulator on 2026-09-11. All five remote pads scheduled warm
+  at **37, 15, 16, 16 and 17 ms**, with a metric buffered for every tap.
+  **Still unmet:** the same run on a real phone over cellular, which is the M0
+  exit rather than part of the seed itself.
 - [x] 7. **4×4 pad grid + engine — done.** `app-client/src/audio/engine.ts` implements
   §8 as written: `onPressIn`, monophonic with an 8 ms fade on the outgoing voice,
   a gain node per voice, a fresh `AudioBufferSourceNode` per retrigger, LRU of 30
@@ -93,10 +109,9 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   §6's bimodal split. **It is not** (step 8 reconciles it): with bundled tones
   there is no network in the path, so no cold/warm network split can exist yet.
   246 ms was a first-tap-of-session, which constructs the AudioContext.
-  *Current audio:* pad 1 uses the configured Worker clip; the other 15 pads are
-  bundled AAC tones (mono/44.1k/64k per #14). Step 6 replaces this smoke-test
-  arrangement with the initial manifest-backed clip set — the engine still
-  takes a URI either way.
+  *Current audio:* pads 1–5 come from the configured Worker manifest; the other
+  11 pads are bundled AAC tones (mono/44.1k/64k per #14). The engine takes a URI
+  either way.
   *Library workaround:* the package root pulls in `AudioControls`, which imports
   `react-native-gesture-handler` and `react-native-reanimated` (neither a declared
   peer dep), so the engine deep-imports `lib/module/core/AudioContext`. The ambient
@@ -133,8 +148,8 @@ Prove both native toolchains before any product code depends on them (PLAN §4, 
   same-pad retrigger **3.3 ms**. §6 says "retrigger is free" and the 3.3 ms agrees;
   the 14 ms for a *cached* pad is the part nobody predicted.
 
-  **These are not a baseline.** Bundled tones put no network in the path, so §6's
-  bimodal split cannot appear until step 6. Treat every number above as a plumbing
+  **These are not a baseline.** They predate step 6's manifest-backed clips, so
+  they contain no useful network split. Treat every number above as a plumbing
   test. **Still unmet:** the real dataset needs a phone on cellular (step 1, R6).
 
   Pull a dataset with

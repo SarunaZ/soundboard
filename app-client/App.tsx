@@ -3,17 +3,18 @@ import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View }
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native';
 
-import { PADS, resolveUri, type Pad } from './src/pads';
+import { MANIFEST_URL, PADS, loadManifestPads, resolveUri, type Pad } from './src/pads';
 import { isWarm, play, stop, warm } from './src/audio/engine';
 import { beginTap, pendingCount, startMetrics } from './src/metrics';
 
-type RemoteState = 'warming' | 'ready' | 'failed' | 'unconfigured';
+type RemoteState = 'loading' | 'warming' | 'ready' | 'failed' | 'unconfigured';
 
 const REMOTE_STATUS: Record<RemoteState, string> = {
-  warming: 'Preparing REMOTE audio…',
-  ready: 'REMOTE preloaded · Worker → private R2',
-  failed: 'REMOTE preload failed · tap to retry',
-  unconfigured: 'Bundled pads only · configure the remote clip URL to test R2',
+  loading: 'Loading clip manifest…',
+  warming: 'Preparing remote audio…',
+  ready: '5 remote clips preloaded · Worker → private R2',
+  failed: 'Remote audio unavailable · reload to retry',
+  unconfigured: 'Bundled pads only · configure the manifest URL',
 };
 
 /**
@@ -24,18 +25,19 @@ const REMOTE_STATUS: Record<RemoteState, string> = {
  */
 export default function App() {
   const uris = useRef<Map<string, string>>(new Map());
+  const [pads, setPads] = useState<Pad[]>(() => PADS.map((pad) => ({ ...pad })));
   const [playing, setPlaying] = useState<string | null>(null);
   const [last, setLast] = useState<string>('');
   const [remoteState, setRemoteState] = useState<RemoteState>(
-    PADS.some((pad) => pad.uri !== undefined) ? 'warming' : 'unconfigured',
+    MANIFEST_URL ? 'loading' : 'unconfigured',
   );
 
   // Collect tap latencies for as long as the app is up (STEPS step 8).
   useEffect(startMetrics, []);
 
-  // Resolve every asset URI up front so a tap never waits on the filesystem.
-  // Remote pads are also fetched and decoded at launch. Keep their controls
-  // disabled until this finishes so the first enabled press takes the warm path.
+  // Fetch and validate the manifest, then resolve every URI up front so a tap
+  // never waits on the network or filesystem. Remote pads remain disabled until
+  // decode finishes, keeping the first enabled press on the warm path.
   useEffect(() => {
     let active = true;
 
@@ -50,27 +52,48 @@ export default function App() {
       }
     };
 
-    const remotePads = PADS.filter((pad) => pad.uri !== undefined);
-    const bundledPads = PADS.filter((pad) => pad.uri === undefined);
+    const preparePads = async (): Promise<void> => {
+      let nextPads = PADS.map((pad) => ({ ...pad }));
+      let manifestLoaded = false;
 
-    // Bundled resolution does not need to hold up remote warming.
-    Promise.all(bundledPads.map(resolve)).catch((err) => {
-      console.warn('[pads] bundled asset resolution failed', err);
-    });
+      if (MANIFEST_URL) {
+        try {
+          nextPads = await loadManifestPads();
+          manifestLoaded = true;
+        } catch (err) {
+          console.warn('[pads] manifest load failed', err);
+        }
+      }
 
-    const warmRemotePads = async (): Promise<void> => {
-      if (remotePads.length === 0) return;
+      if (!active) return;
+      setPads(nextPads);
+      uris.current.clear();
+
+      const remotePads = nextPads.filter((pad) => pad.uri !== undefined);
+      const bundledPads = nextPads.filter((pad) => pad.uri === undefined);
+      if (manifestLoaded) setRemoteState('warming');
+
+      // Bundled resolution does not need to hold up remote warming.
+      Promise.all(bundledPads.map(resolve)).catch((err) => {
+        console.warn('[pads] bundled asset resolution failed', err);
+      });
+
+      if (!MANIFEST_URL) return;
+      if (!manifestLoaded || remotePads.length === 0) {
+        setRemoteState('failed');
+        return;
+      }
 
       const remoteUris = await Promise.all(remotePads.map(resolve));
       await Promise.all(remoteUris.filter((uri): uri is string => uri !== null).map(warm));
 
       if (!active) return;
-      const ready = remoteUris.length > 0 && remoteUris.every((uri) => uri !== null && isWarm(uri));
+      const ready = remoteUris.every((uri) => uri !== null && isWarm(uri));
       setRemoteState(ready ? 'ready' : 'failed');
     };
 
-    warmRemotePads().catch((err) => {
-      console.warn('[pads] remote preload failed', err);
+    preparePads().catch((err) => {
+      console.warn('[pads] preparation failed', err);
       if (active) setRemoteState('failed');
     });
 
@@ -112,6 +135,7 @@ export default function App() {
   }, []);
 
   const startupStatus = REMOTE_STATUS[remoteState];
+  const rows = [0, 4, 8, 12].map((i) => pads.slice(i, i + 4));
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -122,17 +146,22 @@ export default function App() {
       </View>
 
       <View style={styles.grid}>
-        {ROWS.map((row, r) => (
+        {rows.map((row, r) => (
           <View key={r} style={styles.row}>
             {row.map((pad) => (
               <Pressable
                 key={pad.id}
-                disabled={pad.uri !== undefined && remoteState === 'warming'}
+                disabled={
+                  remoteState === 'loading' ||
+                  (pad.uri !== undefined && remoteState === 'warming')
+                }
                 onPressIn={() => trigger(pad)}
                 style={({ pressed }) => [
                   styles.pad,
                   { backgroundColor: pad.color },
-                  pad.uri !== undefined && remoteState === 'warming' && styles.padDisabled,
+                  (remoteState === 'loading' ||
+                    (pad.uri !== undefined && remoteState === 'warming')) &&
+                    styles.padDisabled,
                   pressed && styles.padPressed,
                 ]}
               >
@@ -155,9 +184,6 @@ export default function App() {
 }
 
 const GAP = 8;
-
-/** Four rows of four. Frozen positions - muscle memory (DESIGN §9). */
-const ROWS = [0, 4, 8, 12].map((i) => PADS.slice(i, i + 4));
 
 const styles = StyleSheet.create({
   // SafeAreaView applies no top inset on Android, so the header would sit

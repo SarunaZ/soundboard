@@ -73,11 +73,12 @@ sb.ps1 sb.sh  Docker-only task runner
 
 ## Status
 
-Setup is done and M0 is in progress; [STEPS.md](STEPS.md) is the authoritative
-implementation status. The R2 read path
-and remote native playback are proven through a Cloudflare Worker. Next is to
-seed the initial clip set and manifest; the other 15 pads remain bundled
-placeholders for comparison.
+Setup is done and M0's feature path is complete; [STEPS.md](STEPS.md) is the
+authoritative implementation status. Five clips are served from private R2
+through the public Cloudflare Worker, and the app loads, validates, resolves,
+and preloads them from the immutable v1 manifest. The other 11 pads remain
+bundled placeholders for comparison. The remaining M0 exit check is a measured
+run on a real phone over cellular.
 
 ## Licence and scope
 
