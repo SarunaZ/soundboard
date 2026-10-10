@@ -18,5 +18,7 @@ app-client/index.ts
 app-client/tsconfig.json
 
 .env
+**/.env
+**/.env.local
 *.log
 data/

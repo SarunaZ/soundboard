@@ -27,6 +27,7 @@ RUN apt-get update \
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY shared/package.json shared/
 COPY service/package.json service/
+COPY worker/package.json worker/
 COPY app-client/package.json app-client/
 
 # `workspaces focus` installs only these two workspaces — no Expo, no RN.
@@ -57,10 +58,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# yt-dlp as a pinned self-contained binary (PLAN §1: pinned versions, invoked
-# with spawn). "latest" is fine for development; pin a tag before the droplet
-# deploy so a yt-dlp release can never change behaviour under you.
-ARG YTDLP_VERSION=latest
+# Pin the official release so an image rebuild does not silently change the
+# extractor. Update this deliberately with a verified release.
+ARG YTDLP_VERSION=2026.08.19
 RUN set -eux; \
     if [ "${YTDLP_VERSION}" = "latest" ]; then \
       url="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux"; \

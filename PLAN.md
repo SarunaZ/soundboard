@@ -1,16 +1,70 @@
 # Soundboard — Plan of Action
 
-**Status:** setup complete; M0 implementation is in progress. See
-[STEPS.md](STEPS.md) for authoritative implementation status.
-**Date:** 2026-08-15, revised 2026-09-04
+**Status:** M0's remote feature path is complete; its real-phone/cellular
+measurement remains pending. The 2026-10-10 local-authoring pivot is implemented
+and fixture-verified through render and local save. The backend live-source
+smoke also passed for a watch-plus-playlist URL and a Shorts URL, including
+ranged previews and 2-second renders without access bypass. App strict TypeScript,
+the shared/service TypeScript build, all 19 tests, and the all-ABI debug APK on
+the Android 36 emulator pass. Saved-file playback after app restart was verified
+on the Android 36 emulator with the API/worker stopped and Wi-Fi/mobile data off;
+the debug JS bundle still came over USB Metro. Physical-phone and live-source
+in-app save checks remain pending. See [STEPS.md](STEPS.md) for the authoritative
+L-series sequence and historical implementation status.
+**Date:** 2026-08-15, revised 2026-10-10
 **Reads with:** [DESIGN.md](DESIGN.md) — that doc holds the *why*; this one holds the *order*.
 
 ---
 
-## 0. What changed since DESIGN.md
+## Current direction — approved pivot (2026-10-10)
 
-Three amendments. Everything else in DESIGN.md stands, including the invariant
-that **the droplet is never on the playback path**.
+This section takes precedence over the historical editor-first and online-first
+plans below, only for newly authored local clips. It does not replace the
+existing remote board: its five R2-backed clips, public Worker reads, and
+11 bundled comparison pads remain as they are. The remote cache ladder has not
+been completed by this pivot.
+
+The user pastes a YouTube URL into the Android app. The app displays an in-app
+waveform with two range handles, previews the selected range, asks the existing
+temporary service to render the selected audio as an actual `.m4a`, and saves
+that file plus a local catalog entry under `Paths.document/local-clips`. This
+private app library persists across app restarts and supports offline local
+playback. Android uninstall removes it; this is not the Downloads folder or a
+cloud backup. The server has no persistent output library and performs no R2
+writes for this flow.
+
+The service is a temporary source/preview/render boundary. It rejects sources
+over 20 minutes, limits a selection to 60 seconds, and expires temporary files
+through TTL cleanup. `/health` is independent and unauthenticated; all `/editor`
+endpoints require the `EDITOR_TOKEN` bearer token. In the ignored
+`app-client/.env.local`, set `EXPO_PUBLIC_EDITOR_API_URL` and
+`EXPO_PUBLIC_EDITOR_TOKEN`; the token value must match the service's
+`EDITOR_TOKEN`. It is a personal token baked into this app build, not production
+authentication.
+
+For USB development, bind the Docker API on host loopback port 8080, run
+`adb reverse tcp:8080 tcp:8080`, and set the app URL to
+`http://127.0.0.1:8080`. Keep Metro's existing `adb reverse tcp:8081 tcp:8081`
+too. This loopback HTTP setup is for local USB development only; a remote private
+endpoint must use HTTPS. Never publish the loopback Docker service binding.
+Adding `expo-audio` requires a rebuilt APK; if the ignored `app-client/android`
+directory needs regeneration, use the normal Expo prebuild without a clean
+wipe.
+
+Cloudflare uploads may be considered later as a separate feature. For the
+current local flow, the selection is not uploaded to R2 and must remain playable
+after restart and with the service unavailable.
+
+## Historical amendments to DESIGN.md
+
+The following table records the earlier roadmap and is not the current local
+clip sequence. A1's Android client choice remains; A2's YouTube adapter and A3's
+separate web editor are superseded for local authoring by the pivot above. Their
+unfinished remote ingest/editor work remains deferred, not complete.
+
+These three amendments describe the historical architecture decisions. The
+local-authoring pivot above supersedes their editor-first scope; the existing
+remote playback board still keeps the droplet off its playback path.
 
 | # | Amendment | Supersedes | Cost accepted |
 |---|---|---|---|
@@ -18,8 +72,12 @@ that **the droplet is never on the playback path**.
 | **A2** | **YouTube moves from last to second.** | M4 → M2 | The fragile path becomes load-bearing much earlier. Mitigated by keeping the direct-file adapter as M1's smoke test (§3, M1) so the pipeline is proven against a source that cannot break before yt-dlp is introduced. |
 | **A3** | **Editor ships inside the ingest service** — one repo, one deploy, one origin. | — | None structurally; this is what DESIGN §5 already implies. Note it means *one service*, not *one process*: §7 still requires the worker be a separate process. |
 
-**Not changed, confirmed:** masters are still discarded after render (#5), and the
-service still shares the $5 droplet with imli-system under a hard memory cap (#3, §7).
+**Historical remote-plan note:** for that R2 pipeline, masters are discarded
+after render (#5), and the service shares the $5 droplet with imli-system under
+a hard memory cap (#3, §7). This does not describe the local clip library.
+
+Sections 1–6 below retain the prior remote-ingest plan as context. That work is
+deferred; the current local-authoring sequence is the L-series in [STEPS.md](STEPS.md).
 
 ---
 

@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
+import { AppState, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native';
 
 import { MANIFEST_URL, PADS, loadManifestPads, resolveUri, type Pad } from './src/pads';
 import { isWarm, play, stop, warm } from './src/audio/engine';
 import { beginTap, pendingCount, startMetrics } from './src/metrics';
+import { EditorScreen } from './src/editor/EditorScreen';
+import { LibraryScreen } from './src/editor/LibraryScreen';
 
 type RemoteState = 'loading' | 'warming' | 'ready' | 'failed' | 'unconfigured';
+type Page = 'board' | 'editor' | 'library';
 
 const REMOTE_STATUS: Record<RemoteState, string> = {
   loading: 'Loading clip manifest…',
@@ -28,12 +31,30 @@ export default function App() {
   const [pads, setPads] = useState<Pad[]>(() => PADS.map((pad) => ({ ...pad })));
   const [playing, setPlaying] = useState<string | null>(null);
   const [last, setLast] = useState<string>('');
+  const [page, setPage] = useState<Page>('board');
   const [remoteState, setRemoteState] = useState<RemoteState>(
     MANIFEST_URL ? 'loading' : 'unconfigured',
   );
 
   // Collect tap latencies for as long as the app is up (STEPS step 8).
   useEffect(startMetrics, []);
+
+  useEffect(() => {
+    if (page !== 'board') {
+      stop();
+      setPlaying(null);
+    }
+  }, [page]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        stop();
+        setPlaying(null);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   // Fetch and validate the manifest, then resolve every URI up front so a tap
   // never waits on the network or filesystem. Remote pads remain disabled until
@@ -140,6 +161,10 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
+      {page === 'editor' ? <EditorScreen onOpenLibrary={() => setPage('library')} /> : null}
+      {page === 'library' ? <LibraryScreen onBack={() => setPage('editor')} /> : null}
+
+      {page === 'board' ? <>
       <View style={styles.header}>
         <Text style={styles.title}>Soundboard</Text>
         <Text style={styles.meta}>{last || startupStatus}</Text>
@@ -179,7 +204,23 @@ export default function App() {
       ) : (
         <View style={styles.killPlaceholder} />
       )}
+      </> : null}
+
+      <View style={styles.nav}>
+        <NavButton label="BOARD" active={page === 'board'} onPress={() => setPage('board')} />
+        <NavButton label="EDITOR" active={page === 'editor'} onPress={() => setPage('editor')} />
+        <NavButton label="LIBRARY" active={page === 'library'} onPress={() => setPage('library')} />
+      </View>
     </SafeAreaView>
+  );
+}
+
+function NavButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={styles.navItem}>
+      <View style={[styles.navDot, active && styles.navDotActive]} />
+      <Text style={[styles.navText, active && styles.navTextActive]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -217,4 +258,10 @@ const styles = StyleSheet.create({
   },
   killText: { color: '#fff', fontWeight: '700', letterSpacing: 2 },
   killPlaceholder: { height: 0 },
+  nav: { height: 62, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderColor: '#272c31', backgroundColor: '#171a1e', paddingHorizontal: 8 },
+  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 5, height: '100%' },
+  navDot: { width: 4, height: 4, borderRadius: 3, backgroundColor: '#59636c' },
+  navDotActive: { width: 15, backgroundColor: '#7ae3bf' },
+  navText: { color: '#78838b', fontSize: 9, letterSpacing: 1.3, fontWeight: '700' },
+  navTextActive: { color: '#e9f1ef' },
 });

@@ -95,3 +95,21 @@ export interface LatencySample {
   connectionType: string;
   at: string;
 }
+
+/** Temporary, phone-editable source session. Audio bytes stay on the service only until expiry. */
+export type EditorSessionState = 'queued' | 'fetching' | 'ready' | 'rendering' | 'rendered' | 'failed';
+
+export interface EditorSession {
+  id: string;
+  sourceUrl: string;
+  title: string | null;
+  durationMs: number | null;
+  state: EditorSessionState;
+  previewPath: string | null;
+  clipPath: string | null;
+  peaks: number[];
+  expiresAt: string;
+  error: string | null;
+  trimStartMs: number | null;
+  trimEndMs: number | null;
+}

@@ -1,0 +1,8 @@
+# Working workflow
+
+- The primary agent should use `gpt-6.1-sol` with high reasoning effort for planning, architecture, decisions, and final review. For unusually difficult planning, use the strongest suitable model available and explain the escalation.
+- Every coding task must delegate implementation to at least one cheaper coding subagent, defaulting to `gpt-6-luna` with high reasoning effort, including small tasks. The primary agent should provide a concise plan and acceptance checks, give each worker bounded ownership and only the context it needs, avoid overlapping writers, review the result, and perform appropriate verification before delivery. Parallelize independent workers only when useful; workers should not recursively spawn agents without a concrete need.
+- If subagents are unavailable, report that constraint rather than claiming delegation; independent read-only work may continue. Escalate a worker to a more capable available model only when evidence from the task warrants it, and state the reason.
+- Before implementation, read `STEPS.md`, `README.md`, and applicable directory-level `AGENTS.md` files. Preserve existing user changes. Do not commit or push automatically.
+- Model and agent defaults in `.codex/config.toml` apply when the project configuration is loaded, such as after a reload or in a new session. Runtime, CLI, or current app model choices can override the project default; editing this file does not change a model already selected for an existing conversation.
+- When editing Codex TOML, preserve table scope: keep root-level keys before table headers, back up global config first, validate with the installed runtime, and do not restart apps automatically.

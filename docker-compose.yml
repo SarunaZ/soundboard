@@ -23,6 +23,7 @@ x-service: &service
     NODE_ENV: production
     DB_PATH: /data/soundboard.db
     TEMP_DIR: /var/tmp/soundboard
+    HOST: 0.0.0.0
   volumes:
     - db:/data
     - temp:/var/tmp/soundboard

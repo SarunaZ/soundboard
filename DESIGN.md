@@ -1,17 +1,66 @@
 # Soundboard — Design
 
-**Status:** architecture settled; M0 implementation is in progress. See
-[STEPS.md](STEPS.md) for authoritative implementation status and [PLAN.md](PLAN.md)
-for amendments to the original design.
-**Date:** 2026-08-15, revised 2026-09-04
+**Status:** M0's remote feature path is complete; the real-phone/cellular
+measurement remains pending. The 2026-10-10 local-authoring pivot is the current
+direction and is fixture-verified through render and local save. App strict
+TypeScript, the shared/service TypeScript build, all 19 tests, and the all-ABI
+debug APK on the Android 36 emulator pass. Saved-file playback after app restart
+was verified on that emulator with the API/worker stopped and Wi-Fi/mobile data
+off; the debug JS bundle still came over USB Metro. The backend live-source
+smoke passed for watch-plus-playlist video `OjNpRbNdR7E` and Shorts video
+`jlPQtJXy9t8`, including ranged previews and 2-second renders without bypassing
+access restrictions. Physical-phone interaction and live-source in-app save
+checks remain pending. See [STEPS.md](STEPS.md) for the authoritative L-series
+sequence and historical roadmap status.
+**Date:** 2026-08-15, revised 2026-10-10
+
+---
+
+## Current direction — local authoring pivot (2026-10-10)
+
+This dated amendment takes precedence over the older web-editor-first and
+online-first decisions only for newly authored local clips. The existing
+Cloudflare Worker/R2 board remains the remote comparison path: its current
+manifest and five clips are unchanged, and the other 11 bundled pads remain
+comparisons. This pivot does not claim the remote cache ladder is complete.
+
+The Android app accepts a permitted YouTube URL, shows an in-app waveform with
+two range handles, previews the selected range, and requests a rendered `.m4a`
+for that actual range. The resulting file and a local catalog entry live under
+`Paths.document/local-clips` in the app-private library. They survive app
+restarts and play offline without the service. Android uninstall removes them;
+they are not Downloads and are not automatically cloud-backed-up.
+
+The existing temporary service is used only to fetch the source, provide
+preview audio, and render the selected range. Source duration is capped at 20
+minutes; selected ranges are capped at 60 seconds. Temporary server files expire
+through TTL cleanup. There is no persistent server output library and no R2
+write in this flow. `/health` is unauthenticated and independent; every `/editor`
+endpoint requires an `EDITOR_TOKEN` bearer token. The app's ignored
+`app-client/.env.local` uses `EXPO_PUBLIC_EDITOR_API_URL` and
+`EXPO_PUBLIC_EDITOR_TOKEN`, with the latter equal to the service token. This is
+a personal token embedded in the app build, not production authentication.
+
+For local USB development only, bind the Docker API to host loopback port 8080,
+run `adb reverse tcp:8080 tcp:8080`, and use
+`EXPO_PUBLIC_EDITOR_API_URL=http://127.0.0.1:8080`; Metro still needs
+`adb reverse tcp:8081 tcp:8081`. Do not expose the loopback binding publicly.
+Use HTTPS for a remote private endpoint. Adding `expo-audio` requires an APK
+rebuild; if `app-client/android` needs regeneration, use ordinary Expo prebuild
+without a clean wipe. YouTube smoke checks must use content the user owns or is
+allowed to use; login, bot, and access restrictions are not bypassed.
+
+Cloudflare uploads are a possible later feature and are outside this local flow.
+The sections below retain the prior remote soundboard and ingest design for
+context; read this amendment as current wherever the older design differs.
 
 ---
 
 ## 1. Objective
 
 A personal soundboard: a grid of pads on an Android phone that fire short meme
-sounds instantly, plus a web editor for grabbing audio from a URL and trimming
-it down to the exact moment worth keeping.
+sounds instantly, plus local in-app authoring that turns a permitted source URL
+into a trimmed, offline-playable phone clip.
 
 **The real objective is learning asset management.** Where two designs compete,
 prefer the one that exposes asset-pipeline concepts — masters and derivatives,
@@ -330,8 +379,8 @@ its output.
 - **Capability URLs can't be revoked** without re-keying the object. A leaked URL — screenshot, log — leaks that clip permanently. Fine for public meme audio.
 - **Single-writer SQLite** — no horizontal scaling of workers.
 - **yt-dlp from a datacenter IP will be fought** by YouTube, increasingly over time. It is deliberately not on the critical path.
-- **Ripping YouTube audio breaches their ToS.** Private, personal, non-commercial use only. This can never become a public product with a signup page.
-- **No offline playback** by choice (#8) — the app is useless with no signal, which is often exactly where a soundboard is wanted. Revisit at M5 if it stops being interesting and starts being annoying.
+- **Respect YouTube's terms and access restrictions.** Private, personal, non-commercial use only; this is not a public product with a signup page.
+- **Remote comparison clips remain online-first** by choice (#8). The local-authoring pivot adds offline playback for user-created clips only; it does not mean the remote file-cache ladder is complete.
 
 ---
 

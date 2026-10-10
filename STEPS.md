@@ -1,9 +1,18 @@
 # Soundboard — Steps
 
-**Status (authoritative):** setup done; steps 2, 3, 6, 7 and 8 done. M0's feature
-path is complete; next is its real-phone/cellular exit measurement, then step 4
-before M1's first ffmpeg run.
-**Date:** 2026-08-15, revised 2026-09-11
+**Status (authoritative, 2026-10-10):** M0's remote feature path is complete;
+its real-phone/cellular exit measurement remains pending. Local authoring L1–L5,
+L7, L8 backend live-source smoke and L10 are implemented and verified. App
+strict TypeScript and the service/shared TypeScript build pass; all 13 native-free
+app/Worker tests and all 6 service tests pass. The all-ABI arm64+x86_64 debug APK
+is built and installed on the Android 36 emulator. L6 saved-file playback is
+verified on that emulator with the API/worker stopped and Wi-Fi/mobile data off;
+its debug JS still came over USB Metro, so standalone offline launch is not
+verified. L9 physical-phone interaction and live-source in-app save checks
+remain pending. Follow the L-series below for current work. The numbered 1–27
+remote pipeline remains historical/deferred; its open items are not completed
+by this pivot.
+**Date:** 2026-08-15, revised 2026-10-10
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
 
@@ -29,6 +38,79 @@ is needed to build. `.\sb.ps1 build` (or `./sb.sh build`) does everything:
 dependencies, service image, APK. See `sb.ps1 help` for the rest.
 
 ---
+
+## Current local-authoring sequence (L-series)
+
+These identifiers are separate from historical steps 1–27. Keep every item
+pending until implementation and the stated acceptance check are confirmed.
+
+- [x] **L1 — Temporary editor API boundary.** Published the Docker API on host
+  loopback port 8080 for USB development. Keep `/health` independent and
+  unauthenticated; require the `EDITOR_TOKEN` bearer token on every `/editor`
+  endpoint. Configure the ignored `app-client/.env.local` with
+  `EXPO_PUBLIC_EDITOR_API_URL` and `EXPO_PUBLIC_EDITOR_TOKEN`, using the same
+  token value as the service. It is a personal token embedded in the app build,
+  not production auth. For USB, run `adb reverse tcp:8080 tcp:8080` and set the
+  URL to `http://127.0.0.1:8080`; keep Metro's `adb reverse tcp:8081 tcp:8081`.
+  Never expose this loopback binding publicly; use HTTPS for a remote private
+  endpoint.
+- [x] **L2 — Temporary source and preview.** Accept a YouTube URL in the Android
+  flow, allow sources up to 20 minutes, provide preview audio, and expire server
+  temporary files with TTL cleanup. Do not create a persistent server output
+  library or write to R2. Handle YouTube restrictions without login/bot/access
+  bypass. Verified with the deterministic fake-source flow; the backend
+  live-source smoke is recorded in L8.
+- [x] **L3 — In-app range editor.** Displayed the source waveform with two
+  draggable handles and previewed the selected range in the emulator. Selection
+  is capped at 60 seconds.
+- [x] **L4 — Render the selection.** Rendered the selected range into a real
+  `.m4a` and verified range changes invalidate the old render before rerender.
+  The selected clip metadata is 1477 ms; ffprobe reports 1.478 s after codec
+  rounding. Service tests also cover range, auth, error, cleanup, and AAC mono
+  44.1 kHz output.
+- [x] **L5 — Private local library.** Saved the rendered clip and catalog entry
+  under `Paths.document/local-clips` after naming the clip. It is app-private,
+  removed by Android uninstall, and is not Downloads or automatic cloud backup.
+  Offline playback/restart verification is tracked in L6.
+- [x] **L6 — Offline local playback.** Verified on the Android 36 emulator:
+  after force-stop/restart, the saved clip remained in the local catalog and
+  played with API/worker containers stopped, airplane mode on, Wi-Fi off, and
+  mobile data off. Native MediaSession reported `PLAYING` with no error and
+  AudioFlinger showed an active mono 44.1 kHz app track; playback stopped after
+  about 1.487 s. The copied saved file probes as AAC mono 44.1 kHz, 1.478 s,
+  matching its 1477 ms metadata. The debug JS bundle was still served over USB
+  Metro; this verifies local file audio without the API/cloud, not a standalone
+  offline app launch, real phone, or audible listening. It does not mark the
+  remote cache ladder done.
+- [x] **L7 — Deterministic fixture and API checks.** Verified the fake fixture
+  flow through app import, preview, range selection, render, and local save. All
+  13 native-free app/Worker tests and all 6 service tests pass. The service suite
+  covers fake YouTube plus real ffmpeg rendering, retry after partial download,
+  service-side active cancellation and cleanup, HTTP Range 206, and AAC mono
+  44.1 kHz trim duration. App-level cancel/error cleanup with no partial local
+  file is not yet verified; keep that check in L9.
+- [x] **L8 — Backend live source smoke.** Using the existing API/worker and
+  official yt-dlp/FFmpeg path, imported watch-plus-playlist video
+  `OjNpRbNdR7E` and Shorts video `jlPQtJXy9t8` without cookies or access
+  bypass. Both produced a ready source and a ranged preview (HTTP 206); each
+  rendered a 2-second clip. This verifies backend source compatibility only;
+  the live-source in-app save flow remains pending in L9.
+- [ ] **L9 — Physical-phone interaction check.** On a physical Android phone,
+  use a live permitted source, drag both handles, preview the range, save it,
+  restart the app, then play it in airplane mode without the service. Confirm
+  cancel/error paths leave no partial files. Pending.
+- [x] **L10 — Native build refresh.** Rebuilt the all-ABI arm64+x86_64 debug
+  APK with the `expo-audio` native dependency and installed it on the Android
+  36 emulator. If the ignored `app-client/android` directory needs regeneration
+  later, use normal Expo prebuild without a clean wipe. Keep Metro's 8081 reverse
+  and the API's 8080 reverse configured for USB development.
+
+## Historical remote pipeline roadmap (steps 1–27)
+
+The following checklist records prior implementation history and the deferred
+remote-ingest plan. It is not the active local-authoring sequence. M0 history and
+its real-phone/cellular measurement remain as recorded; open remote items remain
+open and are not implied complete by L1–L10.
 
 ## Setup — day one
 

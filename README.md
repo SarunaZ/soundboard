@@ -1,8 +1,10 @@
 # Soundboard
 
-A grid of pads on an Android phone that fire short meme sounds instantly, plus a
-web editor for grabbing audio from a URL and trimming it to the moment worth
-keeping.
+A grid of pads on an Android phone that fire short meme sounds instantly. The
+approved local-authoring flow lets you paste a permitted YouTube URL in the
+Android app, trim a moment, render an `.m4a`, and keep it in the phone's private
+library for offline playback. The existing Cloudflare Worker/R2 board remains
+the remote playback comparison path; local clips are not uploaded to it.
 
 The real objective is **learning asset management** — masters and derivatives,
 content addressing, ingest job state, storage lifecycle, cache behaviour. Several
@@ -48,6 +50,38 @@ cache lives in a named volume.
 
 Copy `.env.example` to `.env` before running Metro or the service.
 
+## Local editor on Android (USB development)
+
+The temporary editor API listens on host loopback port 8080. Put a personal
+`EDITOR_TOKEN=<same-secret>` in the ignored root `.env`. In the ignored
+`app-client/.env.local`, set the matching token and local URL:
+
+```dotenv
+EXPO_PUBLIC_EDITOR_API_URL=http://127.0.0.1:8080
+EXPO_PUBLIC_EDITOR_TOKEN=<same-secret>
+```
+
+Build the service image and APK with `.\sb.ps1 build`, then run
+`.\sb.ps1 service:up` and `.\sb.ps1 metro`. Refresh the native APK with
+`.\sb.ps1 apk` after native dependency changes. With the Android phone
+connected over USB, forward both ports:
+
+```powershell
+adb reverse tcp:8080 tcp:8080
+adb reverse tcp:8081 tcp:8081
+```
+
+The 8080 HTTP URL and loopback binding are for USB development only. Do not
+publish the loopback service binding; use HTTPS for a remote private endpoint.
+Rendered clips stay in the app-private local library, support offline playback,
+and are removed when the app is uninstalled. They are not uploaded to Cloudflare
+R2.
+
+The editor accepts standard YouTube watch links, Shorts links, and `youtu.be`
+share links over HTTP or HTTPS. It imports only the selected video: playlist
+and tracking parameters are discarded, and a playlist link without a video ID
+is rejected.
+
 ## Layout
 
 ```
@@ -73,15 +107,26 @@ sb.ps1 sb.sh  Docker-only task runner
 
 ## Status
 
-Setup is done and M0's feature path is complete; [STEPS.md](STEPS.md) is the
-authoritative implementation status. Five clips are served from private R2
-through the public Cloudflare Worker, and the app loads, validates, resolves,
-and preloads them from the immutable v1 manifest. The other 11 pads remain
-bundled placeholders for comparison. The remaining M0 exit check is a measured
-run on a real phone over cellular.
+M0's remote feature path is complete; its real-phone/cellular measurement is
+still pending. Five clips are served from private R2 through the public
+Cloudflare Worker, and the app loads, validates, resolves, and preloads them
+from the immutable v1 manifest. The other 11 pads remain bundled placeholders
+for comparison. The local-authoring pivot was approved on 2026-10-10. App and
+service type checks/builds, all 19 tests, and an all-ABI debug APK installed on
+the Android 36 emulator have passed. The fixture-based in-app trim/render/save
+flow and saved-file offline playback are verified on the Android 36 emulator
+after app restart with the API/worker stopped and Wi-Fi/mobile data off
+(MediaSession/AudioFlinger confirmed playback of the saved 1.478 s AAC file).
+The debug JS bundle still came over USB Metro, so this is not a standalone
+offline-launch or audible-listening claim. The backend live-source smoke also
+passed for watch-plus-playlist video `OjNpRbNdR7E` and Shorts video
+`jlPQtJXy9t8`: both imported, returned ranged previews, and rendered a 2-second
+clip without bypassing YouTube access restrictions. Physical-phone interaction
+and the live-source in-app save flow remain pending. [STEPS.md](STEPS.md) is
+authoritative for the L-series local workflow and historical 1–27 roadmap.
 
 ## Licence and scope
 
-Private, personal, non-commercial. Ripping YouTube audio breaches their terms of
-service, so this can never become a public product with a signup page
-(DESIGN §11).
+Private, personal, non-commercial. Use YouTube sources only when you own them or
+are allowed to use them. The local editor does not bypass YouTube login, bot, or
+access restrictions; see the current-direction section in [DESIGN.md](DESIGN.md).
