@@ -1,0 +1,89 @@
+name: soundboard-imli-test
+
+services:
+  mongo:
+    image: mongo:7
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - mongo-test-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [test]
+
+  mongo-seed:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint: ["mongosh"]
+    command:
+      - mongodb://mongo:27017/imli_test
+      - --quiet
+      - --eval
+      - >-
+        const inserted = db.getCollection('cheeks-data').insertMany(
+          Array.from({length: 1000}, (_, i) => ({
+            nickname: 'shared-container-fixture-' + i,
+            timestamp: new Date()
+          }))
+        ); printjson({seeded: Object.keys(inserted.insertedIds).length})
+    networks: [test]
+
+  gateway:
+    image: soundboard-imli-prototype:local
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      NODE_ENV: test
+      NODE_CLIENT_URL: http://127.0.0.1:18081
+      NODE_DATABASE_URL: mongodb://mongo:27017/imli_test
+      NODE_LOGIN_SECRET: local-test-only-placeholder
+      EDITOR_TOKEN: local-editor-test-only-placeholder
+      YTDLP_BIN: /opt/shared-imli/test/fake-yt-dlp.sh
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:4000/health >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "127.0.0.1:18081:4000"
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 1
+    pids_limit: 256
+    init: true
+    networks: [test]
+
+  harness:
+    image: node:24-bookworm-slim
+    depends_on:
+      gateway:
+        condition: service_healthy
+      mongo-seed:
+        condition: service_completed_successfully
+    entrypoint: ["node", "/test/integration.mjs"]
+    environment:
+      API_BASE: http://gateway:4000
+      EDITOR_TOKEN: local-editor-test-only-placeholder
+      GRAPHQL_URL: http://gateway:4000/graphql
+      IMLI_READ_ENDPOINT: http://gateway:4000/api/get-cheeks?page=1&limit=10
+      LOAD_CONCURRENCY: "4"
+      SAFEGUARDS: ${SAFEGUARDS:-0}
+      SOAK_SECONDS: ${SOAK_SECONDS:-300}
+    volumes:
+      - ./test:/test:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    networks: [test]
+
+networks:
+  test:
+    internal: true
+
+volumes:
+  mongo-test-data:

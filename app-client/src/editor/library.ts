@@ -1,19 +1,20 @@
 import { Directory, File, Paths } from 'expo-file-system';
 
-import { appendClip, parseClipCatalog, removeClip, type ClipCatalog, type SavedClip } from './catalog';
+import { appendClip, normalizeClipTitle, parseClipCatalog, removeClip, renameClip, type AudioExtension, type ClipCatalog, type SavedClip } from './catalog';
+import { MAX_SOUNDBITES } from '../limits';
 import { isUuid } from './protocol';
 import { generatedClipId } from './catalog';
 import { boundedSignal } from './network';
+import { loadBoardAssignments, removeLocalClipAssignments, saveBoardAssignments } from '../board/storage';
 
 const LIBRARY_DIRECTORY = new Directory(Paths.document, 'local-clips');
 const CACHE_FILE = new File(LIBRARY_DIRECTORY, 'catalog.json');
 const BACKUP_FILE = new File(LIBRARY_DIRECTORY, 'catalog.backup.json');
-const NEXT_FILE = new File(LIBRARY_DIRECTORY, 'catalog.next.json');
 const MAX_RENDER_BYTES = 2 * 1024 * 1024;
 
-function audioFile(id: string): File {
+function audioFile(id: string, extension: AudioExtension = 'm4a'): File {
   if (!isUuid(id)) throw new Error('Invalid local clip ID.');
-  return new File(LIBRARY_DIRECTORY, `${id}.m4a`);
+  return new File(LIBRARY_DIRECTORY, `${id}.${extension}`);
 }
 
 function emptyCatalog(): ClipCatalog {
@@ -47,8 +48,11 @@ function readCatalog(): ClipCatalog {
 function writeCatalog(catalog: ClipCatalog): void {
   const validated = parseClipCatalog(catalog);
   LIBRARY_DIRECTORY.create({ intermediates: true, idempotent: true });
-  NEXT_FILE.create({ overwrite: true });
-  NEXT_FILE.write(JSON.stringify(validated));
+  // Expo File.moveSync updates the source File object's URI to its destination.
+  // Create a fresh staging handle for every snapshot write.
+  const nextFile = new File(LIBRARY_DIRECTORY, 'catalog.next.json');
+  nextFile.create({ overwrite: true });
+  nextFile.write(JSON.stringify(validated));
 
   // A prior copy remains available if the process is interrupted while the
   // new snapshot is being moved into place.
@@ -60,7 +64,13 @@ function writeCatalog(catalog: ClipCatalog): void {
       // If the primary is already damaged, retain the previous backup.
     }
   }
-  NEXT_FILE.moveSync(CACHE_FILE, { overwrite: true });
+  nextFile.moveSync(CACHE_FILE, { overwrite: true });
+}
+
+export function assertLibraryCapacity(): void {
+  if (readCatalog().clips.length >= MAX_SOUNDBITES) {
+    throw new Error(`The library is full. It can hold up to ${MAX_SOUNDBITES} soundbites.`);
+  }
 }
 
 function isMp4(file: File): boolean {
@@ -76,13 +86,14 @@ export interface LocalClip extends SavedClip {
 }
 
 export function localClipUri(id: string): string {
-  return audioFile(id).uri;
+  const clip = readCatalog().clips.find((entry) => entry.id === id);
+  return audioFile(id, clip?.extension ?? 'm4a').uri;
 }
 
 export function loadLocalClips(): LocalClip[] {
   const catalog = readCatalog();
   return catalog.clips.map((clip) => {
-    const file = audioFile(clip.id);
+    const file = audioFile(clip.id, clip.extension);
     const missing = !file.exists || file.size <= 0;
     return { ...clip, uri: missing ? '' : file.uri, missing };
   });
@@ -95,9 +106,9 @@ export async function saveRenderedClip(
   durationMs: number,
   signal: AbortSignal,
 ): Promise<LocalClip> {
-  const cleanTitle = title.trim().slice(0, 100);
-  if (!cleanTitle) throw new Error('Give this clip a name before saving.');
+  const cleanTitle = normalizeClipTitle(title);
   if (!Number.isInteger(durationMs) || durationMs <= 0 || durationMs > 60_000) throw new Error('The rendered clip has an invalid duration.');
+  assertLibraryCapacity();
 
   LIBRARY_DIRECTORY.create({ intermediates: true, idempotent: true });
   const id = generatedClipId();
@@ -123,6 +134,7 @@ export async function saveRenderedClip(
       title: cleanTitle,
       durationMs,
       createdAt: new Date().toISOString(),
+      extension: 'm4a',
     };
     const catalog = readCatalog();
     writeCatalog(appendClip(catalog, entry));
@@ -138,10 +150,38 @@ export async function saveRenderedClip(
   }
 }
 
+/** Commit metadata after the caller has copied and validated its owned audio file. */
+export function commitImportedClip(entry: SavedClip): LocalClip {
+  const validated = parseClipCatalog({ version: 1, clips: [entry] }).clips[0]!;
+  const file = audioFile(validated.id, validated.extension);
+  if (!file.exists || file.size <= 0) throw new Error('The imported audio file is missing or empty.');
+  writeCatalog(appendClip(readCatalog(), validated));
+  return { ...validated, uri: file.uri, missing: false };
+}
+
+export function renameLocalClip(id: string, title: string): void {
+  const nextCatalog = renameClip(readCatalog(), id, title);
+  writeCatalog(nextCatalog);
+}
+
 export function deleteLocalClip(id: string): void {
   const catalog = readCatalog();
+  const clip = catalog.clips.find((entry) => entry.id === id);
   const nextCatalog = removeClip(catalog, id);
-  writeCatalog(nextCatalog);
-  const file = audioFile(id);
+  const previousAssignments = loadBoardAssignments();
+  removeLocalClipAssignments(id);
+  try {
+    writeCatalog(nextCatalog);
+  } catch (catalogError) {
+    try {
+      saveBoardAssignments(previousAssignments);
+    } catch (rollbackError) {
+      const catalogMessage = catalogError instanceof Error ? catalogError.message : String(catalogError);
+      const rollbackMessage = rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
+      throw new Error(`Could not update the clip catalog: ${catalogMessage}. Board assignment rollback also failed: ${rollbackMessage}.`);
+    }
+    throw catalogError;
+  }
+  const file = audioFile(id, clip?.extension ?? 'm4a');
   if (file.exists) file.delete();
 }

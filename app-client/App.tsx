@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, AppState, FlatList, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native';
 
@@ -8,14 +8,20 @@ import { isWarm, play, stop, warm } from './src/audio/engine';
 import { beginTap, pendingCount, startMetrics } from './src/metrics';
 import { EditorScreen } from './src/editor/EditorScreen';
 import { LibraryScreen } from './src/editor/LibraryScreen';
+import { deleteLocalClip, loadLocalClips, renameLocalClip, type LocalClip } from './src/editor/library';
+import { applyBoardAssignments, emptyBoardAssignments, type BoardAssignments, type BoardPad } from './src/board/assignments';
+import { loadBoardAssignments, addLocalClipToBoard, assignLocalClipToBoard, removeLocalClipFromBoard } from './src/board/storage';
+import { filterSoundbites } from './src/board/search';
+import { BASE_BOARD_SLOTS, MAX_SOUNDBITES } from './src/limits';
 
 type RemoteState = 'loading' | 'warming' | 'ready' | 'failed' | 'unconfigured';
 type Page = 'board' | 'editor' | 'library';
+type SoundboardPad = BoardPad<Pad>;
 
 const REMOTE_STATUS: Record<RemoteState, string> = {
   loading: 'Loading clip manifest…',
   warming: 'Preparing remote audio…',
-  ready: '5 remote clips preloaded · Worker → private R2',
+  ready: 'Remote clips preloaded · Worker → private R2',
   failed: 'Remote audio unavailable · reload to retry',
   unconfigured: 'Bundled pads only · configure the manifest URL',
 };
@@ -23,18 +29,90 @@ const REMOTE_STATUS: Record<RemoteState, string> = {
 /**
  * M0 playback shell — STEPS.md step 7.
  *
- * Stable 4x4 home board. Positions are frozen on purpose: muscle memory for the
- * sounds used constantly is the whole point (DESIGN §9).
+ * Original sounds keep their stable 4x4 positions; added sounds extend the
+ * scrollable board without changing those familiar slots (DESIGN §9).
  */
 export default function App() {
   const uris = useRef<Map<string, string>>(new Map());
-  const [pads, setPads] = useState<Pad[]>(() => PADS.map((pad) => ({ ...pad })));
+  const [basePads, setBasePads] = useState<Pad[]>(() => PADS.map((pad) => ({ ...pad })));
+  const basePadsRef = useRef(basePads);
+  const [pads, setPads] = useState<SoundboardPad[]>(() => PADS.map((pad, slotIndex) => ({ ...pad, slotIndex })));
+  const [boardQuery, setBoardQuery] = useState('');
+  const boardList = useRef<FlatList<SoundboardPad>>(null);
+  const warmQueue = useRef<{ active: boolean; pending: Array<{ id: string; uri: string }> }>({ active: false, pending: [] });
+  const [localClips, setLocalClips] = useState<LocalClip[]>([]);
+  const localClipsRef = useRef<LocalClip[]>([]);
+  const [assignments, setAssignments] = useState<BoardAssignments>(() => emptyBoardAssignments());
+  const assignmentsRef = useRef(assignments);
+  const [boardError, setBoardError] = useState('');
+  const [editingBoard, setEditingBoard] = useState(false);
+  const padGeneration = useRef(0);
   const [playing, setPlaying] = useState<string | null>(null);
   const [last, setLast] = useState<string>('');
   const [page, setPage] = useState<Page>('board');
   const [remoteState, setRemoteState] = useState<RemoteState>(
     MANIFEST_URL ? 'loading' : 'unconfigured',
   );
+
+  const scheduleLocalWarm = useCallback((visiblePads: SoundboardPad[]) => {
+    const queue = warmQueue.current;
+    queue.pending = visiblePads
+      .filter((pad) => Boolean(pad.localClipId && pad.uri))
+      .slice(0, 8)
+      .map((pad) => ({ id: pad.id, uri: pad.uri! }));
+    if (queue.active) return;
+
+    const drain = async () => {
+      queue.active = true;
+      try {
+        while (queue.pending.length) {
+          const next = queue.pending.shift();
+          if (!next) continue;
+          try {
+            await warm(next.uri);
+          } catch (err) {
+            console.warn(`[audio] could not prewarm ${next.id}`, err);
+          }
+        }
+      } finally {
+        queue.active = false;
+        if (queue.pending.length) void drain();
+      }
+    };
+    void drain();
+  }, []);
+
+  const onBoardViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    scheduleLocalWarm(viewableItems.map((token) => token.item as SoundboardPad));
+  }).current;
+  const boardViewabilityConfig = useRef({ itemVisiblePercentThreshold: 10 }).current;
+
+  const filteredPads = useMemo(() => filterSoundbites(pads, boardQuery), [pads, boardQuery]);
+
+  const refreshBoard = useCallback(() => {
+    warmQueue.current.pending = [];
+    let nextClips: LocalClip[] = [];
+    let nextAssignments = emptyBoardAssignments();
+    const errors: string[] = [];
+
+    try {
+      nextClips = loadLocalClips();
+    } catch (cause) {
+      errors.push(cause instanceof Error ? cause.message : 'Could not read the on-device library.');
+    }
+    try {
+      nextAssignments = loadBoardAssignments();
+    } catch (cause) {
+      errors.push(cause instanceof Error ? cause.message : 'Could not read board assignments.');
+    }
+
+    localClipsRef.current = nextClips;
+    assignmentsRef.current = nextAssignments;
+    setLocalClips(nextClips);
+    setAssignments(nextAssignments);
+    setBoardError(errors.join(' '));
+    setPads(applyBoardAssignments(basePadsRef.current, nextAssignments, nextClips));
+  }, []);
 
   // Collect tap latencies for as long as the app is up (STEPS step 8).
   useEffect(startMetrics, []);
@@ -43,78 +121,83 @@ export default function App() {
     if (page !== 'board') {
       stop();
       setPlaying(null);
+      setEditingBoard(false);
     }
   }, [page]);
+
+  useEffect(() => {
+    if (page === 'board' || page === 'library') refreshBoard();
+  }, [page, refreshBoard]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') {
         stop();
         setPlaying(null);
+      } else {
+        refreshBoard();
       }
     });
     return () => subscription.remove();
-  }, []);
+  }, [refreshBoard]);
 
-  // Fetch and validate the manifest, then resolve every URI up front so a tap
-  // never waits on the network or filesystem. Remote pads remain disabled until
-  // decode finishes, keeping the first enabled press on the warm path.
+  // Resolve and prewarm current pad URIs. Local file URIs enter the map
+  // immediately, so local taps never wait for a remote manifest or preload.
+  useEffect(() => {
+    const generation = ++padGeneration.current;
+    const currentPads = pads;
+    uris.current.clear();
+
+    for (const pad of currentPads) {
+      if (pad.uri) {
+        uris.current.set(pad.id, pad.uri);
+        continue;
+      }
+      void resolveUri(pad).then((uri) => {
+        if (generation === padGeneration.current) uris.current.set(pad.id, uri);
+      }).catch((err) => {
+        console.warn(`[pads] could not resolve ${pad.id}`, err);
+      });
+    }
+
+    return () => {
+      if (generation === padGeneration.current) padGeneration.current += 1;
+    };
+  }, [pads]);
+
+  useEffect(() => {
+    warmQueue.current.pending = [];
+    if (page === 'board') {
+      boardList.current?.scrollToOffset({ offset: 0, animated: false });
+    }
+  }, [boardQuery, page]);
+
+  // Resolve and warm the remote defaults in the background. This status is
+  // independent of local pad availability and local playback.
   useEffect(() => {
     let active = true;
-
-    const resolve = async (pad: Pad): Promise<string | null> => {
-      try {
-        const uri = await resolveUri(pad);
-        uris.current.set(pad.id, uri);
-        return uri;
-      } catch (err) {
-        console.warn(`[pads] could not resolve ${pad.id}`, err);
-        return null;
-      }
-    };
-
-    const preparePads = async (): Promise<void> => {
-      let nextPads = PADS.map((pad) => ({ ...pad }));
-      let manifestLoaded = false;
-
+    const prepareRemote = async (): Promise<void> => {
       if (MANIFEST_URL) {
         try {
-          nextPads = await loadManifestPads();
-          manifestLoaded = true;
+          const nextPads = await loadManifestPads();
+          if (!active) return;
+          basePadsRef.current = nextPads;
+          setBasePads(nextPads);
+          setPads(applyBoardAssignments(nextPads, assignmentsRef.current, localClipsRef.current));
+          const remotePads = nextPads.filter((pad) => pad.uri !== undefined);
+          setRemoteState(remotePads.length ? 'warming' : 'failed');
+          await Promise.all(remotePads.map((pad) => warm(pad.uri!)));
+          if (!active) return;
+          setRemoteState(remotePads.length > 0 && remotePads.every((pad) => isWarm(pad.uri!)) ? 'ready' : 'failed');
         } catch (err) {
           console.warn('[pads] manifest load failed', err);
+          if (active) setRemoteState('failed');
         }
       }
-
-      if (!active) return;
-      setPads(nextPads);
-      uris.current.clear();
-
-      const remotePads = nextPads.filter((pad) => pad.uri !== undefined);
-      const bundledPads = nextPads.filter((pad) => pad.uri === undefined);
-      if (manifestLoaded) setRemoteState('warming');
-
-      // Bundled resolution does not need to hold up remote warming.
-      Promise.all(bundledPads.map(resolve)).catch((err) => {
-        console.warn('[pads] bundled asset resolution failed', err);
-      });
-
-      if (!MANIFEST_URL) return;
-      if (!manifestLoaded || remotePads.length === 0) {
-        setRemoteState('failed');
-        return;
-      }
-
-      const remoteUris = await Promise.all(remotePads.map(resolve));
-      await Promise.all(remoteUris.filter((uri): uri is string => uri !== null).map(warm));
-
-      if (!active) return;
-      const ready = remoteUris.every((uri) => uri !== null && isWarm(uri));
-      setRemoteState(ready ? 'ready' : 'failed');
     };
 
-    preparePads().catch((err) => {
-      console.warn('[pads] preparation failed', err);
+    prepareRemote().catch((err) => {
+      console.warn('[pads] remote preparation failed', err);
       if (active) setRemoteState('failed');
     });
 
@@ -126,7 +209,7 @@ export default function App() {
   // onPressIn, NOT onPress. onPress fires on release - 100 ms+ of dead air, and
   // the most common reason a soundboard feels sluggish (DESIGN §8).
   const trigger = useCallback((pad: Pad) => {
-    const uri = uris.current.get(pad.id);
+    const uri = pad.uri ?? uris.current.get(pad.id);
     if (!uri) return;
 
     // Opened before anything else, so the clock starts as close to the press
@@ -155,47 +238,160 @@ export default function App() {
     setPlaying(null);
   }, []);
 
-  const startupStatus = REMOTE_STATUS[remoteState];
-  const rows = [0, 4, 8, 12].map((i) => pads.slice(i, i + 4));
+  const persistAssignment = useCallback((clipId: string, slotIndex: number) => {
+    const availableClip = loadLocalClips().find((clip) => clip.id === clipId);
+    if (!availableClip || availableClip.missing || !availableClip.uri) {
+      throw new Error('This clip is no longer available in the on-device library.');
+    }
+    assignLocalClipToBoard(slotIndex, clipId);
+    refreshBoard();
+    setLast(`${availableClip.title} added to pad ${slotIndex + 1}`);
+    setPage('board');
+  }, [refreshBoard]);
 
+  const appendLocalClipToBoard = useCallback((clipId: string) => {
+    const availableClip = loadLocalClips().find((clip) => clip.id === clipId);
+    if (!availableClip || availableClip.missing || !availableClip.uri) {
+      throw new Error('This clip is no longer available in the on-device library.');
+    }
+    const previous = assignmentsRef.current;
+    const next = addLocalClipToBoard(clipId);
+    const slotIndex = next.slots.findIndex((assignedId, index) =>
+      assignedId === clipId && previous.slots[index] !== clipId,
+    );
+    refreshBoard();
+    setLast(`${availableClip.title} added as a new sound${slotIndex >= 0 ? ` on pad ${slotIndex + 1}` : ''}`);
+    setBoardQuery('');
+    setPage('board');
+  }, [refreshBoard]);
+
+  const renameClip = useCallback((clipId: string, title: string) => {
+    renameLocalClip(clipId, title);
+    refreshBoard();
+    setLast(`Renamed soundbite to ${title}`);
+  }, [refreshBoard]);
+
+  const deleteClip = useCallback((clipId: string) => {
+    deleteLocalClip(clipId);
+    refreshBoard();
+  }, [refreshBoard]);
+
+  const removeAssignment = useCallback((pad: Pad & { localClipId?: string }, slotIndex: number) => {
+    if (!pad.localClipId) return;
+    Alert.alert(
+      'Remove from board?',
+      slotIndex < BASE_BOARD_SLOTS
+        ? `“${pad.name}” will return to its original pad sound. The library file will stay on this device.`
+        : `“${pad.name}” will be removed from the board. The library file will stay on this device.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => {
+          try {
+            removeLocalClipFromBoard(slotIndex);
+            refreshBoard();
+            setLast(slotIndex < BASE_BOARD_SLOTS ? `Pad ${slotIndex + 1} restored to its original sound` : `Pad ${slotIndex + 1} removed from the board`);
+          } catch (cause) {
+            Alert.alert('Could not update board', cause instanceof Error ? cause.message : 'The board assignment could not be removed.');
+          }
+        } },
+      ],
+    );
+  }, [refreshBoard]);
+
+  const startupStatus = remoteState === 'ready'
+    ? `${basePads.filter((pad) => pad.uri !== undefined).length} remote clips preloaded · Worker → private R2${pads.filter((pad) => pad.localClipId).length ? ` · ${pads.filter((pad) => pad.localClipId).length} local pads assigned` : ''}`
+    : `${REMOTE_STATUS[remoteState]}${pads.filter((pad) => pad.localClipId).length ? ` · ${pads.filter((pad) => pad.localClipId).length} local pads assigned` : ''}`;
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
       {page === 'editor' ? <EditorScreen onOpenLibrary={() => setPage('library')} /> : null}
-      {page === 'library' ? <LibraryScreen onBack={() => setPage('editor')} /> : null}
+      {page === 'library' ? (
+        <LibraryScreen
+          onBack={() => setPage('editor')}
+          onOpenEditor={() => setPage('editor')}
+          basePads={basePads}
+          clips={localClips}
+          assignments={assignments}
+          assignmentError={boardError}
+          onAssign={persistAssignment}
+          onAppend={appendLocalClipToBoard}
+          onRename={renameClip}
+          onDelete={deleteClip}
+        />
+      ) : null}
 
       {page === 'board' ? <>
       <View style={styles.header}>
         <Text style={styles.title}>Soundboard</Text>
-        <Text style={styles.meta}>{last || startupStatus}</Text>
+        <Text style={[styles.meta, boardError && styles.metaError]}>{boardError || last || startupStatus}</Text>
+        <Pressable accessibilityRole="button" accessibilityState={{ selected: editingBoard }} onPress={() => {
+          stop();
+          setPlaying(null);
+          setEditingBoard((editing) => !editing);
+        }} style={styles.editButton}>
+          <Text style={styles.editButtonText}>{editingBoard ? 'DONE' : 'EDIT BOARD'}</Text>
+        </Pressable>
       </View>
-
-      <View style={styles.grid}>
-        {rows.map((row, r) => (
-          <View key={r} style={styles.row}>
-            {row.map((pad) => (
-              <Pressable
-                key={pad.id}
-                disabled={
-                  remoteState === 'loading' ||
-                  (pad.uri !== undefined && remoteState === 'warming')
-                }
-                onPressIn={() => trigger(pad)}
-                style={({ pressed }) => [
-                  styles.pad,
-                  { backgroundColor: pad.color },
-                  (remoteState === 'loading' ||
-                    (pad.uri !== undefined && remoteState === 'warming')) &&
-                    styles.padDisabled,
-                  pressed && styles.padPressed,
-                ]}
-              >
-                <Text style={styles.padName}>{pad.name}</Text>
-              </Pressable>
-            ))}
-          </View>
-        ))}
+      <View style={styles.searchBlock}>
+        <View style={styles.searchRow}>
+          <TextInput
+            value={boardQuery}
+            onChangeText={setBoardQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="Search soundbites"
+            placeholderTextColor="#737d86"
+            accessibilityLabel="Search soundbites by name"
+            returnKeyType="search"
+            style={styles.searchInput}
+          />
+          {boardQuery ? <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setBoardQuery('')} style={styles.clearSearch}><Text style={styles.clearSearchText}>×</Text></Pressable> : null}
+        </View>
+        <Text accessibilityLiveRegion="polite" style={styles.resultCount}>{boardQuery ? `${filteredPads.length} of ${pads.length} · ${MAX_SOUNDBITES} max` : `${pads.length} / ${MAX_SOUNDBITES} soundbites`}</Text>
       </View>
+      <FlatList
+        ref={boardList}
+        style={styles.boardList}
+        contentContainerStyle={styles.grid}
+        data={filteredPads}
+        numColumns={4}
+        keyExtractor={(pad) => pad.id}
+        columnWrapperStyle={styles.row}
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={16}
+        maxToRenderPerBatch={16}
+        windowSize={7}
+        removeClippedSubviews
+        viewabilityConfig={boardViewabilityConfig}
+        onViewableItemsChanged={onBoardViewableItemsChanged}
+        ListEmptyComponent={<View style={styles.noResults}><Text style={styles.noResultsTitle}>No matching sounds</Text><Text style={styles.noResultsCopy}>Try another name or clear the search.</Text></View>}
+        renderItem={({ item: pad }) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Pad ${pad.slotIndex + 1}, ${pad.name}, ${pad.localClipId ? 'local clip' : 'original sound'}${editingBoard && pad.localClipId ? ', tap to remove assignment' : ''}`}
+            disabled={
+              !editingBoard && !pad.localClipId && (
+                remoteState === 'loading' ||
+                (pad.uri !== undefined && remoteState === 'warming')
+              )
+            }
+            onPressIn={editingBoard ? undefined : () => trigger(pad)}
+            onPress={editingBoard ? () => removeAssignment(pad, pad.slotIndex) : undefined}
+            style={({ pressed }) => [
+              styles.pad,
+              { backgroundColor: pad.color },
+              (!editingBoard && !pad.localClipId && (
+                remoteState === 'loading' ||
+                (pad.uri !== undefined && remoteState === 'warming')
+              )) && styles.padDisabled,
+              pressed && styles.padPressed,
+            ]}
+          >
+            <Text numberOfLines={2} style={styles.padName}>{pad.name}</Text>
+            {pad.localClipId ? <Text style={styles.localIndicator}>LOCAL</Text> : null}
+          </Pressable>
+        )}
+      />
 
       {playing ? (
         <Pressable style={styles.kill} onPress={kill}>
@@ -237,17 +433,32 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
   title: { color: '#f5f6f8', fontSize: 24, fontWeight: '700' },
   meta: { color: '#8b93a1', fontSize: 13, marginTop: 2 },
-  grid: { flex: 1, padding: GAP, gap: GAP },
-  row: { flex: 1, flexDirection: 'row', gap: GAP },
+  metaError: { color: '#ff9ba7' },
+  editButton: { alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 7, marginTop: 4, borderRadius: 9, backgroundColor: '#252c30' },
+  editButtonText: { color: '#a5e8cf', fontSize: 9, letterSpacing: 1.2, fontWeight: '700' },
+  searchBlock: { paddingHorizontal: GAP + 8, paddingBottom: 6, gap: 5 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 11, borderWidth: 1, borderColor: '#343c43', backgroundColor: '#111418' },
+  searchInput: { flex: 1, minHeight: 42, paddingHorizontal: 12, color: '#f1f4f5', fontSize: 14 },
+  clearSearch: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  clearSearchText: { color: '#aeb8bd', fontSize: 23 },
+  resultCount: { color: '#7f8a90', fontSize: 10, textAlign: 'right', fontVariant: ['tabular-nums'] },
+  boardList: { flex: 1 },
+  grid: { paddingHorizontal: GAP, paddingBottom: GAP },
+  row: { flexDirection: 'row', gap: GAP, marginBottom: GAP },
+  noResults: { alignItems: 'center', paddingVertical: 54, paddingHorizontal: 20 },
+  noResultsTitle: { color: '#eef1f2', fontSize: 16, fontWeight: '600' },
+  noResultsCopy: { color: '#818c93', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 6 },
   pad: {
     flex: 1,
+    height: 92,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   padPressed: { opacity: 0.6 },
   padDisabled: { opacity: 0.45 },
-  padName: { color: '#ffffff', fontSize: 18, fontWeight: '600' },
+  padName: { color: '#ffffff', fontSize: 14, lineHeight: 18, fontWeight: '600', textAlign: 'center', paddingHorizontal: 4 },
+  localIndicator: { color: '#d7ffed', fontSize: 8, fontWeight: '800', letterSpacing: 1.2, marginTop: 5 },
   kill: {
     margin: GAP,
     marginTop: 0,

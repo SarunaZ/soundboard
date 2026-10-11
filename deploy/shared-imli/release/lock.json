@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "soundboard": "checkout",
+    "imli": {
+      "url": "https://github.com/SarunaZ/app-imli-server.git",
+      "commit": "960119f14fc86ca7e108f35b457aaf7d24e6011e"
+    }
+  },
+  "build": {
+    "platform": "linux/amd64",
+    "nodeImage": "node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20",
+    "yarnSoundboard": "4.18.0",
+    "yarnImli": "4.6.0",
+    "ytDlp": {
+      "version": "2026.08.19",
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux",
+      "sha256": "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a"
+    }
+  }
+}

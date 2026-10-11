@@ -2,16 +2,35 @@
 
 **Status (authoritative, 2026-10-10):** M0's remote feature path is complete;
 its real-phone/cellular exit measurement remains pending. Local authoring L1–L5,
-L7, L8 backend live-source smoke and L10 are implemented and verified. App
-strict TypeScript and the service/shared TypeScript build pass; all 13 native-free
-app/Worker tests and all 6 service tests pass. The all-ABI arm64+x86_64 debug APK
-is built and installed on the Android 36 emulator. L6 saved-file playback is
-verified on that emulator with the API/worker stopped and Wi-Fi/mobile data off;
+L7, L8 backend live-source smoke, L10, and L11 are implemented and verified. App
+strict TypeScript and the service/shared TypeScript build pass; all 59 app tests,
+all 4 Worker tests, and all 6 service tests pass (69 total). The
+all-ABI arm64+x86_64 debug APK is built and installed on the Android 36 emulator.
+L6 saved-file playback is verified on that emulator with the API/worker stopped
+and Wi-Fi/mobile data off;
 its debug JS still came over USB Metro, so standalone offline launch is not
 verified. L9 physical-phone interaction and live-source in-app save checks
-remain pending. Follow the L-series below for current work. The numbered 1–27
+remain pending. The superseded whole-file device import passed emulator checks:
+a Downloads MP3 retained
+identical source bytes, survived an online force-stop/relaunch, and played from
+pad 14. Deleting only the synthetic Library copy removed that private file and
+restored pad 14's default; the original Downloads source and existing user
+clip/pad 16 assignment stayed unchanged. Picker cancellation and invalid/overlong
+files left the catalog unchanged. Native verification for that old import flow
+covered MP3 only. The local
+board lifecycle passed replacement, removal to the
+default, re-add, and assignment restoration after an online force-stop/restart
+via USB Metro. After JS loaded, a local clip played with an active AudioFlinger
+track matching the app PID with API/worker stopped and airplane mode on with
+Wi-Fi off; its SHA-256 stayed unchanged. A cold offline start failed because
+the development client could not load its JS bundle, so standalone offline
+launch is not verified. This is not a physical-phone claim. Follow the L-series
+below for current work. The numbered 1–27
 remote pipeline remains historical/deferred; its open items are not completed
-by this pivot.
+by this pivot. Local board assignments (L11) and search/naming/capacity UI
+(L13) are implemented and verified. L12 records a superseded whole-file device
+import; L14's corrected device-file Editor flow is implemented and emulator-
+verified with MP3. M4A/WAV/AAC and physical-phone checks remain pending.
 **Date:** 2026-08-15, revised 2026-10-10
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
@@ -84,9 +103,9 @@ pending until implementation and the stated acceptance check are confirmed.
   remote cache ladder done.
 - [x] **L7 — Deterministic fixture and API checks.** Verified the fake fixture
   flow through app import, preview, range selection, render, and local save. All
-  13 native-free app/Worker tests and all 6 service tests pass. The service suite
-  covers fake YouTube plus real ffmpeg rendering, retry after partial download,
-  service-side active cancellation and cleanup, HTTP Range 206, and AAC mono
+  34 app tests, 4 Worker tests, and 6 service tests pass. The service
+  suite covers fake YouTube plus real ffmpeg rendering, retry after partial
+  download, service-side active cancellation and cleanup, HTTP Range 206, and AAC mono
   44.1 kHz trim duration. App-level cancel/error cleanup with no partial local
   file is not yet verified; keep that check in L9.
 - [x] **L8 — Backend live source smoke.** Using the existing API/worker and
@@ -104,13 +123,110 @@ pending until implementation and the stated acceptance check are confirmed.
   36 emulator. If the ignored `app-client/android` directory needs regeneration
   later, use normal Expo prebuild without a clean wipe. Keep Metro's 8081 reverse
   and the API's 8080 reverse configured for USB development.
+- [x] **L11 — Local board assignments.** Implemented and verified.
+  From the Library, **Add to board** can append a sound as a new board slot or
+  open a numbered picker for the original 16 pads, asking before replacing an
+  existing assignment. The board stores a persistent local clip-ID-to-slot
+  mapping; assigned local clips play offline independently of the remote API.
+  Removing an assignment restores the original remote or bundled pad; replacing
+  it selects another local clip. Deleting a library
+  clip clears all its assignments, and missing local clips fall back to the pad
+  default. The six local board model tests and app strict TypeScript check pass.
+  On the emulator, replacement at pad 16 persisted in `board.json`;
+  Edit Board → local pad → Remove restored the default and cleared the mapping;
+  re-adding wrote the assignment again. An online force-stop/restart via USB
+  Metro restored pad 16. After JS loaded, playback worked with API/worker stopped
+  and airplane mode on with Wi-Fi off; AudioFlinger showed an active track
+  matching app PID 7315. The clip's SHA-256 was unchanged. A cold offline launch
+  failed because the development client could not load its JS bundle, so this
+  does not verify standalone offline launch. File integration tests cover
+  duplicate deletion-hook behavior and failed-write preservation; the actual
+  user clip was not deleted on-device. Local files remain private, and no R2
+  writes occur. Physical-phone interaction remains pending.
+- [x] **L12 — Historical: whole-file import from device (superseded by L14).**
+  This former Library flow was implemented and emulator-verified with MP3; it
+  copied the full file rather than opening it in the Editor. Preserve the checks
+  below as history only. Current directions require device audio to be trimmed
+  in the Editor before saving a new Library clip.
+  Use the Expo SDK 57 system picker to import MP3, M4A, WAV, or AAC files up
+  to 60 seconds and 10 MiB. Import the whole file without trimming, transcoding,
+  or server/R2 upload. Copy it into the private library under a UUID filename
+  with the correct extension, preserve the source, and use a filename-derived
+  title when available or `Imported sound` as the fallback. Imported clips can
+  be assigned to board pads. No APK rebuild or broad storage permission is
+  needed; an absent extension uses the legacy `.m4a` default.
+
+  The 34 app tests and strict TypeScript check pass. In the native smoke, picker
+  cancellation left the catalog unchanged. An MP3 selected from Android
+  Downloads imported via content URI as `soundboard-import-test`; its 366 ms
+  duration and `.mp3` extension were retained, and the private 3,042-byte copy
+  had the same SHA-256 as the untouched source. It assigned to pad 14 and board
+  playback produced a successful metric. A 61-second MP3 was rejected with the
+  60-second limit message; a damaged PNG disguised as MP3 was rejected with a
+  decode error. Both left the catalog unchanged and created no extra audio or
+  staging files. The imported synthetic clip survived online force-stop/relaunch
+  and played from pad 14. Deleting only that private copy removed its file and
+  restored pad 14's default; the original Downloads source's SHA-256 remained
+  unchanged, as did the existing user clip and pad 16 assignment. Native import
+  verification covered MP3 only, not M4A/WAV/AAC. This is emulator validation,
+  not physical-phone validation; a fully offline cold launch is not verified.
+
+- [x] **L13 — Search, naming, and 1,000-soundbite library.** Implemented and
+  verified. The 53-test suite and strict TypeScript check pass. Native checks verified
+  importing a synthetic MP3 as a new sound on pad 17 (17/1,000), preserving the
+  existing user clip and pad 16, and finding the imported sound with a
+  case-insensitive board search. A blank rename showed required-name feedback
+  and disabled Save; renaming to “Native bell” updated the Library search and
+  pad 17 label, including after an online force-stop/relaunch. The imported
+  private MP3 hash matched its source, and the existing user clip hash stayed
+  unchanged. Search, clear-search, append, rename, and removal of the filtered
+  board result were verified natively; removal cleared only the appended pad 17
+  slot, leaving original pad 16 and the Library clip intact. Deleting only the
+  synthetic Library copy removed its private audio and restored the catalog to
+  the existing user clip; the Downloads source hash stayed unchanged. The
+  earlier L11 checks cover replacement of an original pad. Automated tests
+  cover the 1,000-item limit; native stress at capacity was not performed. The
+  Editor name field has been reviewed and type-checked, but no new YouTube
+  render/save flow was run on-device. The local
+  library and board support up to 1,000 soundbites. Search matches names
+  case-insensitively while preserving library and board order. The board keeps
+  its first 16 remote or bundled defaults, can append a local sound as the next
+  board slot, and can assign or replace clips on those original pads. Library
+  rename changes catalog metadata only, so assigned board labels refresh without
+  changing audio files. The Editor shows the soundbite name before render/save
+  actions, limits it to 100 characters, and requires a nonblank name to save.
+  Physical-phone checks remain pending under L9.
+
+- [x] **L14 — Edit a device audio file locally.** Open MP3, M4A, WAV, or AAC in
+  the Editor from the device picker. Enforce a 5-minute source-duration limit
+  and 32 MiB file-size limit. Decode PCM fully on-device, display a waveform
+  with range handles, cap the selected range at 60 seconds, and render a PCM16
+  WAV preview. Require a name, save the selected render to the private Library,
+  then allow **Add to board**. Leave the original file untouched; do not call
+  YouTube or the temporary service and do not upload the source or render.
+  Clean up only app-owned temporary cache files. Keep the 1,000-soundbite limit.
+  Implemented and emulator-verified with MP3. The 59 app tests, 4 Worker tests,
+  and 6 service tests pass; strict TypeScript passes. On Android 36, a 61.07 s
+  MP3 source opened, demonstrating the new duration limit exceeds L12's former
+  60 s cap. Selecting 1–5 s rendered and saved a named PCM16 mono 44.1 kHz WAV:
+  352,844 bytes total (352,800 PCM data bytes), with 4,000 ms catalog duration.
+  The rendered preview produced an active AudioFlinger track matching the app
+  PID. **Add to board** appended it to pad 17 without replacing pad 16; after an
+  online force-stop/relaunch, the assignment remained and board playback again
+  produced an active app track. Opening a short MP3 then unmounting cleared the
+  app-owned temporary cache. The original 61.07 s source SHA-256, existing user
+  clip SHA-256, and pad 16 assignment stayed unchanged. Deleting only the
+  synthetic WAV through the Library cleared pad 17 and restored the prior
+  catalog. Native verification covered MP3 only; M4A/WAV/AAC and physical-phone
+  checks remain pending. This flow has not been verified with the service
+  stopped or offline. No claim is made here for those conditions.
 
 ## Historical remote pipeline roadmap (steps 1–27)
 
 The following checklist records prior implementation history and the deferred
 remote-ingest plan. It is not the active local-authoring sequence. M0 history and
 its real-phone/cellular measurement remain as recorded; open remote items remain
-open and are not implied complete by L1–L10.
+open and are not implied complete by L1–L11.
 
 ## Setup — day one
 
@@ -295,3 +411,28 @@ adapters and no ffmpeg render. `GET /health` exists; `/manifest` and `/metrics` 
 
 1. **The droplet is never on the playback path** (DESIGN §2). Ingest may be down; the soundboard still plays.
 2. **Latency numbers only count from a real device on cellular with the cache cleared** (R6). A laptop on wifi will tell you everything is fine.
+
+## Shared Imli release packaging
+
+- [x] **Step 1 — Versioned release packaging.** Implemented and locally
+  verified on 2026-10-11 against a `publishable: false` image built from a dirty
+  checkout. The packaging tests, gateway/supervisor tests, isolated fixture
+  harness, and resource checks passed. This does not establish production
+  readiness; a clean build from a reviewed commit remains pending. See
+  [`deploy/shared-imli/release/README.md`](deploy/shared-imli/release/README.md)
+  and the [verification record](deploy/shared-imli/release/VERIFICATION.md).
+- [ ] **Step 2 — Deployment safeguards.** Add health checks, load validation,
+  soak/load checks, rollback safeguards, and monitoring on the target host.
+  The local preflight correctly rejected the dirty, non-publishable image;
+  300-second fixture load and fault-injection checks passed on 2026-10-11.
+  Production App Platform health settings, monitoring, and target-host checks
+  remain pending. No push or deployment occurred. See
+  [`deploy/shared-imli/ops/README.md`](deploy/shared-imli/ops/README.md) and
+  [`deploy/shared-imli/ops/RUNBOOK.md`](deploy/shared-imli/ops/RUNBOOK.md), plus
+  the [local verification record](deploy/shared-imli/ops/VERIFICATION.md).
+- [ ] **Step 3 — Review and release.** Review the final artifact; commit, push,
+  and deploy only with user approval. A clean release build remains pending.
+- [ ] **Step 4 — Hosted APK.** Rebuild the standalone APK configured with the
+  hosted HTTPS editor API URL and matching personal token. Pending.
+- [ ] **Step 5 — Real-phone checks.** Complete the required phone verification.
+  Pending.

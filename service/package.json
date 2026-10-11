@@ -6,7 +6,7 @@
   "main": "./dist/api/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --test dist/editor/contracts.test.js dist/editor/queue.test.js dist/editor/api.test.js dist/editor/pipeline.test.js",
+    "test": "node --test dist/editor/contracts.test.js dist/editor/queue.test.js dist/editor/api.test.js dist/editor/pipeline.test.js dist/worker/health.test.js",
     "api": "node dist/api/index.js",
     "worker": "node dist/worker/index.js"
   },

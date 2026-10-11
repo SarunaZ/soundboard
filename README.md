@@ -1,10 +1,26 @@
 # Soundboard
 
 A grid of pads on an Android phone that fire short meme sounds instantly. The
-approved local-authoring flow lets you paste a permitted YouTube URL in the
-Android app, trim a moment, render an `.m4a`, and keep it in the phone's private
-library for offline playback. The existing Cloudflare Worker/R2 board remains
-the remote playback comparison path; local clips are not uploaded to it.
+current YouTube authoring flow and device-file Editor flow let you trim a
+moment and save it in the phone's private library for offline playback.
+YouTube renders are `.m4a`; device-file editing renders a PCM16 WAV preview
+on-device. The library and board support up to 1,000
+soundbites. Five existing Worker/R2 sounds and 11 bundled sounds remain the
+first 16 board defaults; local clips are never uploaded to R2. In the Library,
+search by name or rename a clip. **Add to board** lets you append a new sound or
+choose one of the original 16 pads to assign or replace. Removing an assignment
+restores that pad's original remote or bundled sound; deleting a library clip
+clears its board assignments. Renaming changes only clip metadata and refreshes any board
+labels that use the clip.
+
+Choose an MP3, M4A, WAV, or AAC file from the Editor's device picker (up to
+5 minutes and 32 MiB) to trim before saving. The Editor decodes PCM on-device,
+shows its waveform and range selection, and previews the rendered PCM16 WAV.
+Name the result, save it to the private Library, then use **Add to board**. The
+original file stays untouched; local editing does not call the YouTube service
+or upload audio. The flow has been emulator-verified with MP3; M4A/WAV/AAC and
+physical-phone checks remain pending. Search is case-insensitive and preserves
+current sound order in both the Library and board.
 
 The real objective is **learning asset management** — masters and derivatives,
 content addressing, ingest job state, storage lifecycle, cache behaviour. Several
@@ -77,10 +93,10 @@ Rendered clips stay in the app-private local library, support offline playback,
 and are removed when the app is uninstalled. They are not uploaded to Cloudflare
 R2.
 
-The editor accepts standard YouTube watch links, Shorts links, and `youtu.be`
-share links over HTTP or HTTPS. It imports only the selected video: playlist
-and tracking parameters are discarded, and a playlist link without a video ID
-is rejected.
+The YouTube editor accepts standard watch links, Shorts links, and `youtu.be`
+share links over HTTP or HTTPS. It uses only the selected video: playlist and
+tracking parameters are discarded, and a playlist link without a video ID is
+rejected. Device-file editing uses the separate on-device path described above.
 
 ## Layout
 
@@ -112,7 +128,8 @@ still pending. Five clips are served from private R2 through the public
 Cloudflare Worker, and the app loads, validates, resolves, and preloads them
 from the immutable v1 manifest. The other 11 pads remain bundled placeholders
 for comparison. The local-authoring pivot was approved on 2026-10-10. App and
-service type checks/builds, all 19 tests, and an all-ABI debug APK installed on
+service type checks/builds, all 69 tests (59 app, 4 Worker, 6 service), and an
+all-ABI debug APK installed on
 the Android 36 emulator have passed. The fixture-based in-app trim/render/save
 flow and saved-file offline playback are verified on the Android 36 emulator
 after app restart with the API/worker stopped and Wi-Fi/mobile data off
@@ -121,9 +138,38 @@ The debug JS bundle still came over USB Metro, so this is not a standalone
 offline-launch or audible-listening claim. The backend live-source smoke also
 passed for watch-plus-playlist video `OjNpRbNdR7E` and Shorts video
 `jlPQtJXy9t8`: both imported, returned ranged previews, and rendered a 2-second
-clip without bypassing YouTube access restrictions. Physical-phone interaction
-and the live-source in-app save flow remain pending. [STEPS.md](STEPS.md) is
-authoritative for the L-series local workflow and historical 1–27 roadmap.
+clip without bypassing YouTube access restrictions. The local board lifecycle
+was verified: replacement, removal to the default, re-add, and assignment
+restoration after an online force-stop/restart via USB Metro. After the JS app
+loaded, a local clip also played with the API/worker stopped and airplane mode
+on with Wi-Fi off; an active AudioFlinger track matched the app PID. The clip's
+SHA-256 was unchanged. A cold offline start failed because the development
+client could not load its JS bundle, so standalone offline launch is not
+verified. Physical-phone interaction and the live-source in-app save flow
+remain pending. Device import passed emulator checks with an MP3 selected from
+Android Downloads: it retained identical source bytes, survived an online
+force-stop/relaunch, and played from pad 14. Deleting only the synthetic Library
+copy removed that private file and restored pad 14's default; the Downloads
+source and existing user clip/pad 16 assignment stayed unchanged. Those checks
+record the superseded whole-file import flow (L12), not the current Editor
+workflow. L14's device-file Editor flow is implemented and emulator-verified
+with MP3; M4A/WAV/AAC and physical-phone checks remain pending. [STEPS.md](STEPS.md)
+is authoritative for the L-series local workflow and historical 1–27 roadmap.
+
+Shared Imli release packaging step 1 is implemented and locally verified, with
+a dirty, non-publishable image. It is not a production-readiness claim; step 2's
+production checks and steps 3–5 remain pending. See the
+[packaging workflow](deploy/shared-imli/release/README.md), [verification
+record](deploy/shared-imli/release/VERIFICATION.md), and [STEPS.md](STEPS.md)
+for details.
+
+Shared Imli step 2's local preflight correctly rejected the dirty,
+non-publishable image, and the fixture load and fault-injection checks passed on
+the final combined image. Production monitoring, App Platform health settings,
+and target-host verification remain pending; no push or deployment occurred.
+See the [operations notes](deploy/shared-imli/ops/README.md),
+[runbook](deploy/shared-imli/ops/RUNBOOK.md), and
+[verification record](deploy/shared-imli/ops/VERIFICATION.md).
 
 ## Licence and scope
 

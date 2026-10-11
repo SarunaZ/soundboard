@@ -1,0 +1,14 @@
+# Optional override for running the existing fixture harness against a built
+# release image. The fixture stays a read-only test-time bind mount; it is not
+# added to the release image.
+services:
+  gateway:
+    image: ${SHARED_IMLI_RELEASE_IMAGE:?Set SHARED_IMLI_RELEASE_IMAGE with -ReleaseImage}
+    init: false
+    environment:
+      YTDLP_BIN: /opt/shared-imli/test/fake-yt-dlp.sh
+    volumes:
+      - type: bind
+        source: ./test/fake-yt-dlp.sh
+        target: /opt/shared-imli/test/fake-yt-dlp.sh
+        read_only: true

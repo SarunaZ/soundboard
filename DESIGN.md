@@ -3,14 +3,27 @@
 **Status:** M0's remote feature path is complete; the real-phone/cellular
 measurement remains pending. The 2026-10-10 local-authoring pivot is the current
 direction and is fixture-verified through render and local save. App strict
-TypeScript, the shared/service TypeScript build, all 19 tests, and the all-ABI
+TypeScript, the shared/service TypeScript build, all 69 tests (59 app, 4 Worker,
+6 service), and the all-ABI
 debug APK on the Android 36 emulator pass. Saved-file playback after app restart
 was verified on that emulator with the API/worker stopped and Wi-Fi/mobile data
-off; the debug JS bundle still came over USB Metro. The backend live-source
+off; the debug JS bundle still came over USB Metro. The local board lifecycle
+passed replacement, removal to the default, re-add, and assignment restoration
+after an online force-stop/restart via USB Metro. After JS loaded, a local user
+clip produced an active AudioFlinger track matching the app PID with API/worker
+stopped and airplane mode on with Wi-Fi off; its SHA-256 stayed unchanged. A
+cold offline start failed because the development client could not load its JS
+bundle, so standalone offline launch is not verified. The backend live-source
 smoke passed for watch-plus-playlist video `OjNpRbNdR7E` and Shorts video
 `jlPQtJXy9t8`, including ranged previews and 2-second renders without bypassing
-access restrictions. Physical-phone interaction and live-source in-app save
-checks remain pending. See [STEPS.md](STEPS.md) for the authoritative L-series
+access restrictions. Device import passed emulator checks with an MP3: it
+retained identical source bytes, survived an online force-stop/relaunch, and
+played from pad 14. Deleting only the synthetic Library copy removed that
+private file and restored pad 14's default; the original Downloads source and
+existing user clip/pad 16 assignment stayed unchanged. Picker cancellation and
+invalid/overlong files left the catalog unchanged. Native import was verified
+with MP3 only. Physical-phone interaction and live-source in-app save checks remain pending.
+See [STEPS.md](STEPS.md) for the authoritative L-series
 sequence and historical roadmap status.
 **Date:** 2026-08-15, revised 2026-10-10
 
@@ -20,9 +33,15 @@ sequence and historical roadmap status.
 
 This dated amendment takes precedence over the older web-editor-first and
 online-first decisions only for newly authored local clips. The existing
-Cloudflare Worker/R2 board remains the remote comparison path: its current
-manifest and five clips are unchanged, and the other 11 bundled pads remain
-comparisons. This pivot does not claim the remote cache ladder is complete.
+Cloudflare Worker/R2 manifest and source assets remain unchanged: five
+R2-backed clips and 11 bundled comparison sounds are the first 16 board
+defaults. A persistent local clip-ID-to-slot overlay can append a local clip as
+a new board sound or assign one to an original pad; removing an assignment
+restores that pad's original remote or bundled sound, while replacing it selects
+another local clip. The library and board support up to 1,000 soundbites.
+Case-insensitive name search preserves current order in both views. Local
+assignments play offline independently of the remote API. This pivot does not
+claim the remote cache ladder is complete.
 
 The Android app accepts a permitted YouTube URL, shows an in-app waveform with
 two range handles, previews the selected range, and requests a rendered `.m4a`
@@ -30,6 +49,29 @@ for that actual range. The resulting file and a local catalog entry live under
 `Paths.document/local-clips` in the app-private library. They survive app
 restarts and play offline without the service. Android uninstall removes them;
 they are not Downloads and are not automatically cloud-backed-up.
+
+Device audio is opened from the Editor's picker, rather than copied whole into
+the Library. The local-file Editor accepts MP3, M4A, WAV, or AAC sources
+up to 5 minutes and 32 MiB. Native on-device PCM decoding feeds a waveform and
+two range handles; selection is capped at 60 seconds. The Editor renders a
+PCM16 WAV preview, then saves the named selection to the app-private Library
+for later **Add to board** assignment. Keep the original source untouched and
+clean up only app-owned temporary cache files. This local-file path uses no
+YouTube API or temporary service, sends no upload, and writes nothing to R2.
+L14 is implemented and emulator-verified with MP3: a 61.07-second source opened
+under the new 5-minute limit, exceeding L12's former 60-second cap. A named
+4-second PCM16 WAV was rendered and saved, and its preview played. The new clip appended to pad
+17 and remained assigned and playable after online force-stop/relaunch. Cache
+cleanup on picker unmount left the original source hash and existing user clip
+and pad 16 unchanged; deleting only the synthetic WAV restored the prior
+catalog and cleared pad 17. M4A/WAV/AAC native checks and physical-phone checks
+remain pending. No service-stopped or offline verification is claimed for this
+new flow. The earlier whole-file Library import behavior and its MP3 checks are
+retained as superseded L12 history in [STEPS.md](STEPS.md).
+
+Library rename updates catalog metadata only; assigned board labels use the
+new name. The YouTube Editor requires a nonblank soundbite name before saving
+a rendered clip.
 
 The existing temporary service is used only to fetch the source, provide
 preview audio, and render the selected range. Source duration is capped at 20
@@ -51,6 +93,12 @@ without a clean wipe. YouTube smoke checks must use content the user owns or is
 allowed to use; login, bot, and access restrictions are not bypassed.
 
 Cloudflare uploads are a possible later feature and are outside this local flow.
+From the Library, **Add to board** can append a sound as a new board slot or
+open a numbered picker for the original 16 pads. It prompts before replacing an
+occupied assignment. Removing an assignment restores its default sound;
+deleting a library clip clears all its assignments. Missing local clips fall
+back to pad defaults. The mapping and clip files are local to the app, and this
+feature writes no files to R2.
 The sections below retain the prior remote soundboard and ingest design for
 context; read this amendment as current wherever the older design differs.
 

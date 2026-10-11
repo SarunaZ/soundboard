@@ -5,11 +5,26 @@ measurement remains pending. The 2026-10-10 local-authoring pivot is implemented
 and fixture-verified through render and local save. The backend live-source
 smoke also passed for a watch-plus-playlist URL and a Shorts URL, including
 ranged previews and 2-second renders without access bypass. App strict TypeScript,
-the shared/service TypeScript build, all 19 tests, and the all-ABI debug APK on
-the Android 36 emulator pass. Saved-file playback after app restart was verified
+the shared/service TypeScript build, all 69 tests (59 app, 4 Worker, 6 service),
+and the all-ABI debug APK on the Android 36 emulator pass. Saved-file playback after app restart was verified
 on the Android 36 emulator with the API/worker stopped and Wi-Fi/mobile data off;
-the debug JS bundle still came over USB Metro. Physical-phone and live-source
-in-app save checks remain pending. See [STEPS.md](STEPS.md) for the authoritative
+the debug JS bundle still came over USB Metro. The local board lifecycle passed:
+replacement at pad 16 persisted to `board.json`, removal restored the
+default and cleared the mapping, re-add wrote the assignment again, and an online
+force-stop/restart via USB Metro restored it. After JS loaded, a local user clip
+played with API/worker stopped and airplane mode on with Wi-Fi off; AudioFlinger
+showed an active track for the app PID. Its SHA-256 stayed unchanged. A cold
+offline start failed because the development client could not load its JS bundle;
+standalone offline launch is not verified. Device import passed emulator checks:
+a Downloads MP3 kept identical source bytes, survived an online force-stop/relaunch,
+and played from pad 14. Deleting only the synthetic Library copy removed that
+private file and restored pad 14's default; the original Downloads source and
+existing user clip/pad 16 assignment stayed unchanged. Picker cancellation and
+invalid/overlong input left the catalog unchanged; native checks described the
+superseded whole-file import path with MP3 only. L14's replacement local-file
+Editor is implemented and emulator-verified with MP3; M4A/WAV/AAC and
+physical-phone checks remain pending. See
+[STEPS.md](STEPS.md) for the authoritative
 L-series sequence and historical implementation status.
 **Date:** 2026-08-15, revised 2026-10-10
 **Reads with:** [DESIGN.md](DESIGN.md) — that doc holds the *why*; this one holds the *order*.
@@ -19,10 +34,15 @@ L-series sequence and historical implementation status.
 ## Current direction — approved pivot (2026-10-10)
 
 This section takes precedence over the historical editor-first and online-first
-plans below, only for newly authored local clips. It does not replace the
-existing remote board: its five R2-backed clips, public Worker reads, and
-11 bundled comparison pads remain as they are. The remote cache ladder has not
-been completed by this pivot.
+plans below, only for newly authored local clips. The existing remote manifest
+and source assets are unchanged: five R2-backed clips and 11 bundled comparison
+pads remain the first 16 defaults. A persistent local clip-ID-to-slot overlay
+can append a local clip as a new board sound or assign it to one of those
+original pads; removing an assignment restores that pad's original remote or
+bundled sound. Replacing an assignment selects another local clip. The library
+and board support up to 1,000 soundbites, with case-insensitive name search
+that preserves current order. Local assignments play offline independently of
+the remote API. The remote cache ladder has not been completed by this pivot.
 
 The user pastes a YouTube URL into the Android app. The app displays an in-app
 waveform with two range handles, previews the selected range, asks the existing
@@ -32,6 +52,20 @@ private app library persists across app restarts and supports offline local
 playback. Android uninstall removes it; this is not the Downloads folder or a
 cloud backup. The server has no persistent output library and performs no R2
 writes for this flow.
+
+The device-file workflow opens in the Editor, not as a whole-file Library copy.
+The Editor accepts MP3, M4A, WAV, or AAC sources up to 5 minutes and 32 MiB,
+decode PCM fully on-device, display a waveform and range handles, and render a
+PCM16 WAV preview for the selected range (maximum 60 seconds). The user names
+the result and saves it to the app-private Library, then can use **Add to board**.
+The original source remains untouched. Local-file editing uses no YouTube API or
+temporary service, creates no upload, and uses an owned temporary cache whose
+files are cleaned up. L14 is implemented and emulator-verified with MP3. Native
+verification for M4A/WAV/AAC and physical-phone checks remain pending.
+
+A soundbite can be renamed from the Library; this updates only catalog metadata,
+so assigned board labels use the new name. The YouTube Editor still requires a
+nonblank name before saving a rendered clip.
 
 The service is a temporary source/preview/render boundary. It rejects sources
 over 20 minutes, limits a selection to 60 seconds, and expires temporary files
@@ -54,6 +88,13 @@ wipe.
 Cloudflare uploads may be considered later as a separate feature. For the
 current local flow, the selection is not uploaded to R2 and must remain playable
 after restart and with the service unavailable.
+
+From the Library, **Add to board** can append a sound as the next board slot or
+open a numbered picker for the original 16 pads. It prompts before replacing an
+occupied assignment. Removing an assignment restores its default sound;
+deleting its library clip clears its assignments. Missing local clips fall
+back to their pad defaults, and the local audio files remain private on the
+device.
 
 ## Historical amendments to DESIGN.md
 
