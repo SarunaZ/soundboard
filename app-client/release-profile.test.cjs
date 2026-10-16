@@ -36,18 +36,18 @@ test('ordinary config remains the app.json config', () => {
 
 test('prototype profile keeps its separate package and module plugin', () => {
   const config = resolveConfig({ prototype: true });
-  assert.equal(config.name, 'Soundboard Prototype');
+  assert.equal(config.name, 'StimyzApp Prototype');
   assert.equal(config.android.package, 'dev.sarunas.soundboard.prototype');
   assert.ok(config.plugins.some(([name]) => name === './plugins/withYoutubePrototype'));
 });
 
 test('private profile has stable identity, fresh-data package and restrictive Android settings', () => {
   const config = resolveConfig({ privateRelease: true });
-  assert.equal(config.name, 'Soundboard Private');
-  assert.equal(config.version, '1.0.1');
+  assert.equal(config.name, 'StimyzApp');
+  assert.equal(config.version, '1.0.3');
   assert.equal(config.android.package, 'dev.sarunas.soundboard.sideload');
   assertJavaPackage(config.android.package);
-  assert.equal(config.android.versionCode, 2);
+  assert.equal(config.android.versionCode, 4);
   assert.equal(config.android.allowBackup, false);
   assert.ok(config.android.blockedPermissions.includes('android.permission.RECORD_AUDIO'));
   assert.ok(config.android.blockedPermissions.includes('android.permission.SYSTEM_ALERT_WINDOW'));

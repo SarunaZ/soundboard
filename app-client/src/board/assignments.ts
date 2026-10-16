@@ -15,6 +15,8 @@ function isUuid(value: unknown): value is string {
 export interface BoardAssignments {
   version: 1;
   slots: (string | null)[];
+  /** Visual slot order. Omitted by legacy snapshots, which use ascending slots. */
+  order?: number[];
 }
 
 export type BoardPad<T extends { id: string; name: string; color: string; uri?: string } = {
@@ -38,7 +40,24 @@ export function parseBoardAssignments(value: unknown): BoardAssignments {
   if (row.slots.length < BASE_BOARD_SLOTS || row.slots.length > MAX_SOUNDBITES || row.slots.some((id) => id !== null && !isUuid(id))) {
     throw new Error(`The on-device board assignments must contain ${BASE_BOARD_SLOTS} to ${MAX_SOUNDBITES} valid clip IDs or empty slots.`);
   }
-  return { version: 1, slots: [...row.slots] as (string | null)[] };
+  const slots = [...row.slots] as (string | null)[];
+  let order: number[] | undefined;
+  if (row.order !== undefined) {
+    if (!Array.isArray(row.order) || row.order.some((slotIndex) =>
+      !Number.isInteger(slotIndex) || (slotIndex as number) < 0 || (slotIndex as number) >= slots.length,
+    ) || new Set(row.order).size !== row.order.length) {
+      throw new Error('The on-device board assignments contain an invalid visual order.');
+    }
+    order = [...row.order] as number[];
+  }
+  return { version: 1, slots, ...(order === undefined ? {} : { order }) };
+}
+
+/** Return the complete visual order, placing unlisted stable slots in ascending order. */
+function orderedSlotIndexes(state: BoardAssignments): number[] {
+  const order = state.order ?? [];
+  const listed = new Set(order);
+  return [...order, ...Array.from({ length: state.slots.length }, (_, index) => index).filter((index) => !listed.has(index))];
 }
 
 function validateSlotIndex(slotIndex: number): void {
@@ -58,7 +77,7 @@ export function assignClipToSlot(state: BoardAssignments, slotIndex: number, cli
   const slots = [...validated.slots];
   while (slots.length <= slotIndex) slots.push(null);
   slots[slotIndex] = clipId;
-  return { version: 1, slots };
+  return { ...validated, slots };
 }
 
 export function clearBoardSlot(state: BoardAssignments, slotIndex: number): BoardAssignments {
@@ -67,16 +86,33 @@ export function clearBoardSlot(state: BoardAssignments, slotIndex: number): Boar
   if (slotIndex >= validated.slots.length) return validated;
   const slots = [...validated.slots];
   slots[slotIndex] = null;
-  return { version: 1, slots };
+  return { ...validated, slots };
 }
 
 export function removeClipAssignments(state: BoardAssignments, clipId: string): BoardAssignments {
   const validated = parseBoardAssignments(state);
   validateClipId(clipId);
   return {
-    version: 1,
+    ...validated,
     slots: validated.slots.map((id) => id === clipId ? null : id),
   };
+}
+
+/** Move a stable slot to another visual position, inserting it at the target. */
+export function moveBoardSlot(state: BoardAssignments, sourceSlotIndex: number, targetSlotIndex: number): BoardAssignments {
+  const validated = parseBoardAssignments(state);
+  const slotCount = validated.slots.length;
+  for (const slotIndex of [sourceSlotIndex, targetSlotIndex]) {
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= slotCount) {
+      throw new Error(`Board slot index must be an integer from 0 to ${slotCount - 1}.`);
+    }
+  }
+  const order = orderedSlotIndexes(validated);
+  const sourcePosition = order.indexOf(sourceSlotIndex);
+  const targetPosition = order.indexOf(targetSlotIndex);
+  order.splice(sourcePosition, 1);
+  order.splice(targetPosition, 0, sourceSlotIndex);
+  return { ...validated, order };
 }
 
 export function nextAvailableBoardSlot(state: BoardAssignments): number {
@@ -128,5 +164,7 @@ export function applyBoardAssignments<T extends { id: string; name: string; colo
       slotIndex,
     } as BoardPad<T>);
   }
-  return pads;
+  const order = orderedSlotIndexes(validated);
+  const positionBySlot = new Map(order.map((slotIndex, position) => [slotIndex, position]));
+  return pads.sort((left, right) => positionBySlot.get(left.slotIndex)! - positionBySlot.get(right.slotIndex)!);
 }

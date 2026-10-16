@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "Soundboard",
+    "name": "StimyzApp",
     "slug": "soundboard",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/stimyz/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -12,15 +12,14 @@
     "android": {
       "package": "dev.sarunas.soundboard",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#14161a",
+        "foregroundImage": "./assets/stimyz/android-icon-foreground.png",
+        "monochromeImage": "./assets/stimyz/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/stimyz/favicon.png"
     },
     "plugins": [
       "react-native-audio-api",

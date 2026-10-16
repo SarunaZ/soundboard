@@ -96,6 +96,15 @@ deleting its library clip clears its assignments. Missing local clips fall
 back to their pad defaults, and the local audio files remain private on the
 device.
 
+### Board ordering — user-approved amendment (2026-10-16)
+
+Stable slot indexes continue to identify assignments, while a separate
+persisted visual order controls where pads appear. In Edit mode, users can move
+any original or appended local pad. Legacy snapshots without an explicit order
+keep their existing ascending slot order until the user changes it. This
+requirement supersedes the historical fixed or familiar-position assumption
+wherever it differs; moving a pad does not change its assignment.
+
 ## Historical amendments to DESIGN.md
 
 The following table records the earlier roadmap and is not the current local

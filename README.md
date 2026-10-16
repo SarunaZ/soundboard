@@ -13,6 +13,13 @@ restores that pad's original remote or bundled sound; deleting a library clip
 clears its board assignments. Renaming changes only clip metadata and refreshes any board
 labels that use the clip.
 
+Use **Edit board** to rearrange original and local sounds. Drag a pad's handle
+to its new position, or select a pad and choose a destination. The order is
+saved on-device and restored after reopening the app. The separate **×** button
+removes a local assignment while keeping its library file. The app reserves
+the phone's safe area so its footer stays above system navigation buttons or
+the gesture bar.
+
 Choose an MP3, M4A, WAV, or AAC file from the Editor's device picker (up to
 5 minutes and 32 MiB) to trim before saving. The Editor decodes PCM on-device,
 shows its waveform and range selection, and previews the rendered PCM16 WAV.

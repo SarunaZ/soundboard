@@ -4,6 +4,7 @@ import {
   assignClipToSlot,
   clearBoardSlot,
   emptyBoardAssignments,
+  moveBoardSlot,
   nextAvailableBoardSlot,
   parseBoardAssignments,
   removeClipAssignments,
@@ -48,12 +49,14 @@ function writeAssignments(state: BoardAssignments): void {
   nextFile.write(JSON.stringify(validated));
 
   if (CACHE_FILE.exists) {
+    let primaryIsValid = false;
     try {
       readAssignmentsFile(CACHE_FILE);
-      CACHE_FILE.copySync(BACKUP_FILE, { overwrite: true });
+      primaryIsValid = true;
     } catch {
       // Retain the previous backup if the primary is already damaged.
     }
+    if (primaryIsValid) CACHE_FILE.copySync(BACKUP_FILE, { overwrite: true });
   }
   nextFile.moveSync(CACHE_FILE, { overwrite: true });
 }
@@ -90,6 +93,12 @@ export function removeLocalClipFromBoard(slotIndex: number): BoardAssignments {
 
 export function removeLocalClipAssignments(clipId: string): BoardAssignments {
   const next = removeClipAssignments(readAssignments(), clipId);
+  writeAssignments(next);
+  return next;
+}
+
+export function moveBoardPad(sourceSlotIndex: number, targetSlotIndex: number): BoardAssignments {
+  const next = moveBoardSlot(readAssignments(), sourceSlotIndex, targetSlotIndex);
   writeAssignments(next);
   return next;
 }

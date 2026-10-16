@@ -104,6 +104,17 @@ context; read this amendment as current wherever the older design differs.
 
 ---
 
+### Board ordering — user-approved amendment (2026-10-16)
+
+Stable slot indexes continue to identify assignments, while a separate
+persisted visual order controls where pads appear. In Edit mode, users can move
+any original or appended local pad. Legacy snapshots without an explicit order
+keep their existing ascending slot order until the user changes it. This
+requirement supersedes the historical fixed or familiar-position assumption
+wherever it differs; moving a pad does not change its assignment.
+
+---
+
 ## 1. Objective
 
 A personal soundboard: a grid of pads on an Android phone that fire short meme

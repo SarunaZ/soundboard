@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { applyBoardAssignments } from '../board/assignments.ts';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const boardPath = 'file:///documents/local-clips/board.json';
@@ -36,6 +37,7 @@ export class File {
   }
   copySync(destination, { overwrite = false } = {}) {
     if (!this.exists) throw new Error('Source file not found.');
+    if (globalThis.__fakeExpoFs.failCopyTo === destination.uri) throw new Error('Simulated copy failure.');
     if (destination.exists && !overwrite) throw new Error('Destination exists.');
     globalThis.__fakeExpoFs.files.set(destination.uri, this.textSync());
   }
@@ -62,7 +64,7 @@ export class File {
 async function createHarness(t, { legacyStagingHandle = false, legacyCatalogHandle = false } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'soundboard-snapshot-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const state = { files: new Map(), failMoveTo: null, failMoveToOnAttempt: null, moveAttempts: new Map(), moves: [] };
+  const state = { files: new Map(), failCopyTo: null, failMoveTo: null, failMoveToOnAttempt: null, moveAttempts: new Map(), moves: [] };
   globalThis.__fakeExpoFs = state;
   const fakeFileSystemPath = join(directory, 'fake-expo-file-system.mjs');
   await writeFile(fakeFileSystemPath, fakeFileSystemSource);
@@ -128,11 +130,15 @@ test('repeated board writes keep the primary and a restarted reader recovers a v
   store.assignLocalClipToBoard(14, clipA);
   store.assignLocalClipToBoard(15, clipA);
   store.assignLocalClipToBoard(3, clipB);
+  const ordered = store.moveBoardPad(14, 3);
+  assert.equal(ordered.slots[14], clipA);
+  assert.deepEqual(ordered.order.slice(0, 4), [0, 1, 2, 14]);
   store.removeLocalClipFromBoard(3);
 
   assert.equal(state.files.has(boardPath), true);
   assert.equal(state.files.has(backupBoardPath), true);
   assert.deepEqual(store.loadBoardAssignments().slots.slice(14), [clipA, clipA]);
+  assert.deepEqual(store.loadBoardAssignments().order, ordered.order);
   assert.ok(state.moves.every(({ source }) => source.endsWith('/board.next.json')));
 
   state.files.delete(boardPath);
@@ -142,6 +148,57 @@ test('repeated board writes keep the primary and a restarted reader recovers a v
   assert.equal(recovered.slots[14], clipA);
   assert.equal(recovered.slots[15], clipA);
   assert.equal(recovered.slots[3], clipB);
+  assert.deepEqual(recovered.order, ordered.order);
+});
+
+test('board move writes preserve order on failure and the previous snapshot reloads', async (t) => {
+  const { state, storage } = await createHarness(t);
+  const store = await storage();
+  store.assignLocalClipToBoard(16, clipA);
+  store.assignLocalClipToBoard(17, clipB);
+  const before = store.loadBoardAssignments();
+  state.failMoveTo = boardPath;
+
+  assert.throws(() => store.moveBoardPad(16, 17), /Simulated move failure/);
+  assert.deepEqual(store.loadBoardAssignments(), before);
+  const restarted = await storage(true);
+  assert.deepEqual(restarted.loadBoardAssignments(), before);
+});
+
+test('a board backup-copy failure prevents the reorder and reloads the unchanged primary', async (t) => {
+  const { state, storage } = await createHarness(t);
+  const store = await storage();
+  store.assignLocalClipToBoard(16, clipA);
+  store.assignLocalClipToBoard(17, clipB);
+  const before = store.loadBoardAssignments();
+  const primaryBefore = state.files.get(boardPath);
+  state.failCopyTo = backupBoardPath;
+
+  assert.throws(() => store.moveBoardPad(17, 0), /Simulated copy failure/);
+  assert.equal(state.files.get(boardPath), primaryBefore);
+  assert.deepEqual(store.loadBoardAssignments(), before);
+  const restarted = await storage(true);
+  assert.deepEqual(restarted.loadBoardAssignments(), before);
+});
+
+test('a successful board move reloads with the same visual pad order after restart', async (t) => {
+  const { storage } = await createHarness(t);
+  const store = await storage();
+  store.assignLocalClipToBoard(16, clipA);
+  store.assignLocalClipToBoard(17, clipB);
+  const saved = store.moveBoardPad(17, 0);
+  const restarted = await storage(true);
+  const reloaded = restarted.loadBoardAssignments();
+  const basePads = Array.from({ length: 16 }, (_, index) => ({ id: `pad-${index}`, name: `Pad ${index}`, color: 'gray' }));
+  const clips = [
+    { id: clipA, title: 'A', uri: audioPath(clipA), missing: false },
+    { id: clipB, title: 'B', uri: audioPath(clipB), missing: false },
+  ];
+
+  assert.deepEqual(reloaded, saved);
+  assert.deepEqual(applyBoardAssignments(basePads, reloaded, clips).slice(0, 3).map(({ slotIndex }) => slotIndex), [17, 0, 1]);
+  assert.equal(reloaded.slots[16], clipA);
+  assert.equal(reloaded.slots[17], clipB);
 });
 
 test('automatic board assignment starts at 16, reuses appended holes, and refuses a full board', async (t) => {
@@ -167,7 +224,7 @@ test('deleting clips clears duplicate board slots, preserves other clips, and ke
   assignments[6] = clipA;
   assignments[3] = clipB;
   const clips = [seedClip(clipA, 'first'), seedClip(clipB, 'second')];
-  seedSnapshots(state, { assignments: { version: 1, slots: assignments }, clips });
+  seedSnapshots(state, { assignments: { version: 1, slots: assignments, order: [6, 3, 1] }, clips });
   const store = await storage();
   const localLibrary = await library();
 
@@ -175,6 +232,7 @@ test('deleting clips clears duplicate board slots, preserves other clips, and ke
   assert.equal(state.files.has(boardPath), true);
   assert.equal(state.files.has(catalogPath), true);
   assert.deepEqual(store.loadBoardAssignments().slots.slice(1, 7), [null, null, clipB, null, null, null]);
+  assert.deepEqual(store.loadBoardAssignments().order, [6, 3, 1]);
   assert.deepEqual(JSON.parse(state.files.get(catalogPath)).clips.map((clip) => clip.id), [clipB]);
   assert.equal(state.files.has(audioPath(clipA)), false);
 
@@ -182,6 +240,7 @@ test('deleting clips clears duplicate board slots, preserves other clips, and ke
   assert.equal(state.files.has(boardPath), true);
   assert.equal(state.files.has(catalogPath), true);
   assert.deepEqual(JSON.parse(state.files.get(boardPath)).slots, Array(16).fill(null));
+  assert.deepEqual(JSON.parse(state.files.get(boardPath)).order, [6, 3, 1]);
   assert.deepEqual(JSON.parse(state.files.get(catalogPath)).clips, []);
   assert.equal(state.files.has(backupCatalogPath), true);
   assert.equal(state.files.has(audioPath(clipB)), false);

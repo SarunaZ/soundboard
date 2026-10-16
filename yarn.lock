@@ -2625,6 +2625,7 @@ __metadata:
     react-dom: "npm:19.2.3"
     react-native: "npm:0.86.2"
     react-native-audio-api: "npm:^0.13.2"
+    react-native-safe-area-context: "npm:~5.7.0"
     react-native-web: "npm:^0.21.2"
     typescript: "npm:~6.0.3"
   languageName: unknown
@@ -5832,6 +5833,16 @@ __metadata:
   bin:
     setup-rn-audio-api-web: scripts/setup-rn-audio-api-web.js
   checksum: 10c0/06412f826be306e06e94025ec08bf6e0b0b3e3d1e14a3767240e99b99757b07955adcd85fcce0f393032fe8a50f6ff44a52e0fd0fcee950609debe0a5c1dedda
+  languageName: node
+  linkType: hard
+
+"react-native-safe-area-context@npm:~5.7.0":
+  version: 5.7.0
+  resolution: "react-native-safe-area-context@npm:5.7.0"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  checksum: 10c0/c3799e17321b41df1e0a10492c98472f8f8225ef0bbaf8146c4a9acb9519aae9ac11429059143c215e4402c2808e8445274850a339f8477522ded2461e18da80
   languageName: node
   linkType: hard
 

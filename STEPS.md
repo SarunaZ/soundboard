@@ -322,6 +322,23 @@ pending until implementation and the stated acceptance check are confirmed.
   See
   [docs/private-android-release.md](docs/private-android-release.md).
 
+- [x] **L18 — Board ordering and system navigation insets.** Persistent visual
+  ordering moves original and local pads without changing their assignment
+  slots. Edit mode supports drag handles, edge scrolling, tap-source then
+  tap-destination, and earlier/later controls; removal is a separate action.
+  Native safe-area insets protect all three screens and the shared footer.
+  The app suite passes 124/124 tests, TypeScript passes, and the release build
+  passes 16/16 native tests. Tests cover legacy snapshots, duplicate clips,
+  missing slots, the 1,000-slot limit, restart, and backup/write failures.
+  Signed version `1.0.3` (code `4`) was installed as an update on the connected
+  Galaxy S23 (SM-S911B) on 2026-10-16 with the same package and certificate;
+  its data inode and first-install time were unchanged. Dragging, tap-to-move,
+  force-stop/relaunch persistence, and footer clearance on Board, Editor, and
+  Library were verified on that phone. All 16 pads were restored to the
+  captured pre-test order. Long-board edge scrolling, rotation, gesture-mode
+  navigation, and iOS were not verified on devices; this does not close
+  L16/L17's other acceptance items.
+
 ## Historical remote pipeline roadmap (steps 1–27)
 
 The following checklist records prior implementation history and the deferred

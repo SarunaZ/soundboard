@@ -1,6 +1,6 @@
 # Private Android sideload release
 
-This is a separate, private sideload build of the soundboard app. It uses the stable application ID `dev.sarunas.soundboard.sideload` and display name `Soundboard Private`; Android therefore gives it a fresh, empty library and leaves the existing prototype app and its clips untouched. It is not a Play Store or public-distribution release.
+This is a separate, private sideload build of StimyzApp (formerly Soundboard Private). It uses the stable application ID `dev.sarunas.soundboard.sideload`. Updates retain that app's library; the prototype has a separate package and library. It is not a Play Store or public-distribution release.
 
 The build is deliberately split into two steps. From the repository root, build an unsigned APK:
 
@@ -146,3 +146,34 @@ The keyboard interaction and saved-clip acceptance remain pending, and saved
 clip contents were not independently compared or tested. Keep L17 and L16
 open; the update-install check alone does not establish that clips remain
 usable or that keyboard acceptance passed.
+
+## Board ordering and navigation update — 2026-10-16
+
+StimyzApp `1.0.3` (version code `4`) adds a persisted visual pad order,
+drag handles and tap-to-move in Edit mode, and native safe-area padding around
+the shared footer. Stable assignment slots, package identity, and signing
+identity are retained. Legacy board snapshots need no migration.
+
+The app suite passed 124/124 tests and TypeScript passed. The private APK build
+completed in 9m43s, including 16 native tests without failures. The signed APK
+is `data/private-release-20261016-214846-587-f7110bbb/artifacts/soundboard-private.apk`
+(42,249,483 bytes), with SHA-256
+`4671F8101EB51984287080AD7A2B6345AB6FBA8B290213101118EFBA09B52151`.
+Independent signature verification confirmed v2/v3 signatures with the existing
+certificate; the ARM64-only package, version, permissions, and 16 KiB APK
+alignment checks passed.
+
+`adb install -r --user 0` succeeded on the connected Galaxy S23 (SM-S911B).
+Version `1.0.3` / code `4` was confirmed. The app's data inode `1217241` and
+first-install time `2026-10-16 21:38:17` were unchanged. A dragged pad retained
+its new position after force-stop and cold launch (187 ms); tap-to-move then
+restored all 16 pads to their captured pre-test order. Footer bounds were
+`y=2013..2196` on Board, Editor, and Library, above the phone's three-button
+system navigation area. Screenshots and hierarchy dumps are retained under
+ignored `data/stimyz-layout-check/`. Scoped app error logs were empty after
+these checks.
+
+The phone library was empty during this check. Local-clip ordering, missing
+slots, duplicate assignments, capacity, and failed writes have automated
+coverage. Long-board edge scrolling, rotation, gesture navigation, and iOS
+were not verified on devices. Earlier L16/L17 acceptance items remain open.

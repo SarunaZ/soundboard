@@ -23,12 +23,12 @@ module.exports = () => {
 
     return {
       ...config,
-      name: 'Soundboard Private',
-      version: '1.0.1',
+      name: 'StimyzApp',
+      version: '1.0.3',
       android: {
         ...config.android,
         package: 'dev.sarunas.soundboard.sideload',
-        versionCode: 2,
+        versionCode: 4,
         allowBackup: false,
         blockedPermissions,
       },
@@ -43,7 +43,7 @@ module.exports = () => {
 
   return {
     ...config,
-    name: 'Soundboard Prototype',
+    name: 'StimyzApp Prototype',
     android: {
       ...config.android,
       package: 'dev.sarunas.soundboard.prototype',

@@ -8,6 +8,7 @@ import {
   nextAvailableBoardSlot,
   parseBoardAssignments,
   removeClipAssignments,
+  moveBoardSlot,
 } from './assignments.ts';
 
 const clipId = '123e4567-e89b-42d3-a456-426614174000';
@@ -27,6 +28,62 @@ test('accepts the original 16-slot board and grows only up to 1000 stable slots'
   assert.equal(parsed.slots.length, 16);
   assert.throws(() => assignClipToSlot(expanded, 1000, clipId), /0 to 999/);
   assert.throws(() => parseBoardAssignments({ version: 1, slots: Array(1001).fill(null) }), /1000/);
+});
+
+test('legacy snapshots keep default order through parse and roundtrip, then order mutations persist separately', () => {
+  const legacy = { version: 1, slots: Array(16).fill(null) };
+  const parsed = parseBoardAssignments(legacy);
+  assert.deepEqual(parsed, legacy);
+  assert.deepEqual(parseBoardAssignments(JSON.parse(JSON.stringify(parsed))), legacy);
+  const moved = moveBoardSlot(parsed, 2, 9);
+  assert.deepEqual(moved.order, [0, 1, 3, 4, 5, 6, 7, 8, 9, 2, 10, 11, 12, 13, 14, 15]);
+  assert.deepEqual(parsed, legacy);
+  assert.deepEqual(parseBoardAssignments(JSON.parse(JSON.stringify(moved))), moved);
+});
+
+test('moves original and appended slots by insertion while retaining duplicate assignments and stable slots', () => {
+  let state = assignClipToSlot(emptyBoardAssignments(), 1, clipId);
+  state = assignClipToSlot(state, 4, clipId);
+  state = assignClipToSlot(state, 17, otherClipId);
+  const movedOriginal = moveBoardSlot(state, 1, 17);
+  assert.equal(movedOriginal.slots[1], clipId);
+  assert.equal(movedOriginal.slots[4], clipId);
+  assert.equal(movedOriginal.slots[17], otherClipId);
+  assert.equal(movedOriginal.order?.at(-1), 1);
+  const movedAppendedBack = moveBoardSlot(movedOriginal, 17, 0);
+  assert.equal(movedAppendedBack.order?.[0], 17);
+  assert.equal(state.order, undefined);
+});
+
+test('moves the last playable slot to the front at the 1000-slot capacity without changing assignments', () => {
+  const state = assignClipToSlot(emptyBoardAssignments(), 999, clipId);
+  const moved = moveBoardSlot(state, 999, 0);
+  assert.equal(state.slots.length, 1000);
+  assert.equal(moved.slots.length, 1000);
+  assert.deepEqual(moved.slots, state.slots);
+  assert.equal(moved.slots[999], clipId);
+  assert.equal(moved.order?.length, 1000);
+  assert.equal(new Set(moved.order).size, 1000);
+  assert.deepEqual(moved.order.slice(0, 3), [999, 0, 1]);
+  assert.equal(parseBoardAssignments(JSON.parse(JSON.stringify(moved))).slots.length, 1000);
+});
+
+test('partial visual orders append unlisted slots and assignment mutations retain ordering through holes', () => {
+  const partial = parseBoardAssignments({ version: 1, slots: [...Array(16).fill(null), clipId, otherClipId], order: [17, 2] });
+  const base = Array.from({ length: 16 }, (_, index) => ({ id: `pad-${index}`, name: `Pad ${index}`, color: 'gray' }));
+  const clips = [
+    { id: clipId, title: 'A', uri: 'file:///a.m4a', missing: false },
+    { id: otherClipId, title: 'B', uri: 'file:///b.m4a', missing: false },
+  ];
+  const defaultSlotsExceptTwo = Array.from({ length: 16 }, (_, i) => i).filter((i) => i !== 2);
+  assert.deepEqual(applyBoardAssignments(base, partial, clips).map(({ slotIndex }) => slotIndex), [17, 2, ...defaultSlotsExceptTwo, 16]);
+  const afterClear = clearBoardSlot(partial, 17);
+  assert.deepEqual(afterClear.order, [17, 2]);
+  const afterRemove = removeClipAssignments(afterClear, clipId);
+  assert.deepEqual(afterRemove.order, [17, 2]);
+  const reused = assignClipToSlot(afterRemove, 17, clipId);
+  assert.deepEqual(reused.order, [17, 2]);
+  assert.deepEqual(applyBoardAssignments(base, reused, clips).map(({ slotIndex }) => slotIndex), [17, 2, ...defaultSlotsExceptTwo]);
 });
 
 test('automatic board slots start at 16, reuse the first appended hole, then append', () => {
@@ -73,6 +130,12 @@ test('rejects malformed schema, slot indexes, and clip IDs', () => {
   assert.throws(() => clearBoardSlot(emptyBoardAssignments(), 1000), /index/);
   assert.throws(() => assignClipToSlot(emptyBoardAssignments(), 0, 'not-a-uuid'), /clip ID/);
   assert.throws(() => removeClipAssignments(emptyBoardAssignments(), 'not-a-uuid'), /clip ID/);
+  assert.throws(() => parseBoardAssignments({ version: 1, slots: Array(16).fill(null), order: [1, 1] }), /visual order/);
+  assert.throws(() => parseBoardAssignments({ version: 1, slots: Array(16).fill(null), order: [16] }), /visual order/);
+  assert.throws(() => parseBoardAssignments({ version: 1, slots: Array(16).fill(null), order: [1.5] }), /visual order/);
+  assert.throws(() => parseBoardAssignments({ version: 1, slots: Array(16).fill(null), order: '1,2' }), /visual order/);
+  assert.throws(() => moveBoardSlot(emptyBoardAssignments(), 0, 16), /index/);
+  assert.throws(() => moveBoardSlot(emptyBoardAssignments(), 1.5, 0), /index/);
 });
 
 test('overlays present local clips by slot and falls back to bundled pads for missing files', () => {

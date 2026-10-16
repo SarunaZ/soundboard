@@ -103,7 +103,7 @@ cd android
 apk="/workspace/app-client/android/app/build/outputs/apk/release/app-release-unsigned.apk"
 test -s "$apk"
 badging="$(/opt/android-sdk/build-tools/36.0.0/aapt dump badging "$apk")"
-printf '%s\n' "$badging" | grep -F "package: name='dev.sarunas.soundboard.sideload' versionCode='2' versionName='1.0.1'"
+printf '%s\n' "$badging" | grep -F "package: name='dev.sarunas.soundboard.sideload' versionCode='4' versionName='1.0.3'"
 native_code="$(printf '%s\n' "$badging" | sed -n 's/^native-code: //p')"
 if [ "$native_code" != "'arm64-v8a'" ]; then
   echo "Expected an arm64-only APK, found native-code: ${native_code:-<none>}" >&2
@@ -143,7 +143,7 @@ done
 cp "$apk" /workspace/artifacts/soundboard-private-unsigned.apk
 sha256sum /workspace/artifacts/soundboard-private-unsigned.apk | tee /workspace/artifacts/SHA256SUMS
 stat -c 'sizeBytes=%s' /workspace/artifacts/soundboard-private-unsigned.apk > /workspace/artifacts/release-info.txt
-printf 'applicationId=dev.sarunas.soundboard.sideload\nversionName=1.0.1\nversionCode=2\nsigned=false\n' >> /workspace/artifacts/release-info.txt
+printf 'applicationId=dev.sarunas.soundboard.sideload\nversionName=1.0.3\nversionCode=4\nsigned=false\n' >> /workspace/artifacts/release-info.txt
 '@
 
 $dockerArgs = @(
