@@ -1,0 +1,41 @@
+apply plugin: 'com.android.library'
+apply plugin: 'expo-module-gradle-plugin'
+
+def prototypeEnabled = System.getenv('SOUNDBOARD_YOUTUBE_PROTOTYPE') == '1'
+def privateReleaseEnabled = System.getenv('SOUNDBOARD_PRIVATE_RELEASE') == '1'
+if (prototypeEnabled && privateReleaseEnabled) {
+  throw new GradleException('SOUNDBOARD_YOUTUBE_PROTOTYPE and SOUNDBOARD_PRIVATE_RELEASE cannot both be enabled.')
+}
+def nativeYoutubeEnabled = prototypeEnabled || privateReleaseEnabled
+
+group = 'dev.sarunas.soundboard'
+version = '1.0.0'
+
+expoModule {
+  canBePublished false
+}
+
+android {
+  namespace 'dev.sarunas.soundboard.youtube'
+  buildToolsVersion rootProject.ext.buildToolsVersion
+
+  sourceSets {
+    main.java.srcDirs = [nativeYoutubeEnabled ? 'src/prototype/java' : 'src/main/java']
+    test.java.srcDirs = [nativeYoutubeEnabled ? 'src/prototypeTest/java' : 'src/test/java']
+  }
+
+  buildFeatures {
+    buildConfig true
+  }
+
+  defaultConfig {
+    buildConfigField 'boolean', 'EXTERNAL_DIAGNOSTIC_REPORTS_ENABLED', (!privateReleaseEnabled).toString()
+  }
+}
+
+dependencies {
+  if (nativeYoutubeEnabled) {
+    implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
+    testImplementation 'junit:junit:4.13.2'
+  }
+}

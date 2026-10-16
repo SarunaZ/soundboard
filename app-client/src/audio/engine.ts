@@ -7,6 +7,7 @@
 // tsc typecheck the library itself, which does not pass its own strict settings.
 // The package publishes no "exports" map, so these paths are legal.
 import AudioContext from 'react-native-audio-api/lib/module/core/AudioContext';
+import { PlaybackStateStore, type PlaybackSnapshot } from './playbackState';
 
 // Derived from the API rather than imported: the library's own declarations
 // resolve `AudioBuffer` to the DOM global, so importing its classes directly
@@ -36,12 +37,22 @@ const LRU_MAX = 30;
 interface Voice {
   source: AudioBufferSourceNode;
   gain: GainNode;
+  generation: number;
 }
 
 let ctx: AudioContext | null = null;
 const buffers = new Map<string, AudioBuffer>();
 const inFlight = new Map<string, Promise<AudioBuffer>>();
 let voice: Voice | null = null;
+const playbackState = new PlaybackStateStore();
+
+export function getPlaybackSnapshot(): PlaybackSnapshot {
+  return playbackState.snapshot(ctx?.currentTime ?? 0);
+}
+
+export function subscribePlayback(listener: (snapshot: PlaybackSnapshot) => void): () => void {
+  return playbackState.subscribe(listener);
+}
 
 function context(): AudioContext {
   if (!ctx) ctx = new AudioContext();
@@ -96,6 +107,11 @@ function release(v: Voice, at: number): void {
   }
 }
 
+function disconnect(v: Voice): void {
+  try { v.source.disconnect(); } catch { /* already disconnected */ }
+  try { v.gain.disconnect(); } catch { /* already disconnected */ }
+}
+
 export function isWarm(uri: string): boolean {
   return buffers.has(uri);
 }
@@ -106,9 +122,19 @@ export function isWarm(uri: string): boolean {
  *
  * No debouncing: spamming faster than the clip length is the airhorn aesthetic.
  */
-export async function play(uri: string): Promise<{ cacheHit: boolean }> {
+export async function play(uri: string, padId = uri): Promise<{ cacheHit: boolean; started: boolean }> {
+  const generation = playbackState.beginRequest();
   const cacheHit = buffers.has(uri);
-  const buffer = await load(uri);
+  let buffer: AudioBuffer;
+  try {
+    buffer = await load(uri);
+  } catch (error) {
+    // A superseded decode failure must not surface over the pad that won.
+    if (!playbackState.isCurrentRequest(generation)) return { cacheHit, started: false };
+    throw error;
+  }
+  if (!playbackState.isCurrentRequest(generation)) return { cacheHit, started: false };
+
   const c = context();
   const now = c.currentTime;
 
@@ -124,17 +150,42 @@ export async function play(uri: string): Promise<{ cacheHit: boolean }> {
   const source = c.createBufferSource();
   source.buffer = buffer;
   source.connect(gain);
-  source.start(now);
 
-  voice = { source, gain };
-  return { cacheHit };
+  const nextVoice = { source, gain, generation };
+  voice = nextVoice;
+  source.onEnded = () => {
+    if (voice === nextVoice) voice = null;
+    playbackState.finish(generation);
+    disconnect(nextVoice);
+  };
+  try {
+    source.start(now);
+  } catch (error) {
+    if (voice === nextVoice) voice = null;
+    disconnect(nextVoice);
+    throw error;
+  }
+  const started = playbackState.start(generation, {
+    padId,
+    uri,
+    startedAt: now,
+    duration: buffer.duration,
+  });
+  if (!started) {
+    release(nextVoice, now);
+    if (voice === nextVoice) voice = null;
+  }
+  return { cacheHit, started };
 }
 
 /** The persistent kill-bar while playing (§9). */
 export function stop(): void {
-  if (!voice) return;
-  release(voice, context().currentTime);
-  voice = null;
+  playbackState.stop();
+  if (voice) {
+    const stoppedVoice = voice;
+    release(stoppedVoice, context().currentTime);
+    voice = null;
+  }
 }
 
 export async function warm(uri: string): Promise<void> {

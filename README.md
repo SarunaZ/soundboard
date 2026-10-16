@@ -98,6 +98,27 @@ share links over HTTP or HTTPS. It uses only the selected video: playlist and
 tracking parameters are discarded, and a playlist link without a video ID is
 rejected. Device-file editing uses the separate on-device path described above.
 
+The opt-in native YouTube extraction prototype has a separate package ID and
+staged APK workflow. See [docs/android-youtube-prototype.md](docs/android-youtube-prototype.md)
+and `scripts/build-youtube-prototype.ps1`; the ordinary build keeps the
+downloader dependencies disabled.
+
+The private YouTube sideload release uses package ID
+`dev.sarunas.soundboard.sideload` and starts with an empty local Library. Its
+release and playback progress changes pass the combined release-profile suite
+(101/101 app tests) and the TypeScript check. The signed 1.0.1 update was
+verified and installed on a Samsung phone on 2026-10-15. Audio and interaction
+acceptance and the dependency/notice inventory remain pending, so L16 stays
+open. See
+[docs/private-android-release.md](docs/private-android-release.md).
+
+The keyboard visibility fix covers both the Editor's clip-name field and the
+Library's rename field. The combined app suite passes 112/112 tests and
+TypeScript passes. The replacement private APK is signed as version 1.0.1
+(code 2) with the same application ID and signing identity, then installed as
+an update on 2026-10-15. Physical-device checks of both inputs and confirmation
+that saved clips remain usable are pending. See [STEPS.md](STEPS.md) for L17.
+
 ## Layout
 
 ```
@@ -153,8 +174,13 @@ copy removed that private file and restored pad 14's default; the Downloads
 source and existing user clip/pad 16 assignment stayed unchanged. Those checks
 record the superseded whole-file import flow (L12), not the current Editor
 workflow. L14's device-file Editor flow is implemented and emulator-verified
-with MP3; M4A/WAV/AAC and physical-phone checks remain pending. [STEPS.md](STEPS.md)
-is authoritative for the L-series local workflow and historical 1–27 roadmap.
+with MP3; M4A/WAV/AAC and physical-phone checks remain pending. On 2026-10-12,
+the user reported that the native YouTube prototype works; extraction was not
+independently confirmed in this task, and L15's remaining checks stay open. The
+private sideload release and playback progress work is tracked as L16 in
+[STEPS.md](STEPS.md) and [docs/private-android-release.md](docs/private-android-release.md).
+[STEPS.md](STEPS.md) is authoritative for the L-series local workflow and
+historical 1–27 roadmap.
 
 Shared Imli release packaging step 1 is implemented and locally verified, with
 a dirty, non-publishable image. It is not a production-readiness claim; step 2's

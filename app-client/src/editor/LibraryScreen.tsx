@@ -1,6 +1,6 @@
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { Pad } from '../pads';
 import type { BoardAssignments } from '../board/assignments';
@@ -10,6 +10,7 @@ import { filterSoundbites } from '../board/search';
 import { MAX_SOUNDBITES } from '../limits';
 import { normalizeClipTitle } from './catalog';
 import { formatTime } from './WaveformRange';
+import { useKeyboardInputReveal } from '../keyboard/useKeyboardInputReveal';
 
 interface LibraryScreenProps {
   onBack: () => void;
@@ -46,6 +47,9 @@ export function LibraryScreen({
   const [renameTitle, setRenameTitle] = useState('');
   const [renameError, setRenameError] = useState('');
   const listRef = useRef<FlatList<LocalClip>>(null);
+  const renameScrollRef = useRef<ScrollView>(null);
+  const renameInputRef = useRef<TextInput>(null);
+  const keyboardReveal = useKeyboardInputReveal(renameScrollRef, Platform.OS === 'android' && Boolean(renameClip));
   const filteredClips = filterSoundbites(clips, query);
   const originalIndexes = new Map(clips.map((clip, index) => [clip.id, index]));
 
@@ -248,11 +252,21 @@ export function LibraryScreen({
         />
       ) : null}
       <Modal visible={Boolean(renameClip)} transparent animationType="fade" onRequestClose={() => setRenameClip(null)} accessibilityViewIsModal>
-        <KeyboardAvoidingView style={styles.modalScrim} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.modalScrim} behavior="padding">
+          <ScrollView
+            ref={renameScrollRef}
+            style={styles.renameScroll}
+            contentContainerStyle={styles.renameScrollContent}
+            keyboardShouldPersistTaps="handled"
+            onLayout={keyboardReveal.onViewportLayout}
+            onScroll={keyboardReveal.onScroll}
+            scrollEventThrottle={16}
+          >
           <View style={styles.renamePanel}>
             <Text accessibilityRole="header" style={styles.renameHeading}>Rename soundbite</Text>
             <Text style={styles.renameLabel}>SOUNDBITE NAME</Text>
             <TextInput
+              ref={renameInputRef}
               value={renameTitle}
               onChangeText={(value) => { setRenameTitle(value); setRenameError(''); }}
               maxLength={100}
@@ -260,6 +274,8 @@ export function LibraryScreen({
               selectTextOnFocus
               returnKeyType="done"
               onSubmitEditing={saveRename}
+              onFocus={() => { if (renameInputRef.current) keyboardReveal.onFocus(renameInputRef.current); }}
+              onBlur={() => { if (renameInputRef.current) keyboardReveal.onBlur(renameInputRef.current); }}
               accessibilityLabel="Soundbite name"
               style={styles.renameInput}
             />
@@ -271,6 +287,7 @@ export function LibraryScreen({
               <Pressable accessibilityRole="button" disabled={!renameTitle.trim()} onPress={saveRename} style={[styles.renameSave, !renameTitle.trim() && styles.disabled]}><Text style={styles.renameSaveText}>SAVE NAME</Text></Pressable>
             </View>
           </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
     </View>
@@ -327,7 +344,9 @@ const styles = StyleSheet.create({
   createText: { color: '#a4e8ce', fontSize: 10, letterSpacing: 1.1, fontWeight: '700' },
   error: { color: '#ff9ba7', fontSize: 13, lineHeight: 20, backgroundColor: '#361f25', borderRadius: 10, padding: 12 },
   storage: { color: '#667178', fontSize: 10, lineHeight: 16, textAlign: 'center', paddingHorizontal: 18, paddingTop: 10 },
-  modalScrim: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.72)' },
+  modalScrim: { flex: 1, paddingHorizontal: 20, backgroundColor: 'rgba(0,0,0,0.72)' },
+  renameScroll: { flex: 1 },
+  renameScrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 20 },
   renamePanel: { borderRadius: 18, padding: 18, backgroundColor: '#1a1e23', borderWidth: 1, borderColor: '#343b40', gap: 10 },
   renameHeading: { color: '#f4f5f6', fontSize: 19, fontWeight: '700', marginBottom: 4 },
   renameLabel: { color: '#89939a', fontSize: 9, letterSpacing: 1.3, fontWeight: '700' },

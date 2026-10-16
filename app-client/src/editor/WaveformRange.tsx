@@ -9,6 +9,7 @@ interface Props {
   startMs: number;
   endMs: number;
   onChange: (startMs: number, endMs: number) => void;
+  playback?: { playheadMs: number; elapsedMs: number; durationMs: number } | null;
   disabled?: boolean;
 }
 
@@ -20,7 +21,7 @@ export function formatTime(milliseconds: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
 }
 
-export function WaveformRange({ peaks, durationMs, startMs, endMs, onChange, disabled = false }: Props) {
+export function WaveformRange({ peaks, durationMs, startMs, endMs, onChange, playback = null, disabled = false }: Props) {
   const [width, setWidth] = useState(1);
   const state = useRef({ startMs, endMs, durationMs, width, onChange, disabled, handle: 'start' as 'start' | 'end', grantX: 0, grantMs: 0 });
   state.current = { ...state.current, startMs, endMs, durationMs, width, onChange, disabled };
@@ -74,6 +75,11 @@ export function WaveformRange({ peaks, durationMs, startMs, endMs, onChange, dis
         accessibilityValue={{ min: 0, max: durationMs, now: startMs }}
       >
         <View style={[styles.selected, { left: `${selectionStart * 100}%`, width: `${(selectionEnd - selectionStart) * 100}%` }]} />
+        {playback ? (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <View style={[styles.played, { left: `${selectionStart * 100}%`, width: `${Math.max(0, Math.min(1, (playback.playheadMs - startMs) / Math.max(1, endMs - startMs))) * (selectionEnd - selectionStart) * 100}%` }]} />
+          </View>
+        ) : null}
         <View style={styles.bars}>
           {bars.map((peak, index) => {
             const ratio = (index + 0.5) / bars.length;
@@ -81,12 +87,15 @@ export function WaveformRange({ peaks, durationMs, startMs, endMs, onChange, dis
             return <View key={index} style={[styles.bar, { height: `${Math.max(8, peak * 90)}%`, backgroundColor: selected ? '#68e3bd' : '#59636d' }]} />;
           })}
         </View>
+        {playback ? <View pointerEvents="none" style={[styles.playhead, { left: `${Math.max(selectionStart, Math.min(selectionEnd, playback.playheadMs / durationMs)) * 100}%` }]} /> : null}
         <View style={[styles.handle, { left: `${selectionStart * 100}%` }]} />
         <View style={[styles.handle, { left: `${selectionEnd * 100}%` }]} />
       </View>
       <View style={styles.times}>
         <Text style={styles.time}>{formatTime(startMs)}</Text>
-        <Text style={styles.length}>{formatTime(endMs - startMs)} selected</Text>
+        <Text style={styles.length}>
+          {playback ? `${formatTime(playback.elapsedMs)} / ${formatTime(playback.durationMs)}` : `${formatTime(endMs - startMs)} selected`}
+        </Text>
         <Text style={styles.time}>{formatTime(endMs)}</Text>
       </View>
     </View>
@@ -96,6 +105,8 @@ export function WaveformRange({ peaks, durationMs, startMs, endMs, onChange, dis
 const styles = StyleSheet.create({
   track: { height: 116, borderRadius: 14, backgroundColor: '#20262b', overflow: 'hidden', justifyContent: 'center', position: 'relative', marginTop: 8 },
   selected: { position: 'absolute', top: 0, bottom: 0, backgroundColor: '#225848', opacity: 0.55 },
+  played: { position: 'absolute', top: 0, bottom: 0, backgroundColor: '#68e3bd', opacity: 0.16 },
+  playhead: { position: 'absolute', top: 5, bottom: 5, width: 2, marginLeft: -1, borderRadius: 2, backgroundColor: '#f2fff9' },
   bars: { height: '76%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 8, gap: 2 },
   bar: { flex: 1, minWidth: 1, borderRadius: 2, opacity: 0.92 },
   handle: { position: 'absolute', top: 8, bottom: 8, width: 3, marginLeft: -1.5, borderRadius: 2, backgroundColor: '#9af2d5' },

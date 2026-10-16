@@ -1,6 +1,6 @@
 # Soundboard — Steps
 
-**Status (authoritative, 2026-10-10):** M0's remote feature path is complete;
+**Status (authoritative, 2026-10-15):** M0's remote feature path is complete;
 its real-phone/cellular exit measurement remains pending. Local authoring L1–L5,
 L7, L8 backend live-source smoke, L10, and L11 are implemented and verified. App
 strict TypeScript and the service/shared TypeScript build pass; all 59 app tests,
@@ -31,7 +31,7 @@ by this pivot. Local board assignments (L11) and search/naming/capacity UI
 (L13) are implemented and verified. L12 records a superseded whole-file device
 import; L14's corrected device-file Editor flow is implemented and emulator-
 verified with MP3. M4A/WAV/AAC and physical-phone checks remain pending.
-**Date:** 2026-08-15, revised 2026-10-10
+**Date:** 2026-08-15, revised 2026-10-15
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
 
@@ -220,6 +220,107 @@ pending until implementation and the stated acceptance check are confirmed.
   catalog. Native verification covered MP3 only; M4A/WAV/AAC and physical-phone
   checks remain pending. This flow has not been verified with the service
   stopped or offline. No claim is made here for those conditions.
+
+- [ ] **L15 — Opt-in native YouTube prototype.** Build the isolated Android
+  variant described in [docs/android-youtube-prototype.md](docs/android-youtube-prototype.md).
+  The ordinary build must keep the disabled module stub and omit downloader
+  artifacts. The isolated ARM64 APK builds, aligns, and verifies successfully;
+  its size and signature are recorded in the linked verification notes. The
+  ordinary disabled-stub compile and dependency-isolation check also pass. The
+  initial APK was installed and launched on a Samsung phone and the prototype
+  button appeared, but extraction failed with a generic error. The earlier
+  safe-diagnostics rebuild built, verified, passed four native unit tests, and
+  is installed and launched successfully. Its retry recorded
+  `ERR_SBYT_DOWNLOAD_EXTRACTOR`, confirming metadata completed and download
+  failed. The expanded finite categorization build also builds, verifies, passes
+  seven native tests, and is installed/launched; its retry recorded the same
+  download-stage code. The bounded report revision builds, passes seven
+  classifier plus seven report tests, and is installed/launched. Its report was
+  timestamped 16:09:59 local and retrieved over USB at 16:10:27 local:
+  `DOWNLOAD`,
+  `ERR_SBYT_DOWNLOAD_EXTRACTOR`, `YoutubeDLException: ERROR: 'NoneType' object
+  has no attribute 'lower'`. An offline reproduction with the exact cached
+  yt-dlp 2025.11.12 AAR and synthetic empty fixture points strongly to the
+  wrapper's truthy missing `--ffmpeg-location` path reaching the `m4a_dash`
+  default fixup; this does not prove the phone's exact container state/call
+  trace. A separate offline full `process_info` comparison reproduces the same
+  failure with the default fixup path and returns with `--fixup never`; this is
+  not phone extraction. The approved prototype-only change is implemented in
+  the request factory. All 16 native tests, 79 app tests, TypeScript, and normal
+  config equality checks pass. The compatibility APK is built and verified:
+  42,155,634 bytes, SHA-256
+  `896D759A369587766B98B4A12B5BE3F6C7F27A097E6EDDF3136088C2164DB9EF`, valid
+  v2 signature matching the prior certificate, prototype package, ARM64, SDK
+  24/36, unchanged permissions, and non-debuggable. Its embedded bundle is
+  1,457,444 bytes; Python and QuickJS are present. The APK includes
+  `libavcodec`, `libavformat`, `libavutil`, and `libswresample` from
+  react-native-audio-api 0.13.2; it does not bundle the FFmpeg CLI/downloader
+  converter. 16 KiB zipalign plus all 22 ARM64 ELF alignment checks pass.
+  `adb install -r` returned `Success`. Launching at 16:39:44 local returned `Status: ok` (PID
+  28603); scoped startup logs show the main activity running without
+  `SoundboardYoutube` or `AndroidRuntime` errors, with only a `SafeAreaView`
+  deprecation warning. Both prototype and ordinary packages are present for
+  user 0; neither was uninstalled or data-cleared. L15 remains open; phone
+  extraction, decoding, editing, and playback are unverified. On 2026-10-12,
+  the user reported that the prototype works; this report is not independent
+  extraction evidence. Keep L15 open for cancellation, long-source, unavailable-
+  module, and offline checks unless each is confirmed separately. See linked
+  notes for the remaining checks.
+- [ ] **L16 — Private YouTube sideload release and playback progress.** The
+  private release profile uses Android package ID
+  `dev.sarunas.soundboard.sideload` and starts with an
+  empty local Library; the ordinary and prototype build profiles remain
+  unchanged. Its Editor primary action routes to on-device extraction, and the
+  waveform shows the audio player's actual position and elapsed/selected
+  duration. The board shows progress from its playback clock. These UI and
+  playback changes are implemented. The combined app suite, including the
+  private release profile, passes 101/101 tests; the TypeScript check passes.
+  The build helper uses the existing ignored `node_modules` cache through a
+  direct read-write mount, avoiding a 6.6 GB copy. The unsigned build from
+  2026-10-12 is retained at 42,151,722 bytes with SHA-256
+  `057A75BC926BFC7B37F2CDF389395CC8C315A88897A9F6B09EEA1548CBF08395`.
+  The signed APK was verified on 2026-10-15: 42,282,441 bytes, SHA-256
+  `DAB85ACCDF8611D0CB27C504E8FE9F053336B6660D4A821C3CB2320EAC424004`,
+  matching `SHA256-SIGNED.txt`. `apksigner` verified v2/v3 signatures and a
+  non-debug RSA-3072 certificate (SHA-256
+  `467f0fa1246038a1ed190d71c427923e344c5a16611349e7acf43ab281320571`).
+  Binary inspection reports package `dev.sarunas.soundboard.sideload`, version
+  `1.0.0` (code 1), min SDK 24, target SDK 36, ARM64 only, non-debuggable,
+  `allowBackup=false`, `usesCleartextTraffic=false`, and
+  `extractNativeLibs=true`. APK zipalign's 16 KiB check passed. On 2026-10-15,
+  the signed APK was freshly installed for user 0 on a Samsung SM-S928B
+  (ARM64, API 36); installation returned `Success` without replacing,
+  uninstalling, or clearing data. A cold launch returned `Status: ok` in
+  198 ms. Startup logs showed no AndroidRuntime crash and a SafeAreaView
+  deprecation warning. The configured manifest hostname failed DNS resolution
+  on the phone; the PC resolved it, but the cause is unconfirmed and no network
+  settings were changed. Audio playback/progress, import, cancellation, offline
+  behavior, upgrade, and dependency/notice inventory remain pending. The user
+  reports the encrypted signing-key backup is saved in NordPass; that backup
+  was not independently verified. Keep L16 open; this is not a
+  production-readiness or cleared-handoff claim. See
+  [docs/private-android-release.md](docs/private-android-release.md).
+
+- [ ] **L17 — Keyboard-safe clip naming.** The Editor name field and Library
+  rename field have keyboard-avoidance and focused-input reveal handling for
+  Android and iOS. The fix bounds scrolling to the available viewport and
+  measures the focused input against the actual visible area. It handles an
+  already-open keyboard, cleans up blur/hide/unmount and stale measurements,
+  resets state on modal reopen, and dismisses from the Editor's Done action.
+  Physical Android and iOS UI checks have not been run. The combined app suite
+  passes 112/112 tests and the TypeScript check passes; no native processing,
+  data format, or dependency changes were made. The replacement private build
+  was signed on 2026-10-15 at version `1.0.1` (version code `2`) for the same
+  package ID and signing identity. `adb install -r --user 0` succeeded on the
+  Samsung SM-S928B. The original `firstInstallTime` and `ceDataInode` were
+  unchanged, but saved-clip contents were not independently compared or tested.
+  A cold launch returned `Status: ok` in 160 ms. Scoped startup logs showed only
+  a SafeAreaView deprecation warning and no AndroidRuntime error; no manifest
+  DNS warning appeared in that sample, which does not establish that the prior
+  DNS issue is resolved. Physical-phone keyboard checks and saved-clip
+  acceptance remain pending. Keep L17 open until those checks pass.
+  See
+  [docs/private-android-release.md](docs/private-android-release.md).
 
 ## Historical remote pipeline roadmap (steps 1–27)
 

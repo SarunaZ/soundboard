@@ -1,14 +1,18 @@
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { clipUrl, createSession, deleteSession, getEditorConfig, previewUrl, renderSession } from './api';
 import { MAX_CLIP_MS, clampRange, type EditorSession } from './protocol';
 import { normalizeClipTitle } from './catalog';
 import { formatTime, WaveformRange } from './WaveformRange';
+import { getPlaybackPosition } from './playback';
 import { disposeLocalAudioSource, pickLocalAudioSource, renderLocalAudioRange, saveLocalAudioRender, type LocalAudioRender, type LocalAudioSource } from './localAudio';
+import { isOnDeviceYoutubeAvailable, isPrivateYoutubeRelease, openYoutubeOnDevice } from './onDeviceYoutube';
+import { useKeyboardInputReveal } from '../keyboard/useKeyboardInputReveal';
 
 type Phase = 'idle' | 'fetching' | 'ready' | 'rendering' | 'rendered' | 'saving';
+type PreviewPlayback = { sourceKey: string; mode: 'source' | 'rendered'; startMs: number; endMs: number };
 
 const PHASE_LABEL: Record<Phase, string> = {
   idle: 'Choose a device audio file or paste a YouTube link to get started.',
@@ -22,6 +26,7 @@ const PHASE_LABEL: Record<Phase, string> = {
 export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
   const player = useAudioPlayer(null, { updateInterval: 150, preferredForwardBufferDuration: 4 });
   const status = useAudioPlayerStatus(player);
+  const privateYoutubeRelease = isPrivateYoutubeRelease();
   const [videoUrl, setVideoUrl] = useState('');
   const [title, setTitle] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -29,12 +34,18 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
   const [localSource, setLocalSource] = useState<LocalAudioSource | null>(null);
   const [localRender, setLocalRender] = useState<LocalAudioRender | null>(null);
   const [selectingFile, setSelectingFile] = useState(false);
+  const [loadingOnDeviceYoutube, setLoadingOnDeviceYoutube] = useState(false);
   const [startMs, setStartMs] = useState(0);
   const [endMs, setEndMs] = useState(5000);
+  const [activePlayback, setActivePlayback] = useState<PreviewPlayback | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const operation = useRef<AbortController | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const videoUrlInput = useRef<TextInput>(null);
+  const titleInput = useRef<TextInput>(null);
+  const keyboardReveal = useKeyboardInputReveal(scrollRef, Platform.OS === 'android');
   const runId = useRef(0);
   const playbackId = useRef(0);
   const sessionRef = useRef<EditorSession | null>(null);
@@ -43,6 +54,7 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
 
   const stopPreview = useCallback(() => {
     playbackId.current += 1;
+    setActivePlayback(null);
     try { player.pause(); } catch { /* Player may not have completed loading. */ }
   }, [player]);
 
@@ -89,14 +101,19 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
   }, [localRender, localSource, phase, player, session?.id, session?.previewPath, session?.clipPath, stopPreview]);
 
   useEffect(() => {
-    if (!['ready', 'rendered', 'saving'].includes(phase)) return;
-    const playbackEnd = phase === 'rendered' || phase === 'saving' ? endMs - startMs : endMs;
-    if (status.playing && status.currentTime * 1000 >= playbackEnd) stopPreview();
-  }, [endMs, phase, startMs, status.currentTime, status.playing, stopPreview]);
+    if (!activePlayback) return;
+    const playbackEnd = activePlayback.mode === 'rendered' ? activePlayback.endMs - activePlayback.startMs : activePlayback.endMs;
+    const currentTimeMs = status.currentTime * 1000;
+    if ((status.playing && currentTimeMs >= playbackEnd) ||
+        (status.didJustFinish && !status.playing && currentTimeMs >= playbackEnd)) stopPreview();
+  }, [activePlayback, status.currentTime, status.didJustFinish, status.playing, stopPreview]);
 
   useEffect(() => {
-    if (status.error) setError(`Audio preview failed: ${status.error}`);
-  }, [status.error]);
+    if (status.error) {
+      stopPreview();
+      setError(`Audio preview failed: ${status.error}`);
+    }
+  }, [status.error, stopPreview]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -136,6 +153,7 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
     }
     setBusy(false);
     setSelectingFile(false);
+    setLoadingOnDeviceYoutube(false);
     setPhase('idle');
     setError('');
     setNotice('');
@@ -224,12 +242,67 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
     }
   };
 
+  const loadYoutubeOnDevice = async () => {
+    if (selectingFile || busy) return;
+    if (!isOnDeviceYoutubeAvailable()) {
+      setError('On-device YouTube loading is unavailable. Choose an audio file from this device instead.');
+      return;
+    }
+    runId.current += 1;
+    operation.current?.abort();
+    operation.current = null;
+    stopPreview();
+    const run = runId.current;
+    const controller = new AbortController();
+    operation.current = controller;
+    setSelectingFile(true);
+    setLoadingOnDeviceYoutube(true);
+    setError('');
+    setNotice('');
+    try {
+      const opened = await openYoutubeOnDevice(videoUrl, controller.signal);
+      if (run !== runId.current || controller.signal.aborted) {
+        void disposeLocalAudioSource(opened).catch(() => undefined);
+        return;
+      }
+      const previous = localSourceRef.current;
+      const remote = sessionRef.current;
+      sessionRef.current = null;
+      setSession(null);
+      setCurrentLocalSource(opened);
+      setCurrentLocalRender(null);
+      if (previous && previous.id !== opened.id) void disposeLocalAudioSource(previous).catch(() => undefined);
+      if (remote) {
+        try { void deleteSession(getEditorConfig(), remote.id).catch(() => undefined); } catch { /* Service cleanup is best effort. */ }
+      }
+      titleEdited.current = false;
+      setTitle(opened.title.slice(0, 100));
+      setStartMs(0);
+      setEndMs(Math.min(5000, opened.durationMs));
+      setPhase('ready');
+      setError('');
+    } catch (cause) {
+      if (run === runId.current && !controller.signal.aborted) {
+        setError(privateYoutubeRelease
+          ? 'Could not load audio from this link. Check the URL and connection, or choose an audio file from this device.'
+          : cause instanceof Error ? cause.message : 'On-device YouTube loading could not complete.');
+      }
+    } finally {
+      if (operation.current === controller) operation.current = null;
+      if (run === runId.current) {
+        setSelectingFile(false);
+        setLoadingOnDeviceYoutube(false);
+      }
+    }
+  };
+
   const cancelPicker = () => {
     if (!selectingFile) return;
     runId.current += 1;
     operation.current?.abort();
     operation.current = null;
     setSelectingFile(false);
+    setLoadingOnDeviceYoutube(false);
   };
 
   const submitRender = async () => {
@@ -329,12 +402,20 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
     }
     setError('');
     const playback = ++playbackId.current;
-    const seekTo = phase === 'rendered' ? 0 : startMs / 1000;
+    const mode = renderedPreview ? 'rendered' : 'source';
+    const attempt: PreviewPlayback = {
+      sourceKey: `${activeSourceKey}:${mode}`,
+      mode,
+      startMs,
+      endMs,
+    };
+    const seekTo = mode === 'rendered' ? 0 : startMs / 1000;
     void player.seekTo(seekTo).then(() => {
       if (playback !== playbackId.current || (!sessionRef.current && !localSourceRef.current)) return;
       player.play();
+      setActivePlayback(attempt);
     }).catch(() => {
-      setError('The preview could not seek to this selection. Try moving a handle slightly.');
+      if (playback === playbackId.current) setError('The preview could not seek to this selection. Try moving a handle slightly.');
     });
   };
 
@@ -363,13 +444,40 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
   const activeDuration = localSource?.durationMs ?? session?.durationMs ?? null;
   const activeTitle = localSource?.title ?? session?.title ?? null;
   const activePeaks = localSource?.peaks ?? session?.peaks ?? [];
+  const activeSourceKey = localSource?.id ?? session?.id ?? null;
+  const renderedPreview = phase === 'rendered' || phase === 'saving';
+  const previewSourceKey = activeSourceKey ? `${activeSourceKey}:${renderedPreview ? 'rendered' : 'source'}` : '';
+  const playbackPosition = activePlayback && activeDuration !== null
+    ? getPlaybackPosition({
+      sourceKey: activePlayback.sourceKey,
+      activeSourceKey: previewSourceKey,
+      currentTimeSeconds: status.currentTime,
+      isLoaded: status.isLoaded,
+      playing: status.playing,
+      didJustFinish: status.didJustFinish,
+      error: status.error,
+      mode: activePlayback.mode,
+      startMs,
+      endMs,
+      playbackStartMs: activePlayback.startMs,
+      playbackEndMs: activePlayback.endMs,
+    })
+    : null;
   const sourceReady = !!activeDuration && ['ready', 'rendering', 'rendered', 'saving'].includes(phase);
   const renderable = !!(session || localSource) && phase === 'ready' && !busy;
   const playback = status.playing;
 
   return (
-    <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView style={styles.page} behavior="padding">
+      <ScrollView
+        ref={scrollRef}
+        style={styles.editorScroll}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        onLayout={keyboardReveal.onViewportLayout}
+        onScroll={keyboardReveal.onScroll}
+        scrollEventThrottle={16}
+      >
         <View style={styles.topline}>
           <View style={styles.headingGroup}>
             <Text style={styles.eyebrow}>LOCAL CLIPS</Text>
@@ -398,6 +506,7 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
         <View style={styles.card}>
           <Text style={styles.label}>YOUTUBE LINK</Text>
           <TextInput
+            ref={videoUrlInput}
             value={videoUrl}
             onChangeText={setVideoUrl}
             autoCapitalize="none"
@@ -407,16 +516,28 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
             placeholderTextColor="#737d86"
             editable={!busy && !selectingFile}
             accessibilityLabel="YouTube video link"
+            onFocus={() => { if (videoUrlInput.current) keyboardReveal.onFocus(videoUrlInput.current); }}
+            onBlur={() => { if (videoUrlInput.current) keyboardReveal.onBlur(videoUrlInput.current); }}
             style={styles.input}
           />
-          <Pressable accessibilityRole="button" disabled={!videoUrl.trim() || busy || selectingFile} onPress={() => void submitUrl()} style={[styles.primary, (!videoUrl.trim() || busy || selectingFile) && styles.disabled]}>
-            {busy && phase === 'fetching' ? <ActivityIndicator color="#12221d" /> : <Text style={styles.primaryText}>LOAD PREVIEW</Text>}
+          <Pressable accessibilityRole="button" accessibilityLabel={privateYoutubeRelease ? 'Load YouTube audio on this device' : 'Load preview'} disabled={!videoUrl.trim() || busy || selectingFile} onPress={() => void (privateYoutubeRelease ? loadYoutubeOnDevice() : submitUrl())} style={[styles.primary, (!videoUrl.trim() || busy || selectingFile) && styles.disabled]}>
+            {privateYoutubeRelease ? loadingOnDeviceYoutube
+              ? <ActivityIndicator color="#12221d" />
+              : <Text style={styles.primaryText}>LOAD AUDIO</Text>
+              : busy && phase === 'fetching'
+                ? <ActivityIndicator color="#12221d" />
+                : <Text style={styles.primaryText}>LOAD PREVIEW</Text>}
           </Pressable>
+          {!privateYoutubeRelease && isOnDeviceYoutubeAvailable() ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Load YouTube audio on this device, prototype" accessibilityState={{ disabled: !videoUrl.trim() || busy || selectingFile, busy: loadingOnDeviceYoutube }} disabled={!videoUrl.trim() || busy || selectingFile} onPress={() => void loadYoutubeOnDevice()} style={[styles.deviceYoutubeButton, (!videoUrl.trim() || busy || selectingFile) && styles.disabled]}>
+              {loadingOnDeviceYoutube ? <ActivityIndicator color="#d6ffed" /> : <Text style={styles.deviceYoutubeButtonText}>LOAD ON DEVICE · PROTOTYPE</Text>}
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, (selectingFile || phase === 'fetching' || phase === 'rendering' || phase === 'saving') && styles.statusBusy]} />
-          <Text style={styles.statusText}>{selectingFile ? 'Preparing audio from this device…' : PHASE_LABEL[phase]}</Text>
+          <Text style={styles.statusText}>{selectingFile ? loadingOnDeviceYoutube ? 'Loading YouTube audio on this device…' : 'Preparing audio from this device…' : PHASE_LABEL[phase]}</Text>
         </View>
 
         {sourceReady && activeDuration !== null ? (
@@ -433,7 +554,7 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
                 <Text style={styles.playButtonText}>{playback ? 'STOP' : status.isLoaded ? 'PREVIEW' : '…'}</Text>
               </Pressable>
             </View>
-          <WaveformRange peaks={activePeaks} durationMs={activeDuration} startMs={startMs} endMs={endMs} onChange={changeRange} disabled={busy || selectingFile} />
+          <WaveformRange peaks={activePeaks} durationMs={activeDuration} startMs={startMs} endMs={endMs} onChange={changeRange} playback={playbackPosition} disabled={busy || selectingFile} />
             <View style={styles.adjustGroup}>
               <View style={styles.adjustRow}>
                 <Text style={styles.adjustLabel}>START</Text>
@@ -457,6 +578,7 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
               <View style={styles.nameField}>
                 <Text style={styles.label}>SOUNDBITE NAME</Text>
                 <TextInput
+                  ref={titleInput}
                   value={title}
                   onChangeText={(value) => { titleEdited.current = true; setTitle(value); setError(''); }}
                   maxLength={100}
@@ -467,6 +589,9 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
                   placeholderTextColor="#737d86"
                   accessibilityLabel="Soundbite name, required to save"
                   editable={!selectingFile}
+                  onFocus={() => { if (titleInput.current) keyboardReveal.onFocus(titleInput.current); }}
+                  onBlur={() => { if (titleInput.current) keyboardReveal.onBlur(titleInput.current); }}
+                  onSubmitEditing={() => Keyboard.dismiss()}
                   style={styles.nameInput}
                 />
                 <View style={styles.nameMeta}>
@@ -493,7 +618,7 @@ export function EditorScreen({ onOpenLibrary }: { onOpenLibrary: () => void }) {
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.success}>{notice} <Pressable onPress={onOpenLibrary}><Text style={styles.inlineLink}>Open library</Text></Pressable></Text> : null}
         {selectingFile ? (
-          <Pressable accessibilityRole="button" accessibilityLabel="Cancel preparing the selected file" onPress={cancelPicker} style={styles.cancel}><Text style={styles.cancelText}>CANCEL FILE PICKER</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={loadingOnDeviceYoutube ? 'Cancel on-device YouTube loading' : 'Cancel preparing the selected file'} onPress={cancelPicker} style={styles.cancel}><Text style={styles.cancelText}>{loadingOnDeviceYoutube ? 'CANCEL LOAD' : 'CANCEL FILE PICKER'}</Text></Pressable>
         ) : session || localSource || busy ? <Pressable accessibilityRole="button" onPress={abandon} style={styles.cancel}><Text style={styles.cancelText}>{busy ? 'CANCEL' : 'CANCEL SESSION'}</Text></Pressable> : null}
         <Text style={styles.privacy}>Saved clips stay in this app’s private storage. Uninstalling the app removes them.</Text>
       </ScrollView>
@@ -507,6 +632,7 @@ function AdjustButton({ label, handle, onPress, disabled }: { label: string; han
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#14161a' },
+  editorScroll: { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 22, paddingBottom: 36, gap: 14 },
   topline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 3 },
   headingGroup: { gap: 3 },
@@ -518,6 +644,8 @@ const styles = StyleSheet.create({
   deviceButton: { minHeight: 50, borderRadius: 12, backgroundColor: '#315747', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   deviceButtonText: { color: '#d6ffed', fontSize: 11, letterSpacing: 1.1, fontWeight: '800' },
   importHelp: { color: '#91a49b', fontSize: 10, lineHeight: 15, textAlign: 'center' },
+  deviceYoutubeButton: { minHeight: 46, borderRadius: 12, borderWidth: 1, borderColor: '#497361', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  deviceYoutubeButtonText: { color: '#b0f5dc', fontSize: 10, letterSpacing: 1, fontWeight: '800' },
   label: { color: '#89939a', fontSize: 10, letterSpacing: 1.5, fontWeight: '700' },
   input: { minHeight: 50, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: '#343c43', backgroundColor: '#111418', color: '#f1f4f5', fontSize: 15 },
   primary: { minHeight: 48, borderRadius: 12, backgroundColor: '#71e1ba', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },

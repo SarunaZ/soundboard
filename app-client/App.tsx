@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, FlatList, Platform, Pressable, StatusBar as RNStatusBar, StyleSheet, Text, TextInput, View, type ViewToken } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native';
 
 import { MANIFEST_URL, PADS, loadManifestPads, resolveUri, type Pad } from './src/pads';
-import { isWarm, play, stop, warm } from './src/audio/engine';
+import { getPlaybackSnapshot, isWarm, play, stop, subscribePlayback, warm } from './src/audio/engine';
+import { formatPlaybackTime, type PlaybackSnapshot } from './src/audio/playbackState';
 import { beginTap, pendingCount, startMetrics } from './src/metrics';
 import { EditorScreen } from './src/editor/EditorScreen';
 import { LibraryScreen } from './src/editor/LibraryScreen';
@@ -47,12 +48,34 @@ export default function App() {
   const [boardError, setBoardError] = useState('');
   const [editingBoard, setEditingBoard] = useState(false);
   const padGeneration = useRef(0);
-  const [playing, setPlaying] = useState<string | null>(null);
+  const tapGeneration = useRef(0);
+  const [playback, setPlayback] = useState<PlaybackSnapshot>(() => getPlaybackSnapshot());
   const [last, setLast] = useState<string>('');
   const [page, setPage] = useState<Page>('board');
   const [remoteState, setRemoteState] = useState<RemoteState>(
     MANIFEST_URL ? 'loading' : 'unconfigured',
   );
+
+  const stopPlayback = useCallback(() => {
+    tapGeneration.current += 1;
+    stop();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribePlayback(() => setPlayback(getPlaybackSnapshot()));
+    return () => {
+      unsubscribe();
+      stopPlayback();
+    };
+  }, [stopPlayback]);
+
+  // Progress comes from AudioContext.currentTime. Poll only while there is an
+  // active voice; inactive boards do not wake every 100 ms.
+  useEffect(() => {
+    if (playback.status !== 'playing') return;
+    const timer = setInterval(() => setPlayback(getPlaybackSnapshot()), 100);
+    return () => clearInterval(timer);
+  }, [playback.status, playback.status === 'playing' ? playback.padId : null]);
 
   const scheduleLocalWarm = useCallback((visiblePads: SoundboardPad[]) => {
     const queue = warmQueue.current;
@@ -119,11 +142,10 @@ export default function App() {
 
   useEffect(() => {
     if (page !== 'board') {
-      stop();
-      setPlaying(null);
+      stopPlayback();
       setEditingBoard(false);
     }
-  }, [page]);
+  }, [page, stopPlayback]);
 
   useEffect(() => {
     if (page === 'board' || page === 'library') refreshBoard();
@@ -132,14 +154,13 @@ export default function App() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active') {
-        stop();
-        setPlaying(null);
+        stopPlayback();
       } else {
         refreshBoard();
       }
     });
     return () => subscription.remove();
-  }, [refreshBoard]);
+  }, [refreshBoard, stopPlayback]);
 
   // Resolve and prewarm current pad URIs. Local file URIs enter the map
   // immediately, so local taps never wait for a remote manifest or preload.
@@ -214,29 +235,33 @@ export default function App() {
 
     // Opened before anything else, so the clock starts as close to the press
     // as it can get (STEPS step 8).
+    const request = ++tapGeneration.current;
     const tap = beginTap(pad.id, isWarm(uri));
-    setPlaying(pad.id);
-
-    play(uri)
-      .then(() => {
+    play(uri, pad.id)
+      .then(({ started }) => {
+        if (!started) {
+          tap.failed();
+          return;
+        }
         // The header shows the sample that was actually recorded, so what you
         // read on the device is exactly what is in the dataset.
         const s = tap.scheduled();
-        setLast(
-          `${pad.name}  ${s.pressToScheduledMs.toFixed(0)} ms  ${s.cacheHit ? 'warm' : 'cold'}  ·  ${pendingCount()} buffered`,
-        );
+        if (tapGeneration.current === request) {
+          setLast(
+            `${pad.name}  ${s.pressToScheduledMs.toFixed(0)} ms  ${s.cacheHit ? 'warm' : 'cold'}  ·  ${pendingCount()} buffered`,
+          );
+        }
       })
       .catch((err) => {
         tap.failed();
         console.warn(`[audio] ${pad.id} failed`, err);
-        setLast(`${pad.name}  failed`);
+        if (tapGeneration.current === request) setLast(`${pad.name}  failed`);
       });
   }, []);
 
   const kill = useCallback(() => {
-    stop();
-    setPlaying(null);
-  }, []);
+    stopPlayback();
+  }, [stopPlayback]);
 
   const persistAssignment = useCallback((clipId: string, slotIndex: number) => {
     const availableClip = loadLocalClips().find((clip) => clip.id === clipId);
@@ -325,8 +350,7 @@ export default function App() {
         <Text style={styles.title}>Soundboard</Text>
         <Text style={[styles.meta, boardError && styles.metaError]}>{boardError || last || startupStatus}</Text>
         <Pressable accessibilityRole="button" accessibilityState={{ selected: editingBoard }} onPress={() => {
-          stop();
-          setPlaying(null);
+          stopPlayback();
           setEditingBoard((editing) => !editing);
         }} style={styles.editButton}>
           <Text style={styles.editButtonText}>{editingBoard ? 'DONE' : 'EDIT BOARD'}</Text>
@@ -366,37 +390,47 @@ export default function App() {
         onViewableItemsChanged={onBoardViewableItemsChanged}
         ListEmptyComponent={<View style={styles.noResults}><Text style={styles.noResultsTitle}>No matching sounds</Text><Text style={styles.noResultsCopy}>Try another name or clear the search.</Text></View>}
         renderItem={({ item: pad }) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Pad ${pad.slotIndex + 1}, ${pad.name}, ${pad.localClipId ? 'local clip' : 'original sound'}${editingBoard && pad.localClipId ? ', tap to remove assignment' : ''}`}
-            disabled={
-              !editingBoard && !pad.localClipId && (
-                remoteState === 'loading' ||
-                (pad.uri !== undefined && remoteState === 'warming')
-              )
-            }
-            onPressIn={editingBoard ? undefined : () => trigger(pad)}
-            onPress={editingBoard ? () => removeAssignment(pad, pad.slotIndex) : undefined}
-            style={({ pressed }) => [
-              styles.pad,
-              { backgroundColor: pad.color },
-              (!editingBoard && !pad.localClipId && (
-                remoteState === 'loading' ||
-                (pad.uri !== undefined && remoteState === 'warming')
-              )) && styles.padDisabled,
-              pressed && styles.padPressed,
-            ]}
-          >
-            <Text numberOfLines={2} style={styles.padName}>{pad.name}</Text>
-            {pad.localClipId ? <Text style={styles.localIndicator}>LOCAL</Text> : null}
-          </Pressable>
+          <PadTile
+            pad={pad}
+            editingBoard={editingBoard}
+            disabled={!editingBoard && !pad.localClipId && (
+              remoteState === 'loading' ||
+              (pad.uri !== undefined && remoteState === 'warming')
+            )}
+            progress={playback.status === 'playing' && playback.padId === pad.id ? playback.progress : null}
+            elapsedLabel={playback.status === 'playing' && playback.padId === pad.id
+              ? `${formatPlaybackTime(playback.elapsed)} / ${formatPlaybackTime(playback.duration)}`
+              : null}
+            onPlay={trigger}
+            onRemove={removeAssignment}
+          />
         )}
       />
 
-      {playing ? (
-        <Pressable style={styles.kill} onPress={kill}>
-          <Text style={styles.killText}>STOP</Text>
-        </Pressable>
+      {playback.status === 'playing' ? (
+        <View style={styles.playbackDock}>
+          <View style={styles.playbackInfo}>
+            <Text numberOfLines={1} style={styles.playbackTitle}>
+              NOW PLAYING · {pads.find((pad) => pad.id === playback.padId)?.name ?? playback.padId}
+            </Text>
+            <View style={styles.playbackMetaRow}>
+              <Text style={styles.playbackTime}>
+                {formatPlaybackTime(playback.elapsed)} / {formatPlaybackTime(playback.duration)}
+              </Text>
+              <View
+                accessibilityRole="progressbar"
+                accessibilityLabel="Audio playback progress"
+                accessibilityValue={{ min: 0, max: 100, now: Math.round(playback.progress * 100) }}
+                style={styles.dockTrack}
+              >
+                <View style={[styles.dockProgress, { width: `${Math.round(playback.progress * 100)}%` }]} />
+              </View>
+            </View>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Stop audio playback" style={styles.kill} onPress={kill}>
+            <Text style={styles.killText}>STOP</Text>
+          </Pressable>
+        </View>
       ) : (
         <View style={styles.killPlaceholder} />
       )}
@@ -419,6 +453,55 @@ function NavButton({ label, active, onPress }: { label: string; active: boolean;
     </Pressable>
   );
 }
+
+const PadTile = memo(function PadTile({
+  pad,
+  editingBoard,
+  disabled,
+  progress,
+  elapsedLabel,
+  onPlay,
+  onRemove,
+}: {
+  pad: SoundboardPad;
+  editingBoard: boolean;
+  disabled: boolean;
+  progress: number | null;
+  elapsedLabel: string | null;
+  onPlay: (pad: Pad) => void;
+  onRemove: (pad: Pad & { localClipId?: string }, slotIndex: number) => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Pad ${pad.slotIndex + 1}, ${pad.name}, ${pad.localClipId ? 'local clip' : 'original sound'}${editingBoard && pad.localClipId ? ', tap to remove assignment' : ''}`}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPressIn={editingBoard ? undefined : () => onPlay(pad)}
+      onPress={editingBoard ? () => onRemove(pad, pad.slotIndex) : undefined}
+      style={({ pressed }) => [
+        styles.pad,
+        { backgroundColor: pad.color },
+        disabled && styles.padDisabled,
+        pressed && styles.padPressed,
+      ]}
+    >
+      <Text numberOfLines={2} style={styles.padName}>{pad.name}</Text>
+      {pad.localClipId ? <Text style={styles.localIndicator}>LOCAL</Text> : null}
+      {elapsedLabel ? <Text style={styles.padProgressTime}>{elapsedLabel}</Text> : null}
+      {progress !== null ? (
+        <View
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={styles.padProgressTrack}
+        >
+          <View style={[styles.padProgress, { width: `${Math.round(progress * 100)}%` }]} />
+        </View>
+      ) : null}
+    </Pressable>
+  );
+});
 
 const GAP = 8;
 
@@ -459,10 +542,20 @@ const styles = StyleSheet.create({
   padDisabled: { opacity: 0.45 },
   padName: { color: '#ffffff', fontSize: 14, lineHeight: 18, fontWeight: '600', textAlign: 'center', paddingHorizontal: 4 },
   localIndicator: { color: '#d7ffed', fontSize: 8, fontWeight: '800', letterSpacing: 1.2, marginTop: 5 },
+  padProgressTrack: { position: 'absolute', left: 10, right: 10, bottom: 8, height: 3, borderRadius: 2, backgroundColor: 'rgba(10, 14, 15, 0.35)', overflow: 'hidden' },
+  padProgress: { height: '100%', borderRadius: 2, backgroundColor: '#d7ffed' },
+  padProgressTime: { position: 'absolute', bottom: 14, color: '#f7fffb', fontSize: 9, fontVariant: ['tabular-nums'], fontWeight: '700' },
+  playbackDock: { margin: GAP, marginTop: 0, padding: 10, borderRadius: 12, backgroundColor: '#20272a', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  playbackInfo: { flex: 1, gap: 6 },
+  playbackTitle: { color: '#d7ffed', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  playbackMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  playbackTime: { minWidth: 65, color: '#aeb8bd', fontSize: 11, fontVariant: ['tabular-nums'] },
+  dockTrack: { flex: 1, height: 4, borderRadius: 3, backgroundColor: '#414b50', overflow: 'hidden' },
+  dockProgress: { height: '100%', borderRadius: 3, backgroundColor: '#7ae3bf' },
   kill: {
-    margin: GAP,
-    marginTop: 0,
-    paddingVertical: 16,
+    minWidth: 64,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderRadius: 12,
     backgroundColor: '#c4304a',
     alignItems: 'center',

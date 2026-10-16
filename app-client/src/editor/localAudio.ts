@@ -196,13 +196,18 @@ async function runSourceOperation<T>(
   }
 }
 
-/** Open the Expo system picker, stage a private original copy, then probe and decode it locally. */
-export async function pickLocalAudioSource(signal?: AbortSignal): Promise<LocalAudioSource | null> {
+function normalizedTitleOverride(titleOverride: string): string {
+  const safe = titleOverride.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 100).trim();
+  return safe || 'On-device YouTube audio';
+}
+
+/** Stage a caller-provided audio file, then probe and decode it locally. */
+export async function openLocalAudioFile(
+  selectedFile: File,
+  signal?: AbortSignal,
+  titleOverride?: string,
+): Promise<LocalAudioSource> {
   assertNotAborted(signal);
-  const picked = await File.pickFileAsync({ mimeTypes: ['audio/*'], multipleFiles: false });
-  if (picked.canceled || !picked.result) return null;
-  assertNotAborted(signal);
-  const selectedFile = picked.result;
   if (typeof selectedFile.size !== 'number' || !Number.isSafeInteger(selectedFile.size) || selectedFile.size <= 0) {
     throw new Error('The selected file has an unknown or empty size.');
   }
@@ -246,7 +251,7 @@ export async function pickLocalAudioSource(signal?: AbortSignal): Promise<LocalA
     const source: LocalAudioSource = {
       id,
       uri: stagedFile.uri,
-      title: importTitleFromFilename(stagedFile.name),
+      title: titleOverride === undefined ? importTitleFromFilename(stagedFile.name) : normalizedTitleOverride(titleOverride),
       durationMs: Math.round(decodedDurationMs),
       peaks,
     };
@@ -262,6 +267,15 @@ export async function pickLocalAudioSource(signal?: AbortSignal): Promise<LocalA
   } finally {
     if (ownsDirectory && directory.exists) directory.delete();
   }
+}
+
+/** Open the Expo system picker, stage a private original copy, then probe and decode it locally. */
+export async function pickLocalAudioSource(signal?: AbortSignal): Promise<LocalAudioSource | null> {
+  assertNotAborted(signal);
+  const picked = await File.pickFileAsync({ mimeTypes: ['audio/*'], multipleFiles: false });
+  if (picked.canceled || !picked.result) return null;
+  assertNotAborted(signal);
+  return openLocalAudioFile(picked.result, signal);
 }
 
 /** Render a bounded sample-accurate range to an owned PCM16 WAV file in cache. */

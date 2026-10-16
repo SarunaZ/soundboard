@@ -155,6 +155,24 @@ test('picks and decodes a staged original longer than 60 seconds without touchin
   assert.equal(state.files.has(source.uri), false);
 });
 
+test('opens a caller-provided MP3 through the same owned staging path and safely normalizes title override', async (t) => {
+  const { state, load } = await harness(t);
+  const editor = await load();
+  // The caller can provide any Expo File instance; the mock below models its public surface.
+  const selected = { uri: contentUri, name: 'Downloaded song.mp3', type: 'audio/mpeg', size: 4, exists: true,
+    async copy(destination) {
+      const target = `${destination.uri}/Downloaded song.mp3`;
+      state.files.set(target, { displayName: 'Downloaded song.mp3', type: 'audio/mpeg', bytes: new Uint8Array(state.files.get(contentUri).bytes) });
+      state.copyCount += 1;
+    } };
+  const source = await editor.openLocalAudioFile(selected, undefined, `  ${'A'.repeat(120)}\u0000  `);
+  assert.equal(source.title, 'A'.repeat(100));
+  assert.match(source.uri, /soundboard-editor-[0-9a-f-]{36}\/Downloaded song\.mp3$/);
+  assert.equal(state.files.has(contentUri), true);
+  assert.equal(state.copyCount, 1);
+  await editor.disposeLocalAudioSource(source);
+});
+
 test('preflights oversized and overlong sources before copy or decode', async (t) => {
   const { state, load } = await harness(t);
   const editor = await load();
