@@ -37,6 +37,63 @@ decisions are deliberately not the pragmatic choice; they are marked
 - [DESIGN.md](DESIGN.md) — the *why*. Decisions, latency budget, constraints.
 - [PLAN.md](PLAN.md) — the *order*, and the reasoning behind it.
 - [STEPS.md](STEPS.md) — the flat checklist and current status.
+- [Stimmyz design plan](docs/stimmyz-design-plan.md) — the 2026-10-17 design
+  handoff audit, file-level redesign sequence, migration strategy and acceptance checks.
+
+The Google Play app is being implemented separately in [app-play/](app-play/README.md),
+reusing selected audio and editing code from this repository. `app-client/`
+remains the Dev/personal app with its existing data, UI and YouTube workflow.
+Play uses its own entrypoint, Android identity and private storage. Its first
+slice includes named boards, themes, a private Library, and local audio import
+or foreground microphone recording through Source → Trim → Customize → Save.
+Audio sources are limited to five minutes and 32 MiB, and trim selections to 60
+seconds. Microphone permission is requested contextually in Play. Emulator checks
+passed first-use permission, recording through save and relaunch, and foreground
+interruption; the emulator has silent input by default, so physical microphone
+quality remains unverified. Local video, share import, gallery artwork and
+interrupted-draft restoration remain pending. See the
+[design plan](docs/stimmyz-design-plan.md) and
+[recording emulator record](docs/play-recording-emulator-2026-10-18.md).
+
+The current brief is the [reviewed handoff](docs/design/reviewed-2026-10-17/ASTRA_HANDOFF.md)
+and its [research audit](docs/design/reviewed-2026-10-17/RESEARCH_AUDIT_2026-10-17.md).
+The reviewed bundle retains the original designs and updates product priorities
+and public-release checks.
+
+Build Play independently with `.\scripts\build-play-android.ps1` (or use
+`-StageOnly` to verify the source boundary without Docker). The build creates
+an unsigned testing APK and unsigned AAB under an isolated ignored `data/` stage;
+it does not sign, install or publish them.
+The current unsigned test build is version 1.0.13/code 14 for ARM64 and x86_64.
+Quick add is a separate first tile in the scrolling board grid. It stays first
+when sounds are added or reordered and remains available when all pads are full.
+See the [fixed Quick add checks](docs/play-pinned-quick-add-2026-10-18.md).
+Play uses the Dev source's turquoise S launcher icon, with separate Play-owned
+copies of its standard, adaptive and monochrome assets.
+See the [launcher-icon verification record](docs/play-launcher-icon-2026-10-18.md).
+Choose file uses the Android document picker and preserves provider filenames;
+native MP3 import, cancellation and invalid-file handling passed simulator checks.
+See the [file-picker verification record](docs/play-file-picker-2026-10-18.md).
+The Board wordmark uses the reviewed design's 32 sp size with a smaller sparkle;
+normal and compact large-text simulator checks passed.
+Customize's artwork buttons read **Choose image** and **Change image**.
+Customize offers Imgflip's free popular-template picker with local name filtering
+and optional artwork saved as a private thumbnail for offline use. The trim,
+image-selection, save and offline-restart checks passed in the simulator; see
+the [artwork verification record](docs/play-imgflip-artwork-2026-10-18.md).
+Edit controls overlay the board without moving tiles or changing scroll position;
+see the [native layout checks](docs/play-edit-geometry-2026-10-18.md).
+In Play's Edit board mode, drag a grip or tap a pad then its destination to
+rearrange it. Order is saved on drop; sounds, labels and colors move together.
+See the [pad-reorder verification record](docs/play-pad-reorder-2026-10-18.md).
+Pad overflow menus and Quick add's configuration arrow appear only while Edit
+board is active, verified in the simulator with a saved recording.
+Editor has direct **Choose file** and **Record sound** actions, verified in the
+simulator; entering Editor alone does not request microphone access.
+The emulator recording checks are recorded in
+[the recording verification record](docs/play-recording-emulator-2026-10-18.md);
+physical microphone behavior remains unverified. The earlier first-slice
+packaging checks are in the [verification record](docs/play-verification-2026-10-17.md).
 
 ## Clone
 
@@ -133,6 +190,7 @@ shared/       Clip, Pad, Source and manifest types (DESIGN §4)
 service/      Express API + a separate worker process; SQLite is both
               metadata store and job queue (DESIGN #12)
 app-client/   Expo React Native soundboard
+app-play/     Separate Play app; shared audio core, independent UI/data/build
 sb.ps1 sb.sh  Docker-only task runner
 ```
 

@@ -339,6 +339,129 @@ pending until implementation and the stated acceptance check are confirmed.
   navigation, and iOS were not verified on devices; this does not close
   L16/L17's other acceptance items.
 
+## Design refresh (D-series, implementation started 2026-10-17)
+
+Source: [Stimmyz design implementation plan](docs/stimmyz-design-plan.md).
+The imported design bundle and repository audit are complete. Implementation
+has started in the separate `app-play/` workspace. All milestones remain open
+until their full acceptance checks pass; they do not close the L-series checks.
+
+The first slice includes named empty boards, persisted active selection and
+themes, private Play catalog/audio, snapshot recovery, Board/Editor/Library UI,
+local-file trim/preview/Fine tune, foreground microphone recording, icon/color/name
+customization and save/assign with retry. Imported and recorded sources are
+limited to five minutes and 32 MiB; trim selections are limited to 60 seconds.
+Microphone permission is Play-specific and requested contextually. Play has its
+own package `dev.sarunas.soundboard.play`, currently version 1.0.13/code 14, and
+starts with no Dev clips, remote defaults or prototype artwork. Cross-board
+move UI, advanced draft restoration, gallery artwork, local video (P0), media
+share (P1), and backup/export/import (P1) remain pending.
+
+Verification update (2026-10-18): 48 Play tests, nine staging/plugin tests, five
+shared reorder-geometry tests, and
+the Play TypeScript check pass. The current unsigned native test build covers
+ARM64 and x86_64. Emulator checks passed first-use microphone permission,
+recording through Save and relaunch, and foreground interruption. The emulator
+audio input is silent by default; physical-phone microphone quality remains
+unverified. No phone installation, audible-recording result, or store release is
+claimed. See the [recording emulator record](docs/play-recording-emulator-2026-10-18.md)
+for the workflow and remaining checks. Earlier packaging checks and artifact
+details are in [Play first-slice verification](docs/play-verification-2026-10-17.md).
+
+- [ ] **D1 — Parallel Dev/Play roots and packaging.** Dev `app-client/index.ts`
+  still enters `./App`; Play has `app-play/index.ts`, a separate package and
+  stage scripts. The Play package `dev.sarunas.soundboard.play` has a current
+  unsigned 1.0.13/code 14 ARM64+x86_64 test build. Play owns exact copies of the
+  Dev source's S launcher assets. Stage and plugin checks pass;
+  emulator recording, save/relaunch and interruption checks passed. D1 remains
+  open for separate on-device data verification and remaining artifact gates.
+  See the [first-slice verification record](docs/play-verification-2026-10-17.md),
+  [visual-fixes record](docs/play-visual-fixes-2026-10-17.md), and
+  [recording emulator record](docs/play-recording-emulator-2026-10-18.md).
+- [ ] **D2 — Play board/catalog foundations.** Implemented named boards, empty
+  pad semantics, persisted active selection, private catalog/audio and snapshot
+  recovery. In-board reorder preserves whole pad records and persists via the
+  existing snapshots; see the [native reorder checks](docs/play-pad-reorder-2026-10-18.md).
+  Finish cross-board move UI and retention actions. Keep Dev
+  storage/defaults intact; use v1 snapshots as compatibility fixtures only, with
+  no real Dev-to-Play migration.
+- [ ] **D3 — Play presentation.** Basic dark/light/system themes and Board,
+  Editor, Library screens exist. The [visual-fixes record](docs/play-visual-fixes-2026-10-17.md)
+  and [native follow-ups](docs/play-recording-emulator-2026-10-18.md) include the
+  user's edit-only Quick add arrow preference, verified in simulator 1.0.4.
+  The earlier visual-fixes record
+  covers the measured responsive Board grid, Quick add preference, board and
+  pad controls, navigation selection, creation progress and Fine tune layout,
+  and Library sorting/menus. Edit mode now supports grip dragging, edge scrolling
+  and tap-to-move; native drag, tap and restart persistence checks passed.
+  Version 1.0.6 overlays edit controls with no layout shift; normal and scrolled
+  large-text bounds matched, and filtered dragging passed. See the
+  [native edit-layout checks](docs/play-edit-geometry-2026-10-18.md). Version
+  1.0.7/code 8 also limits saved-pad menus to Edit board; normal/edit/Done menu
+  visibility and unchanged label bounds passed simulator checks.
+  Version 1.0.9/code 10 enlarges the Board wordmark from 23 to 32 sp to match
+  the reviewed prototype. Normal and 360 dp/font 1.5 simulator checks passed;
+  toggling edit preserved header and shared text bounds.
+  Version 1.0.13/code 14 makes Quick add a fixed first grid tile outside stored
+  pads. Board-only additions fill an empty pad or append to a full board;
+  real-pad dragging and tap-to-move account for the leading action tile.
+  Tests, TypeScript, native save/Library/drag/search/restart and unchanged edit
+  geometry checks passed; see the [fixed Quick add record](docs/play-pinned-quick-add-2026-10-18.md).
+  Cross-board move controls remain open; check native theme behavior and picker
+  integration on devices. Do not redesign
+  Dev screens.
+- [ ] **D4 — Play creation.** Implemented local-file trim/preview/Fine tune,
+  foreground recording, name/icon/color customization, save/assign and retry.
+  Version 1.0.10/code 11 fixes Choose file with `expo-document-picker` and
+  explicit private file staging. TypeScript and 27 media/recording tests pass;
+  native MP3 import, cancellation with draft preservation, invalid-file errors
+  and Quick add's Choose file path passed. See the
+  [file-picker record](docs/play-file-picker-2026-10-18.md).
+  Version 1.0.11/code 12 renames artwork actions to Choose image/Change image;
+  TypeScript and native checks of both labels passed. The open draft was
+  discarded with the user's explicit approval before the simulator update.
+  Editor now exposes direct Choose file and Record sound buttons. Version 1.0.3
+  was installed in the simulator: Record started a capture directly and Stop
+  opened a 7.26-second Trim source; file-picker cancellation and large-text
+  visibility passed. Existing saved clips were preserved.
+  Recording follows Source → Trim → Customize → Save, requests microphone
+  permission contextually, and passed emulator first-use, save/relaunch and
+  foreground-interruption checks. The [visual-fixes record](docs/play-visual-fixes-2026-10-17.md)
+  describes Source → Trim → Customize progress, scaled Fine tune layout and live
+  pad preview. Small-screen device checks and resilient draft restoration remain
+  open; cancellation/interruption discards the draft. See the
+  [recording emulator record](docs/play-recording-emulator-2026-10-18.md).
+- [ ] **D5 — Play local artwork.** Icon/color presentation and optional Imgflip
+  thumbnail storage with missing-image fallback exist. Gallery import, manual
+  crop/reposition and changing artwork on saved clips remain pending. No Dev UI.
+- [ ] **D6 — Play native sources.** Microphone recording is implemented with
+  foreground capture and passed emulator first-use permission, save/relaunch and
+  interruption checks. Source is capped at five minutes and 32 MiB; selected
+  trim is capped at 60 seconds. Physical-phone microphone behavior is pending
+  because emulator input is silent by default. P0 local video and P1 Android
+  shared-media import remain open. Keep microphone permission Play-specific and
+  Dev's current permission policy unchanged. See the
+  [recording emulator record](docs/play-recording-emulator-2026-10-18.md).
+- [ ] **D7 — Dev/Play integration and public-test gates.** Verify Dev UI, YouTube,
+  data and playback remain intact; Play offline launch, capacity, accessibility,
+  playback, separate sandboxes/coinstallation and extractor-free artifacts.
+  Build-level artifact checks are recorded; physical/device checks remain open.
+  Before any public test, verify current primary policy sources, inventory Dev/Play media
+  and rights provenance, and reconcile actual SDK/network/microphone behavior
+  with Play Data Safety and the privacy policy. Research audit claims are prompts
+  for verification, not legal conclusions.
+- [ ] **D8 — Play online artwork (P2).** User selected Imgflip's free popular list.
+  Local name filtering, source links, bounded private thumbnails and optional
+  Customize selection are implemented. 58 Play tests, TypeScript and 9 build
+  checks pass; simulator selection, save, offline restart and stable edit bounds
+  passed. See the [artwork record](docs/play-imgflip-artwork-2026-10-18.md).
+  Full-catalog search and manual crop/reposition remain open. No API key is used;
+  no unreviewed Dev sounds or prototype media are
+  Play defaults. Public packs/sharing also require rights and moderation decisions.
+- [ ] **D9 — Play backup/export/import (P1).** Add bounded, validated archives
+  for Play boards, metadata and owned media; handle conflicts, duplicates,
+  corruption, cancellation and interrupted writes without touching Dev data.
+
 ## Historical remote pipeline roadmap (steps 1–27)
 
 The following checklist records prior implementation history and the deferred

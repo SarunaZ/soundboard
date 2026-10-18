@@ -22,13 +22,14 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Manifests only, so a source edit doesn't invalidate the install layer.
-# app-client's manifest is copied because Yarn needs every workspace manifest
-# present to resolve the lockfile — its dependencies are never installed.
+# App manifests are copied because Yarn needs every workspace manifest present
+# to resolve the lockfile. Their dependencies are never installed in this image.
 COPY package.json yarn.lock .yarnrc.yml ./
 COPY shared/package.json shared/
 COPY service/package.json service/
 COPY worker/package.json worker/
 COPY app-client/package.json app-client/
+COPY app-play/package.json app-play/
 
 # `workspaces focus` installs only these two workspaces — no Expo, no RN.
 RUN --mount=type=cache,target=/root/.yarn/berry/cache,sharing=locked \

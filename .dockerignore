@@ -17,6 +17,13 @@ app-client/app.json
 app-client/index.ts
 app-client/tsconfig.json
 
+# Play is built from an explicit allowlisted stage, never from this context.
+app-play/android
+app-play/ios
+app-play/node_modules
+app-play/.expo
+app-play/play-native-modules
+
 .env
 **/.env
 **/.env.local

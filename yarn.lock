@@ -2631,6 +2631,32 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"app-play@workspace:app-play":
+  version: 0.0.0-use.local
+  resolution: "app-play@workspace:app-play"
+  dependencies:
+    "@expo/metro-runtime": "npm:^57.0.12"
+    "@react-native-community/netinfo": "npm:12.0.1"
+    "@types/react": "npm:~19.2.2"
+    "@types/react-dom": "npm:^19"
+    "@types/react-native-web": "npm:^0"
+    expo: "npm:~57.0.13"
+    expo-asset: "npm:~57.0.19"
+    expo-audio: "npm:~57.0.5"
+    expo-document-picker: "npm:~57.0.1"
+    expo-file-system: "npm:~57.0.4"
+    expo-image-manipulator: "npm:~57.0.10"
+    expo-status-bar: "npm:~57.0.1"
+    react: "npm:19.2.3"
+    react-dom: "npm:19.2.3"
+    react-native: "npm:0.86.2"
+    react-native-audio-api: "npm:^0.13.2"
+    react-native-safe-area-context: "npm:~5.7.0"
+    react-native-web: "npm:^0.21.2"
+    typescript: "npm:~6.0.3"
+  languageName: unknown
+  linkType: soft
+
 "arg@npm:^5.0.2":
   version: 5.0.2
   resolution: "arg@npm:5.0.2"
@@ -3685,6 +3711,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-document-picker@npm:~57.0.1":
+  version: 57.0.3
+  resolution: "expo-document-picker@npm:57.0.3"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/17ff2d1d7063fd25a3c20961ab1f384d147923cea42c27d4431f1648b0db70d595cde6d5ce614a94ee973a85bec7626572de90131cf05539b4d8978fb16c5ea5
+  languageName: node
+  linkType: hard
+
 "expo-file-system@npm:~57.0.3, expo-file-system@npm:~57.0.4":
   version: 57.0.4
   resolution: "expo-file-system@npm:57.0.4"
@@ -3705,6 +3740,26 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10c0/9ec3fdc65a3809ee43f2b3d61d82c5d6ab6d586f7827991c82fec7ecbe0dde67fdaa52ca90102894158f631305a6e47b87bff223e778f878be4dca0a5b91de14
+  languageName: node
+  linkType: hard
+
+"expo-image-loader@npm:~57.0.1":
+  version: 57.0.1
+  resolution: "expo-image-loader@npm:57.0.1"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/c68a12901d789bfc395b045305a68a352e05d4b3e4fcbbe382591a5fff5fcd896e81c4cbb082dfaa520c5ac6ee2c3221c3887b0292b7b831e21779bd360936f0
+  languageName: node
+  linkType: hard
+
+"expo-image-manipulator@npm:~57.0.10":
+  version: 57.0.21
+  resolution: "expo-image-manipulator@npm:57.0.21"
+  dependencies:
+    expo-image-loader: "npm:~57.0.1"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/a0790bc19bf0e5d151c864ca5026a505d110b918bec590a67036b85afdd37f2a9ad864c7dbd0501b460730d814e5703300000db9ee4c62c5084d6bc301220a1d
   languageName: node
   linkType: hard
 

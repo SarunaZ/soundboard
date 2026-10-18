@@ -1,5 +1,16 @@
 # Soundboard — Plan of Action
 
+**New design work (2026-10-17):** see the
+[Stimmyz design implementation plan](docs/stimmyz-design-plan.md) for the imported
+handoff, current-source audit, file-level D1–D8 sequence and migration/QA gates.
+The existing app remains the Dev/personal app. The handoff specifications target
+a separate Google Play app derived from its proven core in this repository, with
+its own app identity, presentation and private storage. Both can be installed
+together; creating Play does not replace or migrate the Dev installation.
+Implementation has started in the separate `app-play/` workspace. The initial
+slice and verification are tracked in [STEPS.md](STEPS.md); the existing
+L-series completion and pending checks below remain unchanged.
+
 **Status:** M0's remote feature path is complete; its real-phone/cellular
 measurement remains pending. The 2026-10-10 local-authoring pivot is implemented
 and fixture-verified through render and local save. The backend live-source

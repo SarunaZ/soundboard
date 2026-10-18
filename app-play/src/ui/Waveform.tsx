@@ -1,0 +1,75 @@
+import { useMemo, useRef, useState } from 'react';
+import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import type { Theme } from './theme';
+import { clampEnd, clampStart, dragDeltaToTime, timeToPosition } from './waveformLayout';
+
+export function formatTime(milliseconds: number): string {
+  const total = Math.max(0, milliseconds);
+  const minutes = Math.floor(total / 60_000);
+  const seconds = Math.floor((total % 60_000) / 1000);
+  const hundredths = Math.floor((total % 1000) / 10);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
+}
+
+export function Waveform({ peaks, durationMs, startMs, endMs, onChange, theme }: {
+  peaks: number[]; durationMs: number; startMs: number; endMs: number; onChange: (start: number, end: number) => void; theme: Theme;
+}) {
+  const [width, setWidth] = useState(1);
+  const state = useRef({ startMs, endMs, durationMs, width, onChange, handle: 'start' as 'start' | 'end', grantMs: 0 });
+  state.current = { ...state.current, startMs, endMs, durationMs, width, onChange };
+  const pan = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: (event) => {
+      const current = state.current;
+      const x = event.nativeEvent.locationX;
+      const startX = timeToPosition(current.startMs, current.durationMs, current.width);
+      const endX = timeToPosition(current.endMs, current.durationMs, current.width);
+      current.handle = Math.abs(x - startX) <= Math.abs(x - endX) ? 'start' : 'end';
+      current.grantMs = current.handle === 'start' ? current.startMs : current.endMs;
+    },
+    onPanResponderMove: (_event, gesture) => {
+      const current = state.current;
+      const target = current.grantMs + dragDeltaToTime(gesture.dx, current.durationMs, current.width);
+      const start = current.handle === 'start' ? clampStart(target, current.endMs, current.durationMs) : current.startMs;
+      const end = current.handle === 'end' ? clampEnd(target, current.startMs, current.durationMs) : current.endMs;
+      current.onChange(start, end);
+    },
+  }), []);
+  const bars = peaks.length ? Array.from({ length: Math.min(100, peaks.length) }, (_, index) => {
+    const count = Math.min(100, peaks.length);
+    const from = Math.floor(index * peaks.length / count);
+    const to = Math.max(from + 1, Math.ceil((index + 1) * peaks.length / count));
+    return Math.max(...peaks.slice(from, to));
+  }) : Array.from({ length: 64 }, () => 0.08);
+  const startX = timeToPosition(startMs, durationMs, width);
+  const endX = timeToPosition(endMs, durationMs, width);
+  return <View>
+    <View onLayout={(event) => setWidth(Math.max(1, event.nativeEvent.layout.width))} {...pan.panHandlers}
+      style={[styles.track, { backgroundColor: theme.raised }]} accessible accessibilityRole="adjustable"
+      accessibilityLabel="Audio trim range. Drag the nearest start or end handle."
+      accessibilityValue={{ min: 0, max: durationMs, now: startMs }}>
+      <View pointerEvents="none" style={[styles.selection, { left: startX, width: Math.max(0, endX - startX), backgroundColor: theme.primary }]} />
+      <View pointerEvents="none" style={styles.bars}>{bars.map((peak, index) => {
+        const ratio = (index + 0.5) / bars.length;
+        const selected = ratio >= startMs / durationMs && ratio <= endMs / durationMs;
+        return <View key={index} style={[styles.bar, { height: `${Math.max(8, peak * 90)}%`, backgroundColor: selected ? theme.focus : theme.muted }]} />;
+      })}</View>
+      <View pointerEvents="none" style={[styles.handle, { left: startX, backgroundColor: '#c76bff' }]}><View style={[styles.grip, { backgroundColor: '#ffffff' }]} /></View>
+      <View pointerEvents="none" style={[styles.handle, { left: endX, backgroundColor: '#c76bff' }]}><View style={[styles.grip, { backgroundColor: '#ffffff' }]} /></View>
+    </View>
+    <View style={styles.times}><Text style={{ color: theme.muted }}>{formatTime(startMs)}</Text>
+      <Text style={{ color: theme.focus, fontWeight: '700' }}>{formatTime(endMs - startMs)} selected</Text>
+      <Text style={{ color: theme.muted }}>{formatTime(endMs)}</Text></View>
+  </View>;
+}
+
+const styles = StyleSheet.create({
+  track: { height: 148, borderRadius: 16, overflow: 'hidden', justifyContent: 'center', position: 'relative', marginTop: 2, paddingHorizontal: 12 },
+  selection: { position: 'absolute', top: 0, bottom: 0, opacity: 0.38 },
+  bars: { height: '76%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', gap: 2 },
+  bar: { flex: 1, minWidth: 1, borderRadius: 2, opacity: 0.92 },
+  handle: { position: 'absolute', top: 3, bottom: 3, width: 30, marginLeft: -15, borderRadius: 10, alignItems: 'center', justifyContent: 'center', zIndex: 2, borderWidth: 1, borderColor: '#f2d6ff' },
+  grip: { width: 4, height: 38, borderRadius: 3 },
+  times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, alignItems: 'center', gap: 4 },
+});

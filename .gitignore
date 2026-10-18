@@ -3,6 +3,11 @@ dist/
 .env
 *.log
 data/
+!app-play/src/data/
+!app-play/src/data/**
+app-play/android/
+app-play/ios/
+app-play/play-native-modules/
 
 # Yarn 4, node-modules linker: keep config, ignore the cache and state.
 .yarn/*

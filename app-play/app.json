@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Stimmyz",
+    "slug": "stimmyz-play",
+    "version": "1.0.13",
+    "icon": "./assets/stimyz/icon.png",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "dev.sarunas.soundboard.play",
+      "versionCode": 14,
+      "adaptiveIcon": {
+        "backgroundColor": "#14161a",
+        "foregroundImage": "./assets/stimyz/android-icon-foreground.png",
+        "monochromeImage": "./assets/stimyz/android-icon-monochrome.png"
+      },
+      "allowBackup": false,
+      "usesCleartextTraffic": false,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.MANAGE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
+      "predictiveBackGestureEnabled": true
+    },
+    "plugins": [
+      "react-native-audio-api",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Stimmyz uses microphone access to record sounds you choose to save.",
+          "recordAudioAndroid": true,
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      "./plugins/withPlayRelease"
+    ]
+  }
+}
