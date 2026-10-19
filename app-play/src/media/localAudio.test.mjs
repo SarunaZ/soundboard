@@ -117,7 +117,7 @@ async function harness(t, { seconds = 4, channels = 2 } = {}) {
     .replace("from 'react-native-audio-api/lib/module/core/AudioContext';", `from '${urls['fake-context.mjs']}';`)
     .replace("from '../data/library';", `from '${urls['fake-library.mjs']}';`)
     .replace("from '../data/snapshot';", `from '${urls['fake-fs.mjs']}';`)
-    .replace("from '../data/importValidation';", `from '${pathToFileURL(join(appClientRoot, 'src/editor/importValidation.ts')).href}';`)
+    .replace("from '../data/importValidation';", `from '${pathToFileURL(join(appRoot, 'src/data/importValidation.ts')).href}';`)
     .replace("from '../data/catalog';", `from '${pathToFileURL(join(appClientRoot, 'src/editor/catalog.ts')).href}';`)
     .replace("from '../data/protocol';", `from '${pathToFileURL(join(appRoot, 'src/data/protocol.ts')).href}';`)
     .replace("from '../../../app-client/src/editor/localAudioPcm.ts';", `from '${pathToFileURL(join(appClientRoot, 'src/editor/localAudioPcm.ts')).href}';`);
@@ -171,7 +171,7 @@ test('stages a DocumentPicker cache copy, preserves asset metadata, and leaves t
   assert.equal(state.files.get(contentUri).bytes.length, 4);
   assert.match(source.uri, /soundboard-editor-[0-9a-f-]{36}\/source\.mp3$/);
   assert.deepEqual(state.contextOptions, [{ sampleRate: 44_100 }]);
-  assert.deepEqual(state.pickerOptions, { type: 'audio/*', multiple: false, copyToCacheDirectory: true });
+  assert.deepEqual(state.pickerOptions, { type: ['audio/*', 'video/mp4', 'video/quicktime'], multiple: false, copyToCacheDirectory: true });
   assert.equal(state.files.has(state.pickerCacheUri), false);
   assert.equal(state.playerRemoves, 1);
   await editor.disposeLocalAudioSource(source);

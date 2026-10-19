@@ -1,9 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Keyboard, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
+import { File, Paths } from 'expo-file-system';
 import { filterMemes, loadPopularMemes, type MemeImage } from '../media/memeSearch';
-import { disposeDraftArtwork, prepareMemeArtwork, type DraftArtwork } from '../media/artwork';
+import { disposeDraftArtwork, prepareGalleryArtwork, prepareMemeArtwork, type DraftArtwork } from '../media/artwork';
 import type { Theme } from './theme';
+
+/** Open Android's system image picker and stage a compressed, app-cache thumbnail. */
+export async function pickGalleryArtwork(): Promise<DraftArtwork | null> {
+  const picked = await DocumentPicker.getDocumentAsync({ type: 'image/*', multiple: false, copyToCacheDirectory: true });
+  if (picked.canceled) return null;
+  const asset = picked.assets[0];
+  if (!asset) throw new Error('The selected image could not be read. Choose it again.');
+  try {
+    if (typeof asset.size === 'number' && asset.size > 32 * 1024 * 1024) throw new Error('Choose an image that is 32 MB or smaller.');
+    return await prepareGalleryArtwork(asset.uri, asset.name);
+  } finally { removeOwnedDocumentPickerCacheFile(asset.uri); }
+}
+
+function removeOwnedDocumentPickerCacheFile(uri: string): void {
+  const prefix = `${Paths.cache.uri.replace(/\/+$/, '')}/DocumentPicker/`;
+  if (!uri.startsWith(prefix)) return;
+  const relative = uri.slice(prefix.length);
+  if (!relative || relative.includes('/') || relative.includes('?') || relative.includes('#')) return;
+  try {
+    const parsed = new URL(uri);
+    if (parsed.protocol !== 'file:' || parsed.href !== uri) return;
+    const decoded = decodeURIComponent(relative);
+    if (!decoded || decoded === '.' || decoded === '..' || decoded.includes('/')) return;
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch { /* Cleanup must not turn a usable draft into a failed selection. */ }
+}
 
 export function ArtworkPicker({ visible, theme, onClose, onSelect, onPreparingChange }: {
   visible: boolean;

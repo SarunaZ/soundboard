@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, BackHandler, Image, Keyboard, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, AppState, BackHandler, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 import { play, stop } from '../../../app-client/src/audio/engine';
 import { useKeyboardInputReveal } from '../../../app-client/src/keyboard/useKeyboardInputReveal';
@@ -7,15 +7,23 @@ import { disposeLocalAudioSource, pickLocalAudioSource, renderLocalAudioRange, s
 import { createLocalAudioRecorder } from '../media/recording';
 import { disposeDraftArtwork, type DraftArtwork } from '../media/artwork';
 import type { LocalClip } from '../data/library';
-import { ActionButton, Heading, Panel, TextField } from './controls';
+import { ActionButton, GradientFill, Panel, TextField } from './controls';
 import type { Theme } from './theme';
-import { contrastForeground, iconChoices, padColors } from './theme';
+import { iconChoices, padColors } from './theme';
 import { formatTime, Waveform } from './Waveform';
-import { ArtworkPicker } from './ArtworkPicker';
+import { ArtworkPicker, pickGalleryArtwork } from './ArtworkPicker';
+import { Icon } from './Icons';
 
 export type AssignmentTarget = { boardId: string; padId?: string; expectedClipId?: string | null } | null;
 export type InitialAction = 'file' | 'record';
 type Step = 'source' | 'trim' | 'customize';
+
+function blendHex(foreground: string, background: string, foregroundRatio: number): string {
+  const foregroundRgb = foreground.slice(1).match(/.{2}/g)?.map((part) => Number.parseInt(part, 16));
+  const backgroundRgb = background.slice(1).match(/.{2}/g)?.map((part) => Number.parseInt(part, 16));
+  if (!foregroundRgb || !backgroundRgb || foregroundRgb.length !== 3 || backgroundRgb.length !== 3) return background;
+  return `#${foregroundRgb.map((value, index) => Math.round(value * foregroundRatio + backgroundRgb[index]! * (1 - foregroundRatio)).toString(16).padStart(2, '0')).join('')}`;
+}
 
 function waitForForeground(signal: AbortSignal): Promise<boolean> {
   if (AppState.currentState === 'active') return Promise.resolve(true);
@@ -50,8 +58,8 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const [endMs, setEndMs] = useState(0);
   const [fineTune, setFineTune] = useState(false);
   const [name, setName] = useState('');
-  const [icon, setIcon] = useState(iconChoices[0]!.id);
-  const [color, setColor] = useState(padColors[6]!);
+  const icon = iconChoices[0]!.id;
+  const color = padColors[6]!;
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingStopped, setRecordingStopped] = useState(false);
@@ -61,6 +69,9 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [imagePreparing, setImagePreparing] = useState(false);
   const [artworkImageFailed, setArtworkImageFailed] = useState(false);
+  const [artMode, setArtMode] = useState<'default' | 'gallery' | 'search'>('default');
+  const { fontScale, width: viewportWidth } = useWindowDimensions();
+  const stackFineTuneControls = fontScale > 1.2 || viewportWidth < 340;
   const controller = useRef<AbortController | null>(null);
   const sourceRef = useRef<LocalAudioSource | null>(null);
   const artworkRef = useRef<DraftArtwork | null>(null);
@@ -395,15 +406,24 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     setMessage('');
   }
 
-  const steps: Array<{ id: Step; label: string }> = [{ id: 'source', label: 'Source' }, { id: 'trim', label: 'Trim' }, { id: 'customize', label: 'Customize' }];
-  const activeIndex = steps.findIndex((item) => item.id === step);
-  const activeIcon = iconChoices.find((choice) => choice.id === icon)?.glyph ?? '♫';
+  async function chooseGalleryArtwork() {
+    setArtMode('gallery');
+    setImagePreparing(true);
+    try {
+      const next = await pickGalleryArtwork();
+      if (next) adoptArtwork(next);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not open that image. Choose another one.');
+    } finally { setImagePreparing(false); }
+  }
 
+  const steps: Array<{ id: Step; label: string }> = [{ id: 'source', label: 'Source' }, { id: 'trim', label: 'Trim' }, { id: 'customize', label: 'Details' }];
+  const activeIndex = steps.findIndex((item) => item.id === step);
   return <View style={styles.root}>
     <View style={styles.header}>
-      <Pressable onPress={goBack} disabled={busy && Boolean(source) && !recordingRef.current} accessibilityRole="button" accessibilityLabel={recording ? 'Discard recording' : step === 'source' ? 'Cancel sound creation' : 'Back'} style={[styles.back, { borderColor: theme.border }]}><Text style={{ color: theme.text, fontSize: 22 }}>{step === 'source' ? '×' : '‹'}</Text></Pressable>
-      <Text style={{ color: theme.text, fontSize: 20, fontWeight: '800', flex: 1 }}>Create a sound</Text>
-      {step !== 'source' ? <Pressable onPress={requestCancel} disabled={busy && Boolean(source)} accessibilityRole="button" accessibilityLabel="Discard sound creation" style={[styles.back, { borderColor: theme.border }]}><Text style={{ color: theme.text, fontSize: 22 }}>×</Text></Pressable> : null}
+      <Pressable onPress={goBack} disabled={busy && Boolean(source) && !recordingRef.current} accessibilityRole="button" accessibilityLabel={recording ? 'Discard recording' : step === 'source' ? 'Cancel sound creation' : 'Back'} style={styles.back}><Icon name="back" size={24} color={theme.text} /></Pressable>
+      <Text style={{ color: theme.text, fontSize: 20, fontWeight: '800', flex: 1, textAlign: 'center' }}>Create a sound</Text>
+      <View style={styles.back} />
     </View>
     <View accessibilityRole="progressbar" accessibilityLabel={`${steps[activeIndex]!.label}, step ${activeIndex + 1} of 3`} style={styles.progress}>
       <View pointerEvents="none" style={styles.connectorLayer}>
@@ -411,19 +431,19 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
         <View style={[styles.connector, { backgroundColor: activeIndex > 1 ? theme.primary : theme.border }]} />
       </View>
       {steps.map((item, index) => <View key={item.id} style={styles.progressItem}>
-        <View style={[styles.progressDot, { backgroundColor: index <= activeIndex ? theme.primary : theme.raised, borderColor: index <= activeIndex ? theme.primary : theme.border }]}><Text style={{ color: index <= activeIndex ? '#fff' : theme.muted, fontSize: 12, fontWeight: '800' }}>{index + 1}</Text></View>
-        <Text numberOfLines={2} style={{ color: index === activeIndex ? theme.text : theme.muted, fontWeight: index === activeIndex ? '800' : '500', textAlign: 'center', flexShrink: 1 }}>{item.label}</Text>
+        <View style={[styles.progressDot, { backgroundColor: index <= activeIndex ? theme.primary : theme.raised, borderColor: index <= activeIndex ? theme.primary : theme.border }]}>{index < activeIndex ? <Icon name="check" size={16} color="#fff" /> : <Text style={{ color: index === activeIndex ? '#fff' : theme.muted, fontSize: 12, fontWeight: '800' }}>{index + 1}</Text>}</View>
+        <Text numberOfLines={2} style={{ color: index === activeIndex ? theme.focus : theme.muted, fontSize: 11, fontWeight: index === activeIndex ? '800' : '500', textAlign: 'center', flexShrink: 1 }}>{item.label}</Text>
       </View>)}
     </View>
     <ScrollView ref={scrollRef} style={styles.scroll} onLayout={keyboardReveal.onViewportLayout} onScroll={keyboardReveal.onScroll} scrollEventThrottle={16} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       {step === 'source' ? <View style={styles.sourceScreen}>
         {!recording && !recordingStopped ? <>
-          <Heading title="Where’s your sound from?" subtitle="Make a clip in just a few steps." theme={theme} />
+          <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800', marginBottom: 4 }}>Where’s your audio from?</Text>
           <Pressable onPress={() => void chooseSource()} disabled={busy} accessibilityRole="button" accessibilityLabel="Choose file, import audio from this device" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
-            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Text style={{ fontSize: 26 }}>📁</Text></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Choose file</Text><Text style={{ color: theme.muted }}>Import audio from this device</Text></View><Text style={{ color: theme.text, fontSize: 22 }}>›</Text>
+            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="file" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Import from device</Text><Text style={{ color: theme.muted }}>Choose an audio or video file</Text></View>
           </Pressable>
           <Pressable onPress={() => void startRecording()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record a sound using the phone microphone" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: busy ? 0.6 : 1 }]}>
-            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Text style={{ fontSize: 26 }}>🎙</Text></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record a sound</Text><Text style={{ color: theme.muted }}>Use your phone microphone</Text></View><Text style={{ color: theme.text, fontSize: 22 }}>›</Text>
+            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="mic" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record a new sound</Text><Text style={{ color: theme.muted }}>Use your microphone</Text></View>
           </Pressable>
           {source ? <Panel theme={theme} style={styles.currentDraft}>
             <Text style={{ color: theme.text, fontWeight: '800' }}>Current draft</Text><Text style={{ color: theme.muted }} numberOfLines={1}>{source.title} · {formatTime(source.durationMs)}</Text>
@@ -431,78 +451,77 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
           </Panel> : null}
         </> : null}
         {recording || recordingStopped ? <Panel theme={theme} style={styles.recordingPanel}>
-          <View style={styles.recordingHeadline}><View style={styles.recordingDot} /><Text style={{ color: theme.text, fontWeight: '800', fontSize: 18 }}>{recordingStopped ? 'Recording stopped' : 'Recording'}</Text></View>
+          <View style={styles.recordingHeadline}><View style={styles.recordingDot} /><Text style={{ color: theme.text, fontWeight: '800', fontSize: 18 }}>{recordingStopped ? 'Recording stopped' : 'Recording a sound'}</Text></View>
           <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 34, fontVariant: ['tabular-nums'], fontWeight: '800' }}>{formatTime(recordingElapsedMs)}</Text>
           <Text style={{ color: theme.muted }}>{recordingStopped ? 'The recording reached the 5-minute limit.' : 'Keep this screen open. Recording stops if you leave the app.'}</Text>
-          <ActionButton label={recordingStopped ? 'Use recording' : 'Stop & use recording'} onPress={() => void stopRecording()} theme={theme} variant="primary" disabled={busy} />
-          <ActionButton label="Cancel recording" onPress={confirmDiscardRecording} theme={theme} variant="secondary" />
+          <ActionButton label={recordingStopped ? 'Use recording' : 'Stop recording'} icon={recordingStopped ? undefined : '■'} onPress={() => void stopRecording()} theme={theme} variant="recording" disabled={busy} />
+          <ActionButton label="Discard" onPress={confirmDiscardRecording} theme={theme} variant="quiet" />
         </Panel> : null}
       </View> : null}
 
       {step === 'trim' && source ? <>
         <View style={[styles.compactSource, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <View style={[styles.compactSourceIcon, { backgroundColor: theme.raised }]}><Text style={{ color: theme.focus, fontSize: 22 }}>{source.title === 'Microphone recording' ? '🎙' : '♫'}</Text></View>
-          <View style={styles.compactSourceText}><Text style={{ color: theme.text, fontWeight: '800' }} numberOfLines={1}>{source.title}</Text><Text style={{ color: theme.muted }}>{formatTime(source.durationMs)} total · Trim up to 60 seconds</Text></View>
+          <View style={[styles.compactSourceIcon, { backgroundColor: theme.raised }]}><Icon name={source.title === 'Microphone recording' ? 'mic' : 'music'} size={24} color={theme.focus} /></View>
+          <View style={styles.compactSourceText}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 14 }} numberOfLines={1}>{source.title}</Text><Text style={{ color: theme.muted, fontSize: 12 }}>{formatTime(source.durationMs)} total · Up to 60 seconds</Text></View>
         </View>
         <View style={[styles.waveCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Waveform peaks={source.peaks} durationMs={source.durationMs} startMs={startMs} endMs={endMs} onChange={setRange} theme={theme} />
-          <ActionButton label="Preview selection" icon="▶" onPress={() => void preview()} theme={theme} disabled={busy} />
+          <Pressable onPress={() => void preview()} disabled={busy} accessibilityRole="button" accessibilityLabel="Preview selection"
+            style={({ pressed }) => [styles.previewButton, { backgroundColor: blendHex(theme.accent, theme.surface, 0.18), borderColor: theme.border, opacity: busy ? 0.55 : pressed ? 0.78 : 1 }]}>
+            <Icon name="play" size={20} color={theme.accent} />
+            <Text style={{ color: theme.text, fontSize: 13, fontWeight: '700' }}>Preview selection</Text>
+          </Pressable>
         </View>
         <Panel theme={theme} style={styles.finePanel}>
           <Pressable onPress={() => setFineTune(!fineTune)} disabled={busy} accessibilityRole="button" accessibilityState={{ expanded: fineTune }} accessibilityLabel={fineTune ? 'Hide fine tune controls' : 'Show fine tune controls'} style={styles.fineDisclosure}>
-            <Text style={{ color: theme.text, fontWeight: '800', fontSize: 15 }}>{fineTune ? '⌄' : '›'}  Fine tune <Text style={{ color: theme.muted, fontWeight: '500' }}>(optional)</Text></Text>
-            <Text style={{ color: theme.focus, fontWeight: '700' }}>{formatTime(endMs - startMs)}</Text>
+            <Text style={{ color: theme.text, fontWeight: '800', fontSize: 13 }}>Fine tune</Text>
+            <View style={styles.fineRight}><Text style={{ color: theme.muted, fontWeight: '500', fontSize: 11 }}>(optional)</Text><Icon name="chevron" size={18} color={theme.muted} /></View>
           </Pressable>
           {fineTune ? <View style={styles.fineControls}>
-            {(['start', 'end'] as const).map((which) => <View key={which} style={styles.tuneSection}>
-              <Text style={{ color: theme.text, fontWeight: '700' }}>{which === 'start' ? 'Start' : 'End'} · {formatTime(which === 'start' ? startMs : endMs)}</Text>
-              <View style={styles.tuneButtons}>
-                {([[-1000, '−1 s'], [-100, '−100 ms'], [100, '+100 ms'], [1000, '+1 s']] as const).map(([amount, label]) => <Pressable key={label} onPress={() => nudge(which, amount)} disabled={busy} accessibilityRole="button" accessibilityLabel={`${label} ${which}`} style={({ pressed }) => [styles.tuneButton, { backgroundColor: theme.raised, borderColor: theme.border, opacity: busy ? 0.45 : pressed ? 0.72 : 1 }]}><Text numberOfLines={1} adjustsFontSizeToFit style={{ color: theme.text, fontWeight: '700', textAlign: 'center' }}>{label}</Text></Pressable>)}
+            {(['start', 'end'] as const).map((which) => <View key={which} style={[styles.tuneSection, stackFineTuneControls && styles.tuneSectionStacked]}>
+              <View style={[styles.tuneLabels, stackFineTuneControls && styles.tuneLabelsStacked]}><Text style={{ color: theme.text, fontWeight: '700', width: stackFineTuneControls ? undefined : 42 }}>{which === 'start' ? 'Start' : 'End'}</Text><Text style={{ color: theme.text, fontVariant: ['tabular-nums'], fontSize: 12 }}>{formatTime(which === 'start' ? startMs : endMs)}</Text></View>
+              <View style={[styles.tuneButtons, stackFineTuneControls && styles.tuneButtonsGrid]}>
+                {([[-1000, '−1s'], [-100, '−100ms'], [100, '+100ms'], [1000, '+1s']] as const).map(([amount, label]) => <Pressable key={label} onPress={() => nudge(which, amount)} disabled={busy} accessibilityRole="button" accessibilityLabel={`${label} ${which}`} style={({ pressed }) => [styles.tuneButton, stackFineTuneControls && styles.tuneButtonGrid, { backgroundColor: theme.raised, borderColor: theme.border, opacity: busy ? 0.45 : pressed ? 0.72 : 1 }]}><Text numberOfLines={1} adjustsFontSizeToFit style={{ color: theme.text, fontWeight: '700', textAlign: 'center' }}>{label}</Text></Pressable>)}
               </View>
             </View>)}
           </View> : null}
         </Panel>
+        <Text style={{ color: theme.muted, fontSize: 11, lineHeight: 16 }}>Drag both waveform handles to select the moment. Fine tune is optional.</Text>
       </> : null}
 
       {step === 'customize' && source && render ? <>
-        <Panel theme={theme} style={styles.card}>
-          <Heading title="Make it yours" subtitle={`${formatTime(render.durationMs)} clip`} theme={theme} />
-          <View style={styles.previewWrap} accessibilityLabel={`Live pad preview: ${name.trim() || 'Sound name'}${artwork ? `, image ${artwork.title}` : ''}`}>
-            <View style={[styles.padPreview, { backgroundColor: color }]}>
-              {artwork && !artworkImageFailed ? <Image source={{ uri: artwork.uri }} style={styles.padArtwork} resizeMode="cover" onError={() => setArtworkImageFailed(true)} /> : <Text style={{ color: contrastForeground(color), fontSize: 42, fontWeight: '700' }}>{activeIcon}</Text>}
-              <View style={[styles.padNameOverlay, artwork && !artworkImageFailed ? styles.padNameOverlayOnImage : null]}><Text style={{ color: artwork && !artworkImageFailed ? '#fff' : contrastForeground(color), fontSize: 14, lineHeight: 17, fontWeight: '800', textAlign: 'center' }} numberOfLines={2}>{name.trim() || 'Sound name'}</Text></View>
-            </View>
+        <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800', marginBottom: -6 }}>Make it yours <Icon name="spark" size={16} color={theme.secondary} /></Text>
+        <Panel theme={theme} style={styles.artworkPreviewCard}>
+          <View style={[styles.artworkPreview, { backgroundColor: theme.raised }]}>
+            {artwork && !artworkImageFailed ? <Image source={{ uri: artwork.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setArtworkImageFailed(true)} /> : <><GradientFill colors={theme.primaryGradient} vertical /><Icon name="music" size={37} color="#fff" /></>}
           </View>
-          <View style={styles.artworkActions}>
-            <ActionButton label={artwork ? 'Change image' : 'Choose image'} onPress={() => setPickerOpen(true)} theme={theme} variant="secondary" disabled={busy || imagePreparing} />
-            {artwork ? <>
-              <Text numberOfLines={1} style={{ color: theme.muted, textAlign: 'center' }}>Image: {artwork.title}</Text>
-              <Pressable onPress={() => void Linking.openURL(artwork.sourceUrl).catch(() => {})} accessibilityRole="link" accessibilityLabel="Open original image source" style={styles.sourceLink}><Text numberOfLines={1} style={{ color: theme.focus, textDecorationLine: 'underline' }}>View image source</Text></Pressable>
-              <ActionButton label="Remove image" onPress={clearArtwork} theme={theme} variant="secondary" disabled={busy || imagePreparing} />
-            </> : null}
+          <View style={styles.artworkSummary}>
+            <Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Optional artwork</Text>
+            <Text style={{ color: theme.muted, lineHeight: 18 }}>Choose a picture for your pad or keep the default icon.</Text>
           </View>
-          <Text style={{ color: theme.text, fontWeight: '700' }}>Sound name <Text style={{ color: theme.danger }}>*</Text></Text>
-          <TextField inputRef={nameInputRef} onFocus={() => { if (nameInputRef.current) keyboardReveal.onFocus(nameInputRef.current); }} onBlur={() => { if (nameInputRef.current) keyboardReveal.onBlur(nameInputRef.current); }} value={name} onChangeText={(value) => setName(value.slice(0, 100))} placeholder="Name this sound" theme={theme} maxLength={100} />
-          <Text style={{ color: theme.muted, textAlign: 'right' }}>{name.length}/100</Text>
-          <Text style={{ color: theme.text, fontWeight: '700' }}>Choose an icon</Text>
-          <View style={styles.choiceRow}>{iconChoices.map((choice) => <Pressable key={choice.id} onPress={() => setIcon(choice.id)} accessibilityRole="button" accessibilityLabel={`Use ${choice.label} icon`} accessibilityState={{ selected: icon === choice.id }} style={[styles.iconChoice, { borderColor: icon === choice.id ? theme.focus : theme.border, backgroundColor: theme.raised }]}><Text style={{ color: theme.text, fontSize: 28 }}>{choice.glyph}</Text></Pressable>)}</View>
-          <Text style={{ color: theme.text, fontWeight: '700' }}>Choose a color</Text>
-          <View style={styles.choiceRow}>{padColors.map((choice) => <Pressable key={choice} onPress={() => setColor(choice)} accessibilityRole="button" accessibilityLabel={`Use ${choice} color`} accessibilityState={{ selected: color === choice }} style={[styles.colorChoice, { backgroundColor: choice, borderColor: color === choice ? theme.focus : theme.border }]}>{color === choice ? <Text style={{ color: contrastForeground(choice), fontWeight: '900' }}>✓</Text> : null}</Pressable>)}</View>
-          <Text style={{ color: theme.muted, lineHeight: 20 }}>Choose an image or use a built-in icon and color for your sound.</Text>
-          <ActionButton label="Back to trim" onPress={() => setStep('trim')} theme={theme} disabled={busy} />
         </Panel>
+        <Text style={[styles.fieldLabel, { color: theme.muted }]}>SOUNDBITE NAME</Text>
+        <TextField inputRef={nameInputRef} onFocus={() => { if (nameInputRef.current) keyboardReveal.onFocus(nameInputRef.current); }} onBlur={() => { if (nameInputRef.current) keyboardReveal.onBlur(nameInputRef.current); }} value={name} onChangeText={(value) => setName(value.slice(0, 100))} placeholder="Name this sound" theme={theme} maxLength={100} />
+        <View style={styles.artOptions}>
+          <Pressable onPress={() => { setArtMode('default'); clearArtwork(); }} accessibilityRole="button" accessibilityState={{ selected: artMode === 'default' }} style={[styles.artOption, { backgroundColor: artMode === 'default' ? theme.raised : theme.surface, borderColor: artMode === 'default' ? theme.focus : theme.border, borderWidth: artMode === 'default' ? 2 : 1 }]}><Icon name="music" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Default</Text></Pressable>
+          <Pressable onPress={() => void chooseGalleryArtwork()} disabled={busy || imagePreparing} accessibilityRole="button" accessibilityState={{ selected: artMode === 'gallery' }} style={[styles.artOption, { backgroundColor: artMode === 'gallery' ? theme.raised : theme.surface, borderColor: artMode === 'gallery' ? theme.focus : theme.border, borderWidth: artMode === 'gallery' ? 2 : 1, opacity: imagePreparing ? 0.6 : 1 }]}><Icon name="image" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Gallery</Text></Pressable>
+          <Pressable onPress={() => setArtMode('search')} accessibilityRole="button" accessibilityState={{ selected: artMode === 'search' }} style={[styles.artOption, { backgroundColor: artMode === 'search' ? theme.raised : theme.surface, borderColor: artMode === 'search' ? theme.focus : theme.border, borderWidth: artMode === 'search' ? 2 : 1 }]}><Icon name="search" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Search</Text></Pressable>
+        </View>
+        {artMode === 'search' ? <View style={styles.searchInfo}><Text style={{ color: theme.muted, lineHeight: 20 }}>Search online artwork is available through Imgflip’s popular template list.</Text><ActionButton label="Browse popular templates" icon="⌕" onPress={() => setPickerOpen(true)} theme={theme} variant="secondary" disabled={busy || imagePreparing} /></View> : null}
+        <Text style={{ color: theme.muted, lineHeight: 20 }}>Your clip and optional artwork will be stored on this device. You can skip artwork.</Text>
       </> : null}
       {message ? <Text accessibilityLiveRegion="polite" style={{ color: /could not|failed|microphone access is off|denied|recording is empty|too short|stopped when the app/i.test(message.toLowerCase()) ? theme.danger : theme.muted }}>{message}</Text> : null}
     </ScrollView>
     {step === 'source' && !recording && !recordingStopped ? <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}><ActionButton label="Cancel" onPress={requestCancel} theme={theme} variant="secondary" disabled={busy && Boolean(source)} /></View> : null}
-    {step === 'trim' ? <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}><ActionButton label={busy ? 'Working…' : 'Continue to customize'} onPress={() => void renderRange()} theme={theme} variant="primary" disabled={busy} /></View> : null}
-    {step === 'customize' ? <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}><ActionButton label={busy ? 'Saving…' : imagePreparing ? 'Preparing image…' : 'Save sound'} onPress={() => void save()} theme={theme} variant="primary" disabled={busy || imagePreparing || !name.trim()} /></View> : null}
+    {step === 'trim' ? <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}><ActionButton label={busy ? 'Working…' : 'Next'} onPress={() => void renderRange()} theme={theme} variant="primary" disabled={busy} /></View> : null}
+    {step === 'customize' ? <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}><ActionButton label={busy ? 'Saving…' : imagePreparing ? 'Preparing image…' : 'Save soundbite'} onPress={() => void save()} theme={theme} variant="primary" disabled={busy || imagePreparing || !name.trim()} /></View> : null}
     <ArtworkPicker visible={pickerOpen} theme={theme} onClose={() => setPickerOpen(false)} onSelect={adoptArtwork} onPreparingChange={setImagePreparing} />
   </View>;
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 }, header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 12 }, back: { width: 48, height: 48, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  progress: { flexDirection: 'row', alignItems: 'flex-start', position: 'relative', paddingBottom: 14 }, progressItem: { flex: 1, alignItems: 'center', gap: 5 }, progressDot: { width: 28, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1 }, connectorLayer: { position: 'absolute', top: 13, left: '16.666%', right: '16.666%', height: 2, flexDirection: 'row' }, connector: { height: 2, flex: 1 },
-  scroll: { flex: 1 }, content: { gap: 14, paddingBottom: 20 }, card: { gap: 14 }, sourceScreen: { gap: 14 }, sourceCard: { minHeight: 90, borderWidth: 1.5, borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14 }, sourceIcon: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }, sourceCardCopy: { flex: 1, gap: 4 }, currentDraft: { gap: 10 }, recordingPanel: { gap: 14, borderColor: '#ff526b' }, recordingHeadline: { flexDirection: 'row', alignItems: 'center', gap: 10 }, recordingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#ff304f' }, compactSource: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1 }, compactSourceIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, compactSourceText: { flex: 1, gap: 2 }, waveCard: { borderRadius: 20, borderWidth: 1, padding: 12, gap: 10 }, finePanel: { paddingHorizontal: 12, paddingVertical: 2, gap: 0 }, fineDisclosure: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, fineControls: { gap: 12, paddingBottom: 12 }, tuneSection: { gap: 6 }, tuneButtons: { flexDirection: 'row', flexWrap: 'nowrap', gap: 6 }, tuneButton: { minHeight: 48, minWidth: 0, flex: 1, borderRadius: 14, borderWidth: 1, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }, previewWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }, padPreview: { width: 150, height: 150, borderRadius: 28, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 6 }, padArtwork: { ...StyleSheet.absoluteFill, width: undefined, height: undefined }, padNameOverlay: { marginTop: 2, paddingHorizontal: 6, paddingVertical: 4, borderRadius: 8 }, padNameOverlayOnImage: { position: 'absolute', bottom: 8, left: 8, right: 8, backgroundColor: '#0009' }, artworkActions: { gap: 8 }, sourceLink: { minHeight: 48, alignItems: 'center', justifyContent: 'center' }, choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, iconChoice: { width: 72, height: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 20, borderWidth: 2 }, colorChoice: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 14, borderWidth: 3 }, footer: { paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  root: { flex: 1 }, header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 12 }, back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  progress: { flexDirection: 'row', alignItems: 'flex-start', position: 'relative', paddingBottom: 16 }, progressItem: { flex: 1, alignItems: 'center', gap: 5 }, progressDot: { width: 28, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1 }, connectorLayer: { position: 'absolute', top: 13, left: '16.666%', right: '16.666%', height: 2, flexDirection: 'row' }, connector: { height: 2, flex: 1 },
+  scroll: { flex: 1 }, content: { gap: 12, paddingBottom: 20 }, card: { gap: 14 }, sourceScreen: { gap: 10, paddingTop: 4 }, sourceCard: { minHeight: 82, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 14 }, sourceIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, sourceCardCopy: { flex: 1, gap: 4 }, currentDraft: { gap: 10 }, recordingPanel: { minHeight: 230, justifyContent: 'center', alignItems: 'center', gap: 16, borderColor: '#ff526b' }, recordingHeadline: { flexDirection: 'row', alignItems: 'center', gap: 10 }, recordingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#ff304f' }, compactSource: { minHeight: 80, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 1 }, compactSourceIcon: { width: 55, height: 55, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, compactSourceText: { flex: 1, gap: 2, minWidth: 0 }, waveCard: { borderRadius: 18, borderWidth: 1, padding: 15, gap: 0 }, previewButton: { minHeight: 47, width: '100%', borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }, finePanel: { paddingHorizontal: 12, paddingVertical: 10, gap: 0, borderRadius: 17 }, fineDisclosure: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, fineRight: { flexDirection: 'row', alignItems: 'center', gap: 8 }, fineControls: { gap: 10, paddingBottom: 12 }, tuneSection: { flexDirection: 'row', alignItems: 'center', gap: 8 }, tuneSectionStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 6 }, tuneLabels: { flexDirection: 'row', alignItems: 'center', gap: 2 }, tuneLabelsStacked: { justifyContent: 'space-between' }, tuneButtons: { flex: 1, flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }, tuneButtonsGrid: { flex: 0, width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, tuneButton: { minHeight: 44, minWidth: 0, flex: 1, borderRadius: 12, borderWidth: 1, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }, tuneButtonGrid: { minHeight: 48, flex: 0, width: '47%' },
+  artworkPreviewCard: { minHeight: 112, flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12 }, artworkPreview: { width: 86, height: 86, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, artworkSummary: { flex: 1, gap: 7 }, fieldLabel: { color: '#baa8ad', fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginTop: 8, marginBottom: -5 }, artOptions: { flexDirection: 'row', gap: 8 }, artOption: { flex: 1, minHeight: 82, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }, searchInfo: { gap: 8 }, footer: { paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
 });

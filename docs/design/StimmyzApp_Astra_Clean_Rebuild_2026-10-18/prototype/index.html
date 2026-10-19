@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#FFF8EC" />
+  <title>Stimmyz — approved design implementation reference</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute;overflow:hidden" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-board" viewBox="0 0 24 24"><rect x="2" y="2" width="9" height="9" rx="2" fill="currentColor"/><rect x="13" y="2" width="9" height="9" rx="2" fill="currentColor"/><rect x="2" y="13" width="9" height="9" rx="2" fill="currentColor"/><rect x="13" y="13" width="9" height="9" rx="2" fill="currentColor"/></symbol>
+    <symbol id="i-editor" viewBox="0 0 24 24"><path d="M2 10v4M6 7v10M10 3v18M14 9v6M18 5v14M22 10v4" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" fill="none"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3" fill="currentColor"/><path d="M3 5v7c0 1.9 4 3.5 9 3.5s9-1.6 9-3.5V5M3 12v7c0 1.9 4 3.5 9 3.5s9-1.6 9-3.5v-7" stroke="currentColor" stroke-width="1.5" fill="none"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.7" cy="10.7" r="7" stroke="currentColor" stroke-width="2" fill="none"/><path d="m16 16 5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="m4 16 12-12 4 4L8 20H4zM14 6l4 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/></symbol>
+    <symbol id="i-controller" viewBox="0 0 24 24"><path d="M7 7h10a4 4 0 0 1 3.7 3l1.2 5.2c.6 2.4-1.9 4.1-3.7 2.5L15.6 15H8.4l-2.6 2.7c-1.8 1.6-4.3-.1-3.7-2.5L3.3 10A4 4 0 0 1 7 7Z" fill="currentColor"/><path d="M7 10v5M4.5 12.5h5" stroke="var(--controller-cut,#FFF)" stroke-width="1.5"/><circle cx="16" cy="11" r="1" fill="var(--controller-cut,#FFF)"/><circle cx="19" cy="13" r="1" fill="var(--controller-cut,#FFF)"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m5 9 7 7 7-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="19" r="2" fill="currentColor"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 0v6h5" stroke="currentColor" stroke-width="1.9" fill="none"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V2m0 0-5 5m5-5 5 5M4 14v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2" fill="none"/><path d="m10 8 7 4-7 4z" fill="currentColor"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 5v14a4 4 0 1 1-2-3.5V7l12-3v11a4 4 0 1 1-2-3.5V2L9 5Z" fill="currentColor"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3" stroke="currentColor" stroke-width="1.9" fill="none"/><path d="M5 11v2a7 7 0 0 0 14 0v-2M12 20v3M8 23h8" stroke="currentColor" stroke-width="1.9" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 .2l2.5-2.5A5 5 0 0 0 12.4 3l-2.3 2.4M14 11a5 5 0 0 0-7-.2l-2.5 2.5A5 5 0 0 0 11.6 21l2.3-2.4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m7 3 15 9-15 9z" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M4 4 20 20M20 4 4 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="18" rx="3" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="8" cy="9" r="2" fill="currentColor"/><path d="m4 18 6-6 4 4 3-3 5 5" stroke="currentColor" stroke-width="2" fill="none"/></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><path d="M5 4h7M5 9h5M5 14h3M17 4v16m-4-4 4 4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m3 12 6 6L21 5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5" stroke="currentColor" fill="none" stroke-width="1.7"/><path d="M10 2h4l.5 2.5 2.3 1L19 4l2.4 3-1.6 2 1 2.3L23 12v3l-2.3.5-1 2.3 1.5 2-2.4 2.4-2-1.4-2.3 1-.5 2.2h-4l-.5-2.2-2.2-1-2 1.4-2.4-2.4 1.4-2-1-2.3L1 15v-3l2.3-.7 1-2.3-1.4-2L5.3 4l2 1.5 2.2-1z" transform="translate(0 -1) scale(.96)" stroke="currentColor" stroke-width="1.2" fill="none"/></symbol>
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="m4 8 4-4 4 4M8 4v14m12-2-4 4-4-4m4 4V6" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V4h6v2m-9 0 1 15h10l1-15M10 10v7M14 10v7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-replace" viewBox="0 0 24 24"><path d="M4 9a8 8 0 0 1 14-5l2 2M20 15a8 8 0 0 1-14 5l-2-2M20 2v4h-4M4 22v-4h4" stroke="currentColor" stroke-width="1.9" fill="none" stroke-linecap="round"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 0 15.3 8.7 24 12l-8.7 3.3L12 24l-3.3-8.7L0 12l8.7-3.3z" fill="currentColor"/></symbol>
+  </svg>
+  <main class="studio">
+    <aside class="studio-panel">
+      <p class="eyebrow">STIMMYZ · DESIGN REFERENCE</p>
+      <h1>Approved visual system</h1>
+      <p>This is a hand-coded, editable interaction reference rebuilt from the approved mockups. Compare with the included reference images before implementing Android views.</p>
+      <label for="theme-select">Theme</label>
+      <select id="theme-select" aria-label="Theme"><option>Vanilla</option><option>Peach</option><option>Mint</option><option>Snow</option><option>Ice</option><option>Coffee</option></select>
+      <label for="build-select">Preview distribution</label>
+      <select id="build-select" aria-label="Build variant"><option value="store">Google Play</option><option value="personal">Personal development</option></select>
+      <div class="studio-note"><strong>Interaction contract</strong><br/>Quick Add is always position #1. It has no chevron unless Edit Board is active. Other pads and Library rows expose ⋮ menus. Nav icons are deliberately large.</div>
+      <div class="studio-note"><strong>Visual reference</strong><br/>Six themes: <a href="../references/APPROVED_SIX_THEMES.png" target="_blank">approved palette board ↗</a><br/>Dark UI: <a href="../references/APPROVED_DARK_UI_BOARD_EDITOR_LIBRARY.png" target="_blank">approved views ↗</a></div>
+    </aside>
+    <section class="phone-stage"><div id="app" class="device" aria-label="StimmyzApp interactive UI mockup"></div></section>
+    <aside class="studio-panel studio-right">
+      <p class="eyebrow">SCREEN CHECKLIST</p>
+      <div class="screen-buttons">
+        <button type="button" data-preview-page="board">Board</button>
+        <button type="button" data-preview-page="editor">Editor / Source</button>
+        <button type="button" data-preview-page="trim">Trim</button>
+        <button type="button" data-preview-page="details">Customize</button>
+        <button type="button" data-preview-page="library">Library</button>
+      </div>
+      <p class="studio-disclaimer">All buttons, menus and theme switches in the demo are interactive. Media recording, waveform rendering, image search and actual file processing are <strong>simulated</strong>, not production integrations.</p>
+      <p class="studio-disclaimer">The sample pad thumbnails are crops from AI-generated concept artwork, included for design comparison only. Do not distribute them in a released app without checking the relevant rights.</p>
+    </aside>
+  </main>
+  <input type="file" id="audio-input" accept="audio/*,video/*" hidden />
+  <input type="file" id="art-input" accept="image/*" hidden />
+  <script src="app.js"></script>
+</body>
+</html>

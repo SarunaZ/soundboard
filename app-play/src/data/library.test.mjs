@@ -94,6 +94,8 @@ test('v1 artwork metadata is path-safe, resolves locally, and missing previews f
   h.state.files.delete(imageUri);
   assert.equal(library.loadLocalClips()[0].artworkUri, undefined);
   assert.equal(library.loadLocalClips()[0].artwork.sourceUrl, art.sourceUrl);
+  presentation.setClipArtwork(id, { fileName: `${id}.jpg`, source: 'gallery', title: 'Weekend photo' });
+  assert.equal(library.loadLocalClips()[0].artwork.source, 'gallery');
 });
 
 test('deleting a clip clears every Play board reference and keeps unrelated clips', async (t) => {
@@ -129,12 +131,23 @@ test('board collection creation and active selection survive reload', async (t) 
 test('appearance and quick action preferences persist, recover from backup, and support repeated writes', async (t) => {
   const h = await harness(t);
   const { preferences: prefs } = await h.load();
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 1, appearance: 'system', quickAction: 'file' });
-  prefs.savePlayPreferences({ appearance: 'dark', quickAction: 'library' });
-  prefs.savePlayPreferences({ appearance: 'light', quickAction: 'file' });
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 1, appearance: 'light', quickAction: 'file' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance: 'Vanilla', quickAction: 'file' });
+  for (const appearance of ['Peach', 'Mint', 'Snow', 'Ice', 'Vanilla', 'Coffee']) {
+    prefs.savePlayPreferences({ appearance, quickAction: 'record' });
+    assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance, quickAction: 'record' });
+  }
+  prefs.savePlayPreferences({ appearance: 'Mint', quickAction: 'file' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance: 'Mint', quickAction: 'file' });
   h.state.files.set('file:///documents/play-library/preferences.json', '{broken');
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 1, appearance: 'dark', quickAction: 'library' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance: 'Coffee', quickAction: 'record' });
+});
+
+test('legacy appearance preferences migrate without losing the saved quick action', async (t) => {
+  const h = await harness(t);
+  const { preferences: prefs } = await h.load();
+  h.state.files.set('file:///documents/play-library/preferences.json', JSON.stringify({ version: 1, appearance: 'dark', quickAction: 'library' }));
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance: 'Coffee', quickAction: 'library' });
+  assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 2, appearance: 'Coffee', quickAction: 'library' });
 });
 
 test('catalog reads a valid backup after primary corruption and never resets when both copies are corrupt', async (t) => {

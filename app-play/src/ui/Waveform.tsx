@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import { PanResponder, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { Theme } from './theme';
 import { clampEnd, clampStart, dragDeltaToTime, timeToPosition } from './waveformLayout';
 
@@ -14,6 +14,7 @@ export function formatTime(milliseconds: number): string {
 export function Waveform({ peaks, durationMs, startMs, endMs, onChange, theme }: {
   peaks: number[]; durationMs: number; startMs: number; endMs: number; onChange: (start: number, end: number) => void; theme: Theme;
 }) {
+  const { fontScale } = useWindowDimensions();
   const [width, setWidth] = useState(1);
   const state = useRef({ startMs, endMs, durationMs, width, onChange, handle: 'start' as 'start' | 'end', grantMs: 0 });
   state.current = { ...state.current, startMs, endMs, durationMs, width, onChange };
@@ -44,6 +45,7 @@ export function Waveform({ peaks, durationMs, startMs, endMs, onChange, theme }:
   }) : Array.from({ length: 64 }, () => 0.08);
   const startX = timeToPosition(startMs, durationMs, width);
   const endX = timeToPosition(endMs, durationMs, width);
+  const stackedTimes = fontScale > 1.2 || width < 300;
   return <View>
     <View onLayout={(event) => setWidth(Math.max(1, event.nativeEvent.layout.width))} {...pan.panHandlers}
       style={[styles.track, { backgroundColor: theme.raised }]} accessible accessibilityRole="adjustable"
@@ -55,21 +57,28 @@ export function Waveform({ peaks, durationMs, startMs, endMs, onChange, theme }:
         const selected = ratio >= startMs / durationMs && ratio <= endMs / durationMs;
         return <View key={index} style={[styles.bar, { height: `${Math.max(8, peak * 90)}%`, backgroundColor: selected ? theme.focus : theme.muted }]} />;
       })}</View>
-      <View pointerEvents="none" style={[styles.handle, { left: startX, backgroundColor: '#c76bff' }]}><View style={[styles.grip, { backgroundColor: '#ffffff' }]} /></View>
-      <View pointerEvents="none" style={[styles.handle, { left: endX, backgroundColor: '#c76bff' }]}><View style={[styles.grip, { backgroundColor: '#ffffff' }]} /></View>
+      <View pointerEvents="none" style={[styles.handle, { left: startX, backgroundColor: theme.primary }]}><View style={[styles.grip, { backgroundColor: '#ffffff' }]} /></View>
+      <View pointerEvents="none" style={[styles.handle, { left: endX, backgroundColor: theme.primary }]}><View style={[styles.grip, { backgroundColor: '#ffffff' }]} /></View>
     </View>
-    <View style={styles.times}><Text style={{ color: theme.muted }}>{formatTime(startMs)}</Text>
-      <Text style={{ color: theme.focus, fontWeight: '700' }}>{formatTime(endMs - startMs)} selected</Text>
-      <Text style={{ color: theme.muted }}>{formatTime(endMs)}</Text></View>
+    {stackedTimes ? <View style={styles.stackedTimes}>
+      <View style={styles.timeEndpoints}><Text style={[styles.timeText, { color: theme.text }]}>{formatTime(startMs)}</Text><Text style={[styles.timeText, { color: theme.text }]}>{formatTime(endMs)}</Text></View>
+      <Text style={[styles.timeText, { color: theme.focus, textAlign: 'center', alignSelf: 'stretch' }]}>{formatTime(endMs - startMs)} selected</Text>
+    </View> : <View style={styles.times}>
+      <Text style={[styles.timeText, { color: theme.text }]}>{formatTime(startMs)}</Text>
+      <Text style={[styles.timeText, { color: theme.focus }]}>{formatTime(endMs - startMs)} selected</Text>
+      <Text style={[styles.timeText, { color: theme.text }]}>{formatTime(endMs)}</Text>
+    </View>}
   </View>;
 }
 
 const styles = StyleSheet.create({
-  track: { height: 148, borderRadius: 16, overflow: 'hidden', justifyContent: 'center', position: 'relative', marginTop: 2, paddingHorizontal: 12 },
+  track: { height: 174, borderRadius: 16, overflow: 'hidden', justifyContent: 'center', position: 'relative', marginTop: 2, paddingHorizontal: 12 },
   selection: { position: 'absolute', top: 0, bottom: 0, opacity: 0.38 },
   bars: { height: '76%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', gap: 2 },
   bar: { flex: 1, minWidth: 1, borderRadius: 2, opacity: 0.92 },
-  handle: { position: 'absolute', top: 3, bottom: 3, width: 30, marginLeft: -15, borderRadius: 10, alignItems: 'center', justifyContent: 'center', zIndex: 2, borderWidth: 1, borderColor: '#f2d6ff' },
+  handle: { position: 'absolute', top: 0, bottom: 0, width: 18, marginLeft: -9, borderRadius: 8, alignItems: 'center', justifyContent: 'center', zIndex: 2, borderWidth: 1, borderColor: '#f2d6ff' },
   grip: { width: 4, height: 38, borderRadius: 3 },
-  times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, alignItems: 'center', gap: 4 },
+  timeText: { fontSize: 12, fontWeight: '700' },
+  times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 9, marginBottom: 17, alignItems: 'center', gap: 4 },
+  stackedTimes: { marginTop: 9, marginBottom: 17, gap: 3 }, timeEndpoints: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
 });

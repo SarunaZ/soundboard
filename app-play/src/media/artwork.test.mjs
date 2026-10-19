@@ -24,11 +24,11 @@ export async function fetch(){if(globalThis.__artworkStore.fetchError)throw glob
   const fakeManipulator = `
 const state=globalThis.__artworkStore;
 export const SaveFormat={JPEG:'jpeg'};
-export const ImageManipulator={manipulate(){return {resize(){return this},release(){},async renderAsync(){return {width:320,height:240,release(){},async saveAsync(){state.files.set(state.manipUri,new Uint8Array([1,2,3]));return {uri:state.manipUri}}}}}}};
+export const ImageManipulator={manipulate(){return {resize(){return this},crop(){return this},release(){},async renderAsync(){return {width:320,height:240,release(){},async saveAsync(){state.files.set(state.manipUri,new Uint8Array([1,2,3]));return {uri:state.manipUri}}}}}}};
 `;
   const fakePresentation = `
-export function presentationReferencesArtwork(){return false}
-export function setClipArtwork(){if(globalThis.__artworkStore.failMetadata)throw Error('metadata write failed')}
+export function presentationReferencesArtwork(fileName){return globalThis.__artworkStore.art?.fileName===fileName}
+export function setClipArtwork(_id,art){if(globalThis.__artworkStore.failMetadata)throw Error('metadata write failed');globalThis.__artworkStore.art=art}
 `;
   const fsPath = join(temp, 'fake-fs.mjs'); const fetchPath = join(temp, 'fake-fetch.mjs'); const manipPath = join(temp, 'fake-manipulator.mjs'); const presentationPath = join(temp, 'fake-presentation.mjs');
   await Promise.all([writeFile(fsPath, fakeFs), writeFile(fetchPath, fakeFetch), writeFile(manipPath, fakeManipulator), writeFile(presentationPath, fakePresentation)]);
@@ -79,4 +79,52 @@ test('prepared drafts have an owned cache path and metadata failure removes the 
   assert.equal(h.state.files.has('file:///documents/play-library/artwork/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jpg'), false);
   artwork.disposeDraftArtwork(draft);
   assert.equal(h.state.files.has(draft.uri), false);
+});
+
+test('gallery artwork is compressed into an owned offline draft and records gallery provenance', async (t) => {
+  const h = await harness(t); const artwork = await h.load();
+  h.state.files.set('file:///cache/DocumentPicker/photo.png', pngHeader);
+  const draft = await artwork.prepareGalleryArtwork('file:///cache/DocumentPicker/photo.png', 'Weekend photo.png');
+  assert.match(draft.uri, /^file:\/\/\/cache\/play-imgflip-artwork\/draft-[a-z0-9]+-[a-z0-9]+\.jpg$/i);
+  assert.equal(draft.source, 'gallery');
+  assert.equal(draft.title, 'Weekend photo');
+  const committed = artwork.commitDraftArtwork('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', draft);
+  assert.equal(committed.artwork.source, 'gallery');
+  assert.equal('sourceUrl' in committed.artwork, false);
+  artwork.disposeDraftArtwork(draft);
+  assert.equal(h.state.files.has(draft.uri), false);
+});
+
+test('replacement metadata failure retains the previous image and removes the new copy', async (t) => {
+  const h = await harness(t); const artwork = await h.load();
+  h.state.response = response([pngHeader]);
+  const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const previousArtwork = { fileName: `${id}.jpg`, source: 'gallery', title: 'Previous image' };
+  const previousUri = `file:///documents/play-library/artwork/${previousArtwork.fileName}`;
+  h.state.files.set(previousUri, new Uint8Array([9, 9, 9]));
+  h.state.art = previousArtwork;
+  const draft = await artwork.prepareMemeArtwork({ ...meme, id: '67890', name: 'Replacement' });
+  h.state.failMetadata = true;
+  assert.throws(() => artwork.commitDraftArtwork(id, draft, true), /metadata write failed/);
+  assert.deepEqual([...h.state.files.get(previousUri)], [9, 9, 9]);
+  assert.deepEqual(h.state.art, previousArtwork);
+  assert.deepEqual([...h.state.files.keys()].filter((uri) => uri.startsWith('file:///documents/play-library/artwork/')), [previousUri]);
+  artwork.disposeDraftArtwork(draft);
+});
+
+test('replacement artwork uses a new owned thumbnail path and retains the old recovery image', async (t) => {
+  const h = await harness(t); const artwork = await h.load();
+  h.state.response = response([pngHeader]);
+  const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const oldArtwork = { fileName: `${id}.jpg`, source: 'gallery', title: 'Previous image' };
+  const target = `file:///documents/play-library/artwork/${oldArtwork.fileName}`;
+  h.state.files.set(target, new Uint8Array([9, 9, 9]));
+  h.state.art = oldArtwork;
+  const draft = await artwork.prepareMemeArtwork({ ...meme, id: '67890', name: 'Replacement' });
+  const saved = artwork.commitDraftArtwork(id, draft, true);
+  assert.notEqual(saved.artwork.fileName, oldArtwork.fileName);
+  assert.deepEqual([...h.state.files.get(target)], [9, 9, 9]);
+  assert.deepEqual([...h.state.files.get(saved.artworkUri)], [1, 2, 3]);
+  assert.deepEqual(h.state.art, saved.artwork);
+  artwork.disposeDraftArtwork(draft);
 });

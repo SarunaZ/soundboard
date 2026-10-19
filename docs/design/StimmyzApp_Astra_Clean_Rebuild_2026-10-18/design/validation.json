@@ -1,0 +1,16 @@
+{
+  "errors": [],
+  "screenshots": 19,
+  "checks": [
+    "theme variants",
+    "quick pinned first",
+    "edit-only quick arrow",
+    "pad menu",
+    "large nav icon",
+    "wave drag",
+    "fine tune",
+    "customize",
+    "save appends after quick",
+    "library menu"
+  ]
+}

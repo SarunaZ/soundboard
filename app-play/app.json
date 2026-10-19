@@ -2,13 +2,13 @@
   "expo": {
     "name": "Stimmyz",
     "slug": "stimmyz-play",
-    "version": "1.0.13",
+    "version": "1.0.15",
     "icon": "./assets/stimyz/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "dev.sarunas.soundboard.play",
-      "versionCode": 14,
+      "versionCode": 16,
       "adaptiveIcon": {
         "backgroundColor": "#14161a",
         "foregroundImage": "./assets/stimyz/android-icon-foreground.png",

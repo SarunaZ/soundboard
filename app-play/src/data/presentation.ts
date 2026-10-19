@@ -11,9 +11,9 @@ export interface ClipPresentation {
 
 export interface ClipArtwork {
   fileName: string;
-  source: 'imgflip';
-  sourceId: string;
-  sourceUrl: string;
+  source: 'imgflip' | 'gallery';
+  sourceId?: string;
+  sourceUrl?: string;
   title: string;
 }
 
@@ -36,9 +36,12 @@ function parseArtwork(value: unknown): ClipArtwork {
   if (!value || typeof value !== 'object') throw new Error('The Play clip presentation data contains invalid artwork metadata.');
   const artwork = value as Record<string, unknown>;
   if (typeof artwork.fileName !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jpg$/i.test(artwork.fileName) ||
-      artwork.source !== 'imgflip' || typeof artwork.sourceId !== 'string' || !/^\d{1,30}$/.test(artwork.sourceId) ||
-      typeof artwork.title !== 'string' || !artwork.title.trim() || artwork.title.length > 120 ||
-      typeof artwork.sourceUrl !== 'string' || artwork.sourceUrl.length > 2048) {
+      (artwork.source !== 'imgflip' && artwork.source !== 'gallery') ||
+      typeof artwork.title !== 'string' || !artwork.title.trim() || artwork.title.length > 120) {
+    throw new Error('The Play clip presentation data contains invalid artwork metadata.');
+  }
+  if (artwork.source === 'gallery') return { fileName: artwork.fileName, source: 'gallery', title: artwork.title };
+  if (typeof artwork.sourceId !== 'string' || !/^\d{1,30}$/.test(artwork.sourceId) || typeof artwork.sourceUrl !== 'string' || artwork.sourceUrl.length > 2048) {
     throw new Error('The Play clip presentation data contains invalid artwork metadata.');
   }
   let url: URL;

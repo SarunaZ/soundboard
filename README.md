@@ -45,26 +45,33 @@ reusing selected audio and editing code from this repository. `app-client/`
 remains the Dev/personal app with its existing data, UI and YouTube workflow.
 Play uses its own entrypoint, Android identity and private storage. Its first
 slice includes named boards, themes, a private Library, and local audio import
-or foreground microphone recording through Source → Trim → Customize → Save.
+or foreground microphone recording through Source → Trim → Details → Save.
 Audio sources are limited to five minutes and 32 MiB, and trim selections to 60
 seconds. Microphone permission is requested contextually in Play. Emulator checks
 passed first-use permission, recording through save and relaunch, and foreground
 interruption; the emulator has silent input by default, so physical microphone
-quality remains unverified. Local video, share import, gallery artwork and
-interrupted-draft restoration remain pending. See the
+quality remains unverified. Play now accepts MP4 and MOV containers with audio;
+share import and interrupted-draft restoration remain pending. See the
 [design plan](docs/stimmyz-design-plan.md) and
 [recording emulator record](docs/play-recording-emulator-2026-10-18.md).
 
-The current brief is the [reviewed handoff](docs/design/reviewed-2026-10-17/ASTRA_HANDOFF.md)
-and its [research audit](docs/design/reviewed-2026-10-17/RESEARCH_AUDIT_2026-10-17.md).
-The reviewed bundle retains the original designs and updates product priorities
-and public-release checks.
+The current visual authority for Play is the
+[Stimmyz Astra Clean Rebuild](docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/DESIGN_SOURCE_OF_TRUTH.md),
+with its [implementation guide](docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/ASTRA_IMPLEMENTATION.md),
+tokens and prototype. The earlier reviewed handoff and research audit remain
+historical planning records and are superseded for current Play visual
+decisions. Native clean-rebuild simulator verification is complete; see the
+[QA record](docs/play-clean-rebuild-2026-10-18.md).
 
 Build Play independently with `.\scripts\build-play-android.ps1` (or use
 `-StageOnly` to verify the source boundary without Docker). The build creates
 an unsigned testing APK and unsigned AAB under an isolated ignored `data/` stage;
 it does not sign, install or publish them.
-The current unsigned test build is version 1.0.13/code 14 for ARM64 and x86_64.
+The latest Play test build is version 1.0.15/code 16 for ARM64 and x86_64.
+Final native clean-rebuild and density checks passed; the signed testing APK is
+in [data/play-clean-rebuild-final-20261019/artifacts/](data/play-clean-rebuild-final-20261019/artifacts/)
+and has SHA-256 `b1367719f15861e5e8b4f5273e4969a0d272f1cdf5ca55cb715c9912ca0b7aed`.
+See the [final QA record](docs/play-clean-rebuild-2026-10-18.md).
 Quick add is a separate first tile in the scrolling board grid. It stays first
 when sounds are added or reordered and remains available when all pads are full.
 See the [fixed Quick add checks](docs/play-pinned-quick-add-2026-10-18.md).
@@ -86,10 +93,17 @@ see the [native layout checks](docs/play-edit-geometry-2026-10-18.md).
 In Play's Edit board mode, drag a grip or tap a pad then its destination to
 rearrange it. Order is saved on drop; sounds, labels and colors move together.
 See the [pad-reorder verification record](docs/play-pad-reorder-2026-10-18.md).
-Pad overflow menus and Quick add's configuration arrow appear only while Edit
-board is active, verified in the simulator with a saved recording.
-Editor has direct **Choose file** and **Record sound** actions, verified in the
-simulator; entering Editor alone does not request microphone access.
+The six Play palettes are Peach, Mint, Snow, Ice, Vanilla and Coffee; Appearance
+is reachable from the Board header options. Board and waveform Quick add can
+start Record, Choose file or Library. Quick add actions and pad overflow menus
+are anchored to their controls and remain available in the modes defined by the
+design. The Editor opens directly to its dashed file-source card and recording
+action, then uses Source → Trim → Details. Library artwork can be selected from
+the device gallery or Imgflip and changed on saved clips. The simulator checks
+also covered offline relaunch, direct Quick file/record actions, large-text
+reflow, and retention of existing clips and assignments. See the complete
+[clean-rebuild QA record](docs/play-clean-rebuild-2026-10-18.md) and [STEPS.md](STEPS.md)
+for remaining work.
 The emulator recording checks are recorded in
 [the recording verification record](docs/play-recording-emulator-2026-10-18.md);
 physical microphone behavior remains unverified. The earlier first-slice

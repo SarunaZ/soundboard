@@ -352,9 +352,9 @@ local-file trim/preview/Fine tune, foreground microphone recording, icon/color/n
 customization and save/assign with retry. Imported and recorded sources are
 limited to five minutes and 32 MiB; trim selections are limited to 60 seconds.
 Microphone permission is Play-specific and requested contextually. Play has its
-own package `dev.sarunas.soundboard.play`, currently version 1.0.13/code 14, and
-starts with no Dev clips, remote defaults or prototype artwork. Cross-board
-move UI, advanced draft restoration, gallery artwork, local video (P0), media
+own package `dev.sarunas.soundboard.play`, verified test build version
+1.0.15/code 16, and starts with no Dev clips, remote defaults or prototype
+artwork. Cross-board move UI, advanced draft restoration, local video (P0), media
 share (P1), and backup/export/import (P1) remain pending.
 
 Verification update (2026-10-18): 48 Play tests, nine staging/plugin tests, five
@@ -368,10 +368,16 @@ claimed. See the [recording emulator record](docs/play-recording-emulator-2026-1
 for the workflow and remaining checks. Earlier packaging checks and artifact
 details are in [Play first-slice verification](docs/play-verification-2026-10-17.md).
 
+Verification update (2026-10-19): all 72 Play tests and strict TypeScript pass.
+The final ARM64+x86_64 APK/AAB passed build audits; the signed testing APK
+passed v2/v3 signature and 16 KiB alignment checks and was installed on the
+emulator. Native density 420/400, Editor and Library checks passed. The APK and
+SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-2026-10-18.md).
+
 - [ ] **D1 — Parallel Dev/Play roots and packaging.** Dev `app-client/index.ts`
   still enters `./App`; Play has `app-play/index.ts`, a separate package and
   stage scripts. The Play package `dev.sarunas.soundboard.play` has a current
-  unsigned 1.0.13/code 14 ARM64+x86_64 test build. Play owns exact copies of the
+  verified 1.0.15/code 16 ARM64+x86_64 test build. Play owns exact copies of the
   Dev source's S launcher assets. Stage and plugin checks pass;
   emulator recording, save/relaunch and interruption checks passed. D1 remains
   open for separate on-device data verification and remaining artifact gates.
@@ -385,8 +391,8 @@ details are in [Play first-slice verification](docs/play-verification-2026-10-17
   Finish cross-board move UI and retention actions. Keep Dev
   storage/defaults intact; use v1 snapshots as compatibility fixtures only, with
   no real Dev-to-Play migration.
-- [ ] **D3 — Play presentation.** Basic dark/light/system themes and Board,
-  Editor, Library screens exist. The [visual-fixes record](docs/play-visual-fixes-2026-10-17.md)
+- [ ] **D3 — Play presentation.** Board, Editor and Library screens use the six
+  clean-rebuild palettes. The [visual-fixes record](docs/play-visual-fixes-2026-10-17.md)
   and [native follow-ups](docs/play-recording-emulator-2026-10-18.md) include the
   user's edit-only Quick add arrow preference, verified in simulator 1.0.4.
   The earlier visual-fixes record
@@ -407,9 +413,20 @@ details are in [Play first-slice verification](docs/play-verification-2026-10-17
   real-pad dragging and tap-to-move account for the leading action tile.
   Tests, TypeScript, native save/Library/drag/search/restart and unchanged edit
   geometry checks passed; see the [fixed Quick add record](docs/play-pinned-quick-add-2026-10-18.md).
-  Cross-board move controls remain open; check native theme behavior and picker
-  integration on devices. Do not redesign
-  Dev screens.
+  Version 1.0.14/code 15 used a sun icon for Appearance and four numbered Editor
+  introduction steps. TypeScript and normal/compact large-text native checks
+  passed; see the [historical visual record](docs/play-appearance-editor-2026-10-18.md).
+  The current visual authority is [Stimmyz Astra Clean Rebuild](docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/DESIGN_SOURCE_OF_TRUTH.md).
+  Verified build 1.0.15/code 16 includes six persisted palettes
+  (Peach, Mint, Snow, Ice, Vanilla, Coffee), header theme options, always-available
+  anchored sound-pad overflow menus, Record in Quick add preferences, anchored
+  Quick add/pad actions, the direct dashed Editor source card, Source → Trim →
+  Details, and saved-clip gallery artwork changes. The 72 Play tests and strict
+  TypeScript check pass. Native clean-rebuild, density 420/400, Editor and
+  Library checks pass on the emulator. The final signed testing APK is installed
+  and recorded in [docs/play-clean-rebuild-2026-10-18.md](docs/play-clean-rebuild-2026-10-18.md);
+  physical-device checks remain open.
+  Cross-board move controls remain open. Do not redesign Dev screens.
 - [ ] **D4 — Play creation.** Implemented local-file trim/preview/Fine tune,
   foreground recording, name/icon/color customization, save/assign and retry.
   Version 1.0.10/code 11 fixes Choose file with `expo-document-picker` and
@@ -432,8 +449,10 @@ details are in [Play first-slice verification](docs/play-verification-2026-10-17
   open; cancellation/interruption discards the draft. See the
   [recording emulator record](docs/play-recording-emulator-2026-10-18.md).
 - [ ] **D5 — Play local artwork.** Icon/color presentation and optional Imgflip
-  thumbnail storage with missing-image fallback exist. Gallery import, manual
-  crop/reposition and changing artwork on saved clips remain pending. No Dev UI.
+  thumbnail storage with missing-image fallback exist. Gallery import and saved
+  clip artwork replacement from gallery or Imgflip are implemented; manual
+  crop/reposition remains open. TypeScript, gallery/offline-storage tests, and
+  clean-rebuild native simulator QA pass. No Dev UI.
 - [ ] **D6 — Play native sources.** Microphone recording is implemented with
   foreground capture and passed emulator first-use permission, save/relaunch and
   interruption checks. Source is capped at five minutes and 32 MiB; selected

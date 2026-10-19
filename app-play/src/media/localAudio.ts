@@ -5,7 +5,7 @@ import AudioContext from 'react-native-audio-api/lib/module/core/AudioContext';
 
 import { assertLibraryCapacity, commitImportedClip, type LocalClip } from '../data/library';
 import { PLAY_LIBRARY_DIRECTORY } from '../data/snapshot';
-import { audioExtensionFromMetadata, importTitleFromFilename } from '../data/importValidation';
+import { audioSourceExtensionFromMetadata, importTitleFromFilename } from '../data/importValidation';
 import { generatedClipId, normalizeClipTitle, type SavedClip } from '../data/catalog';
 import { isUuid } from '../data/protocol';
 import { encodePcm16WavSlice, LOCAL_AUDIO_MAX_CHANNELS, LOCAL_AUDIO_MAX_RENDER_MS, LOCAL_AUDIO_MIN_RENDER_MS, LOCAL_AUDIO_SAMPLE_RATE, waveformPeaks } from '../../../app-client/src/editor/localAudioPcm.ts';
@@ -222,7 +222,7 @@ export async function openLocalAudioFile(
   // for content URIs. Copy to an explicit private file instead; Android streams
   // content providers correctly when the destination is a File.
   const originalName = selectedMetadata?.name || selectedFile.name;
-  const extension = audioExtensionFromMetadata(originalName, selectedMetadata?.mimeType ?? selectedFile.type);
+  const extension = audioSourceExtensionFromMetadata(originalName, selectedMetadata?.mimeType ?? selectedFile.type);
   const fileName = `source.${extension}`;
 
   const id = generatedClipId();
@@ -236,7 +236,7 @@ export async function openLocalAudioFile(
     assertNotAborted(signal);
     if (!stagedFile.exists || stagedFile.size !== selectedFile.size) throw new Error('The selected audio file could not be copied completely.');
     // Recheck the copied metadata too; Android content URIs may expose a synthetic name before copying.
-    audioExtensionFromMetadata(stagedFile.name, stagedFile.type);
+    audioSourceExtensionFromMetadata(stagedFile.name, stagedFile.type);
 
     const durationMs = await probeDurationMs(stagedFile.uri, signal);
     assertNotAborted(signal);
@@ -301,7 +301,7 @@ function removeOwnedDocumentPickerCacheFile(uri: string): void {
 /** Open the system picker, stage a private original copy, then probe and decode it locally. */
 export async function pickLocalAudioSource(signal?: AbortSignal): Promise<LocalAudioSource | null> {
   assertNotAborted(signal);
-  const picked = await DocumentPicker.getDocumentAsync({ type: 'audio/*', multiple: false, copyToCacheDirectory: true });
+  const picked = await DocumentPicker.getDocumentAsync({ type: ['audio/*', 'video/mp4', 'video/quicktime'], multiple: false, copyToCacheDirectory: true });
   if (picked.canceled) return null;
   const asset = picked.assets[0];
   if (!asset) throw new Error('The selected audio file could not be read. Choose it again.');
