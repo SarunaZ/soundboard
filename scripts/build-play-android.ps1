@@ -37,6 +37,18 @@ $appPlayAssetFiles = @(
 )
 $appPlayTrees = @('src/ui', 'src/data', 'src/media')
 $optionalAppPlayTrees = @('src/types', 'plugins')
+$deviceAudioNativeFiles = @(
+  'package.json',
+  'index.js',
+  'index.d.ts',
+  'expo-module.config.json',
+  'android/build.gradle',
+  'android/src/main/java/dev/sarunas/soundboard/deviceaudio/CaptureStatus.kt',
+  'android/src/main/java/dev/sarunas/soundboard/deviceaudio/PcmWavWriter.kt',
+  'android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioCaptureService.kt',
+  'android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioConsentActivity.kt',
+  'android/src/main/java/dev/sarunas/soundboard/deviceaudio/SoundboardDeviceAudioModule.kt'
+)
 $sharedLeaves = @(
   'app-client/src/audio/engine.ts',
   'app-client/src/audio/playbackState.ts',
@@ -100,12 +112,20 @@ foreach ($tree in $optionalAppPlayTrees) {
 }
 foreach ($leaf in $sharedLeaves) { Copy-StageFile $leaf }
 
-$nativeModulesRoot = Join-Path $appPlay 'play-native-modules'
-if (Test-Path -LiteralPath $nativeModulesRoot -PathType Container) {
-  $nativeModuleFiles = @(Get-ChildItem -LiteralPath $nativeModulesRoot -Recurse -Force | Where-Object { -not $_.PSIsContainer })
-  if ($nativeModuleFiles.Count -gt 0) { throw 'app-play/play-native-modules must remain empty; native module source is forbidden in Play.' }
+$nativeModuleRoot = Join-Path $appPlay 'play-native-modules/soundboard-device-audio'
+if (-not (Test-Path -LiteralPath $nativeModuleRoot -PathType Container)) { throw 'The allowlisted Play device-audio module is missing.' }
+$nativeRootItem = Get-Item -LiteralPath $nativeModuleRoot -Force
+if (($nativeRootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Refusing reparse-point native module root.' }
+$nativeItems = @(Get-ChildItem -LiteralPath $nativeModuleRoot -Recurse -Force)
+foreach ($item in $nativeItems) {
+  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Refusing reparse point in device-audio module: $($item.FullName)" }
 }
-New-Item -ItemType Directory -Path (Join-Path $stage 'app-play/play-native-modules') -Force | Out-Null
+$actualNativeFiles = @($nativeItems | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
+  [IO.Path]::GetRelativePath($nativeModuleRoot, $_.FullName).Replace('\', '/')
+})
+$unexpectedNativeFiles = @($actualNativeFiles | Where-Object { $_ -notin $deviceAudioNativeFiles })
+if ($unexpectedNativeFiles.Count -gt 0) { throw "Unallowlisted native module file found: $($unexpectedNativeFiles[0])" }
+foreach ($file in $deviceAudioNativeFiles) { Copy-StageFile "app-play/play-native-modules/soundboard-device-audio/$file" }
 
 $files = @(Get-ChildItem -LiteralPath $stage -File -Recurse -Force)
 if ($files.Count -eq 0) { throw 'The Play stage is empty.' }
@@ -207,7 +227,30 @@ permissions="$(/opt/android-sdk/cmdline-tools/latest/bin/apkanalyzer manifest pe
 for blocked in android.permission.READ_EXTERNAL_STORAGE android.permission.WRITE_EXTERNAL_STORAGE android.permission.MANAGE_EXTERNAL_STORAGE android.permission.READ_MEDIA_IMAGES android.permission.READ_MEDIA_VIDEO android.permission.READ_MEDIA_AUDIO android.permission.READ_MEDIA_VISUAL_USER_SELECTED; do
   if printf '%s\n' "$permissions" | grep -Fxq "$blocked"; then echo "Blocked permission is present: $blocked" >&2; exit 1; fi
 done
+if printf '%s\n' "$permissions" | grep -Fxq 'android.permission.SYSTEM_ALERT_WINDOW'; then echo 'Overlay permission must remain absent from the Play artifact.' >&2; exit 1; fi
 if ! printf '%s\n' "$permissions" | grep -Fxq 'android.permission.RECORD_AUDIO'; then echo 'Recording permission is missing from the Play artifact.' >&2; exit 1; fi
+for required in android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION android.permission.POST_NOTIFICATIONS; do
+  if ! printf '%s\n' "$permissions" | grep -Fxq "$required"; then echo "Required device-audio permission is missing: $required" >&2; exit 1; fi
+done
+printf '%s\n' "$manifest" > /tmp/play-merged-manifest.xml
+python3 - /tmp/play-merged-manifest.xml <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+android = '{http://schemas.android.com/apk/res/android}'
+services = [item for item in root.findall('./application/service') if item.get(android + 'name') == 'dev.sarunas.soundboard.deviceaudio.DeviceAudioCaptureService']
+assert len(services) == 1, 'Device-audio service must be merged exactly once'
+service = services[0]
+assert service.get(android + 'exported') == 'false', 'Device-audio service must be non-exported'
+raw_types = (service.get(android + 'foregroundServiceType') or '').split('|')
+type_names = {'mediaProjection': 'mediaProjection', '0x20': 'mediaProjection', '32': 'mediaProjection'}
+types = {type_names.get(value.strip(), value.strip()) for value in raw_types}
+assert types == {'mediaProjection'}, f'Unexpected device-audio service types: {types}'
+assert 'microphone' not in types, 'Device-audio capture must not use the microphone service type'
+activities = [item for item in root.findall('./application/activity') if item.get(android + 'name') == 'dev.sarunas.soundboard.deviceaudio.DeviceAudioConsentActivity']
+assert len(activities) == 1 and activities[0].get(android + 'exported') == 'false', 'Consent activity must be present and non-exported'
+PY
+if [ "$?" -ne 0 ]; then echo 'Play merged capture service/activity manifest validation failed.' >&2; exit 1; fi
 for artifact in "$apk" "$aab"; do
   audit="$(mktemp -d /tmp/play-artifact-audit.XXXXXX)"
   paths="$audit/archive-paths.txt"
@@ -225,11 +268,23 @@ for artifact in "$apk" "$aab"; do
   rm -rf "$audit"
 done
 find . -path '*/build/generated/autolinking/*' -type f -print | sort > /workspace/artifacts/native-autolinking-files.txt
+expo_modules_list=/tmp/play-project/node_modules/expo/android/build/generated/expo/src/main/java/expo/modules/ExpoModulesPackageList.kt
+test -s "$expo_modules_list"
+printf '%s\n' "$expo_modules_list" >> /workspace/artifacts/native-autolinking-files.txt
+sort -u -o /workspace/artifacts/native-autolinking-files.txt /workspace/artifacts/native-autolinking-files.txt
 test -s /workspace/artifacts/native-autolinking-files.txt
 while IFS= read -r generated; do sha256sum "$generated"; done < /workspace/artifacts/native-autolinking-files.txt > /workspace/artifacts/native-autolinking-sha256.txt
 while IFS= read -r generated; do
   if grep -aiE 'soundboard-youtube|SoundboardYoutube|soundboard[/.$]youtube|yt-dlp|youtube-dl|YoutubeExtractor|NativeYoutube|com[./]yausername|libpython|quickjs|youtubedl' "$generated"; then echo 'Forbidden downloader dependency is present in generated native autolinking graph.' >&2; exit 1; fi
 done < /workspace/artifacts/native-autolinking-files.txt
+module_registered=false
+while IFS= read -r generated; do
+  if grep -aiE 'SoundboardDeviceAudioModule|SoundboardDeviceAudio' "$generated" >/dev/null; then module_registered=true; break; fi
+done < /workspace/artifacts/native-autolinking-files.txt
+if [ "$module_registered" != true ]; then
+  echo 'The isolated SoundboardDeviceAudio Expo module is missing from native autolinking.' >&2
+  exit 1
+fi
 if /opt/android-sdk/build-tools/36.0.0/apksigner verify "$apk" >/dev/null 2>&1; then echo 'Play testing APK must be unsigned.' >&2; exit 1; fi
 /opt/android-sdk/build-tools/36.0.0/zipalign -c -P 16 4 "$apk"
 mv /workspace/artifacts/soundboard-play-testing-unsigned.apk.unverified /workspace/artifacts/soundboard-play-testing-unsigned.apk
@@ -237,7 +292,7 @@ mv /workspace/artifacts/soundboard-play-unsigned.aab.unverified /workspace/artif
 sha256sum /workspace/artifacts/soundboard-play-testing-unsigned.apk /workspace/artifacts/soundboard-play-unsigned.aab > /workspace/artifacts/SHA256SUMS
 stat -c 'sizeBytes=%s' /workspace/artifacts/soundboard-play-testing-unsigned.apk > /workspace/artifacts/release-info.txt
 printf 'applicationId=%s\nversionName=%s\nversionCode=%s\nsigned=false\nallowBackup=false\nusesCleartextTraffic=false\nrecordAudioPermission=true\n' "$expected_application_id" "$manifest_version_name" "$manifest_version_code" >> /workspace/artifacts/release-info.txt
-printf 'sourceStageVerified=true\nextractorSourceOrBinaryMarkers=absent\nnativeModuleAutolinking=excluded\n' >> /workspace/artifacts/release-info.txt
+printf 'sourceStageVerified=true\nextractorSourceOrBinaryMarkers=absent\nnativeModuleAutolinking=device-audio-only\n' >> /workspace/artifacts/release-info.txt
 sha256sum /workspace/artifacts/native-autolinking-files.txt /workspace/artifacts/native-autolinking-sha256.txt /workspace/artifacts/release-info.txt >> /workspace/artifacts/SHA256SUMS
 '@
 $dockerArgs = @(

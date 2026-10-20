@@ -4,6 +4,13 @@ dist/
 web-build/
 android/
 ios/
+play-native-modules/*
+!play-native-modules/soundboard-device-audio/
+!play-native-modules/soundboard-device-audio/**
+!play-native-modules/soundboard-device-audio/android/
+!play-native-modules/soundboard-device-audio/android/**
+play-native-modules/soundboard-device-audio/**/build/
+play-native-modules/soundboard-device-audio/**/.gradle/
 *.keystore
 *.jks
 *.p8

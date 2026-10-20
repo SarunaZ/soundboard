@@ -456,11 +456,23 @@ SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-20
 - [ ] **D6 — Play native sources.** Microphone recording is implemented with
   foreground capture and passed emulator first-use permission, save/relaunch and
   interruption checks. Source is capped at five minutes and 32 MiB; selected
-  trim is capped at 60 seconds. Physical-phone microphone behavior is pending
-  because emulator input is silent by default. P0 local video and P1 Android
-  shared-media import remain open. Keep microphone permission Play-specific and
+  trim is capped at 60 seconds. A physical 52.52 s microphone capture reached
+  Trim and the owner confirmed the test phrase was audible; broader quality
+  checks remain open because emulator input is silent by default. P0 local video
+  and P1 Android shared-media import remain open. Keep microphone permission Play-specific and
   Dev's current permission policy unchanged. See the
   [recording emulator record](docs/play-recording-emulator-2026-10-18.md).
+  Optional device-playback recording is implemented on `feat-sound-recording`
+  for API 29+ with a Play-only native mediaProjection service, contextual
+  permissions, notification Stop, two-minute bound and existing trim/save path.
+  It does not change microphone background behavior. Track the separate
+  [spike results](DEVICE_AUDIO_CAPTURE_RESULTS.md) and
+  [test procedure](docs/device-audio-capture-testing.md). API 29/34/36 emulator
+  baselines and an API 29 service-level ENOSPC check are recorded, alongside
+  physical Galaxy S24 Ultra and JVM evidence. Physical older-Android OEM checks,
+  read-error and remaining lifecycle cases are open. The results report is
+  authoritative for findings, source compatibility, and test limits.
+  This does not close D6.
 - [ ] **D7 — Dev/Play integration and public-test gates.** Verify Dev UI, YouTube,
   data and playback remain intact; Play offline launch, capacity, accessibility,
   playback, separate sandboxes/coinstallation and extractor-free artifacts.

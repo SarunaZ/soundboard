@@ -1,9 +1,10 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton, GradientFill } from './controls';
 import { Icon } from './Icons';
 import type { Theme } from './theme';
+import { isDeviceAudioCaptureSupported } from '../media/deviceAudioCapture';
 
-export function EditorScreen({ theme, onCreate }: { theme: Theme; onCreate: (initialAction: 'file' | 'record') => void }) {
+export function EditorScreen({ theme, onCreate }: { theme: Theme; onCreate: (initialAction: 'file' | 'record' | 'device-audio') => void }) {
   return <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <View style={styles.heading}>
       <Text style={[styles.title, { color: theme.text }]}>Make a sound <Text style={{ color: '#BC42FA' }}>✦</Text></Text>
@@ -24,6 +25,12 @@ export function EditorScreen({ theme, onCreate }: { theme: Theme; onCreate: (ini
       <View style={styles.recordHeading}><Icon name="mic" size={22} color="#BC39F5" /><Text style={{ color: theme.text, fontSize: 14, fontWeight: '800' }}>Or record a new sound</Text></View>
       <ActionButton label="Start recording" icon={<Icon name="mic" size={24} color="#271426" />} onPress={() => onCreate('record')} theme={theme} variant="recording" />
     </View>
+    {isDeviceAudioCaptureSupported() ? <View style={styles.recordSection}>
+      <View style={styles.recordHeading}><Icon name="music" size={22} color="#13BBDD" /><Text style={{ color: theme.text, fontSize: 14, fontWeight: '800' }}>Or record device audio</Text></View>
+      <Text style={{ color: theme.muted, lineHeight: 18 }}>Capture playback from compatible Android apps. Android requires audio permission and recording consent, but this source does not use the microphone. Some apps limit capture. Maximum 2 minutes.</Text>
+      <ActionButton label="Record device audio" icon={<Icon name="music" size={22} color="#271426" />} onPress={() => onCreate('device-audio')} theme={theme} variant="secondary" />
+    </View> : null}
+    {Platform.OS === 'android' && Number(Platform.Version) < 29 ? <Text style={{ color: theme.muted, lineHeight: 18 }}>Device audio recording requires Android 10 or later.</Text> : null}
   </ScrollView>;
 }
 
