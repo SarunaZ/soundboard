@@ -2,13 +2,13 @@
   "expo": {
     "name": "Stimmyz",
     "slug": "stimmyz-play",
-    "version": "1.0.15",
+    "version": "1.0.16",
     "icon": "./assets/stimyz/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "dev.sarunas.soundboard.play",
-      "versionCode": 16,
+      "versionCode": 17,
       "adaptiveIcon": {
         "backgroundColor": "#14161a",
         "foregroundImage": "./assets/stimyz/android-icon-foreground.png",
@@ -24,7 +24,6 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.POST_NOTIFICATIONS",
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "predictiveBackGestureEnabled": true
@@ -40,7 +39,8 @@
           "enableBackgroundPlayback": false
         }
       ],
-      "./plugins/withPlayRelease"
+      "./plugins/withPlayRelease",
+      "./plugins/withDeviceAudioCapture"
     ]
   }
 }

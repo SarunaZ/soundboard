@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, BackHandler, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Alert, AppState, BackHandler, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 import { play, stop } from '../../../app-client/src/audio/engine';
 import { useKeyboardInputReveal } from '../../../app-client/src/keyboard/useKeyboardInputReveal';
 import { disposeLocalAudioSource, pickLocalAudioSource, renderLocalAudioRange, saveLocalAudioRender, type LocalAudioRender, type LocalAudioSource } from '../media/localAudio';
 import { createLocalAudioRecorder } from '../media/recording';
+import { createDeviceAudioCaptureController, isDeviceAudioCaptureSupported, isDeviceAudioSourceAlreadyOwned, type DeviceAudioCaptureController, type DeviceAudioStatus } from '../media/deviceAudioCapture';
 import { disposeDraftArtwork, type DraftArtwork } from '../media/artwork';
 import type { LocalClip } from '../data/library';
 import { ActionButton, GradientFill, Panel, TextField } from './controls';
@@ -15,7 +16,7 @@ import { ArtworkPicker, pickGalleryArtwork } from './ArtworkPicker';
 import { Icon } from './Icons';
 
 export type AssignmentTarget = { boardId: string; padId?: string; expectedClipId?: string | null } | null;
-export type InitialAction = 'file' | 'record';
+export type InitialAction = 'file' | 'record' | 'device-audio';
 type Step = 'source' | 'trim' | 'customize';
 
 function blendHex(foreground: string, background: string, foregroundRatio: number): string {
@@ -64,6 +65,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const [recording, setRecording] = useState(false);
   const [recordingStopped, setRecordingStopped] = useState(false);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
+  const [deviceStatus, setDeviceStatus] = useState<DeviceAudioStatus | null>(null);
   const [message, setMessage] = useState('');
   const [artwork, setArtwork] = useState<DraftArtwork | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -78,6 +80,10 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const pendingCaptureRef = useRef<LocalAudioSource | null>(null);
   const saveLocked = useRef(false);
   const recorderRef = useRef<ReturnType<typeof createLocalAudioRecorder> | null>(null);
+  const deviceCaptureRef = useRef<DeviceAudioCaptureController | null>(null);
+  const deviceRefreshPendingRef = useRef(false);
+  const deviceResultHandledRef = useRef(false);
+  const deviceSourceOfferedRef = useRef(false);
   const recordingRef = useRef(false);
   const appStateRef = useRef(AppState.currentState);
   const permissionPendingRef = useRef(false);
@@ -112,6 +118,9 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       const recorder = recorderRef.current;
       recorderRef.current = null;
       if (recorder) void recorder.cancel().finally(() => recorder.dispose());
+      const deviceCapture = deviceCaptureRef.current;
+      deviceCaptureRef.current = null;
+      if (deviceCapture) void deviceCapture.cancel().catch(() => {});
       const current = sourceRef.current;
       if (current) void disposeLocalAudioSource(current);
       const pending = pendingCaptureRef.current;
@@ -134,6 +143,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       void waitForForeground(op.signal).then((foreground) => {
         if (!foreground || op.signal.aborted || !mountedRef.current) return;
         if (initialAction === 'file') void chooseSource();
+        else if (initialAction === 'device-audio') void startDeviceCapture();
         else void startRecording();
       });
     });
@@ -154,12 +164,14 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
           setMessage('Recording reached its 5-minute limit. Stop and use it, or discard it.');
         }
       }
+      if (deviceCaptureRef.current && appStateRef.current === 'active' && !deviceRefreshPendingRef.current) void refreshDeviceCapture();
     }, 250);
     const subscription = AppState.addEventListener('change', (next) => {
       appStateRef.current = next;
       if (next !== 'active' && recorderRef.current) {
         void interruptRecording();
       }
+      if (next === 'active' && deviceCaptureRef.current) void refreshDeviceCapture();
     });
     return () => { clearInterval(timer); subscription.remove(); };
   }, []);
@@ -191,7 +203,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   }
 
   async function startRecording() {
-    if (busy || recorderRef.current || permissionPendingRef.current) return;
+    if (busy || recorderRef.current || deviceCaptureRef.current || permissionPendingRef.current) return;
     const op = new AbortController(); controller.current = op;
     permissionPendingRef.current = true;
     setBusy(true); setMessage('Allow microphone access to record a sound.');
@@ -264,17 +276,205 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     }
   }
 
-  async function adoptRecording(captured: LocalAudioSource) {
+  async function startDeviceCapture() {
+    if (busy || recorderRef.current || deviceCaptureRef.current || permissionPendingRef.current) return;
+    if (!isDeviceAudioCaptureSupported()) { setMessage('Device audio recording requires Android 10 or later.'); return; }
+    const capture = createDeviceAudioCaptureController();
+    deviceCaptureRef.current = capture;
+    deviceResultHandledRef.current = false;
+    deviceSourceOfferedRef.current = false;
+    setBusy(true); setMessage('Android will ask for audio permission and recording consent. Only compatible apps can be captured.');
+    try {
+      const status = await capture.start();
+      if (!mountedRef.current || deviceCaptureRef.current !== capture) { await capture.cancel(); return; }
+      setDeviceStatus(status);
+      if (status.state === 'recording' || status.state === 'preparing') {
+        setMessage('Recording device audio. Switch to a compatible app, then return here or use Stop in the notification.');
+      } else if (status.state === 'requesting-permission') {
+        setMessage('Complete the Android permission and capture prompts. The session will remain available when you return.');
+      } else if (status.state === 'cancelled') {
+        try { await capture.cancel(); deviceCaptureRef.current = null; setDeviceStatus(null); setMessage('Recording consent was cancelled. Nothing was saved.'); }
+        catch (error) { setMessage(error instanceof Error ? error.message : 'Device audio cleanup is still finishing.'); }
+      } else if (status.state === 'failed') {
+        try { await capture.cancel(); deviceCaptureRef.current = null; setDeviceStatus(null); setMessage(status.error || 'Could not start device audio recording.'); }
+        catch (error) { setMessage(error instanceof Error ? error.message : 'Device audio cleanup is still finishing.'); }
+      } else if (status.state === 'ready') {
+        await finishDeviceCapture(capture);
+      } else if (status.state === 'idle') {
+        deviceCaptureRef.current = null; setMessage(status.error || 'Device audio recording did not start.');
+      }
+    } catch (error) {
+      setDeviceStatus(capture.getStatus());
+      setMessage(error instanceof Error ? error.message : 'Could not start device audio recording.');
+      try { await capture.cancel(); if (deviceCaptureRef.current === capture) deviceCaptureRef.current = null; setDeviceStatus(null); }
+      catch (cleanupError) { setDeviceStatus(capture.getStatus()); setMessage(cleanupError instanceof Error ? cleanupError.message : 'Device audio cleanup is still finishing. Use Discard to retry cleanup.'); }
+    } finally { if (mountedRef.current) setBusy(false); }
+  }
+
+  async function refreshDeviceCapture() {
+    const capture = deviceCaptureRef.current;
+    if (!capture || deviceRefreshPendingRef.current || AppState.currentState !== 'active') return;
+    deviceRefreshPendingRef.current = true;
+    try {
+      const status = await capture.refresh();
+      if (!mountedRef.current || capture !== deviceCaptureRef.current) return;
+      setDeviceStatus(status);
+      if (status.state === 'ready') await finishDeviceCapture(capture);
+      else if (status.state === 'recording') setMessage((current) => current.startsWith('Complete the Android permission') || current.startsWith('Android will ask for audio permission')
+        ? 'Recording device audio. Switch to a compatible app, then return here or use Stop in the notification.' : current);
+      else if (status.state === 'stopping') setMessage((current) => current.startsWith('Complete the Android permission') || current.startsWith('Recording device audio. Switch')
+        ? 'Finishing device audio…' : current);
+      else if (status.state === 'failed' || status.state === 'cancelled') {
+        deviceResultHandledRef.current = true;
+        setMessage(status.error || (status.state === 'cancelled' ? 'Device audio recording was cancelled. Nothing was saved.' : 'Device audio recording could not be completed.'));
+        try {
+          await capture.cancel();
+          if (deviceCaptureRef.current === capture) deviceCaptureRef.current = null;
+          setDeviceStatus(null);
+          deviceResultHandledRef.current = false;
+        } catch (error) {
+          setDeviceStatus(capture.getStatus());
+          setMessage(error instanceof Error ? error.message : 'Device audio cleanup is still finishing. Use Discard to retry cleanup.');
+        }
+      }
+    } catch (error) {
+      if (mountedRef.current && capture === deviceCaptureRef.current) setMessage(error instanceof Error ? error.message : 'Could not check device audio recording status.');
+    } finally { deviceRefreshPendingRef.current = false; }
+  }
+
+  async function stopDeviceCapture() {
+    const capture = deviceCaptureRef.current;
+    if (!capture || busy || deviceResultHandledRef.current) return;
+    deviceResultHandledRef.current = true;
+    setBusy(true); setMessage('Finishing device audio…');
+    const op = new AbortController(); controller.current = op;
+    try {
+      const status = await capture.refresh();
+      setDeviceStatus(status);
+      if (status.state === 'ready') await finishDeviceCapture(capture, op.signal, true);
+      else {
+        const adopted = await capture.stop(op.signal);
+        deviceCaptureRef.current = null;
+        setDeviceStatus(null);
+        if (mountedRef.current && !op.signal.aborted) await offerDeviceCapturedSource(capture, adopted.source, adopted.quiet);
+        else await disposeLocalAudioSource(adopted.source);
+      }
+    } catch (error) {
+      if (!op.signal.aborted && mountedRef.current) {
+        setMessage(`${error instanceof Error ? error.message : 'Could not finish device audio recording.'} Try again, record with the microphone, or import a file.`);
+        try {
+          await capture.cancel();
+          if (deviceCaptureRef.current === capture) deviceCaptureRef.current = null;
+          setDeviceStatus(null);
+          deviceResultHandledRef.current = false;
+        } catch (cleanupError) {
+          setDeviceStatus(capture.getStatus());
+          setMessage(cleanupError instanceof Error ? cleanupError.message : 'Device audio cleanup is still finishing. Use Discard to retry cleanup.');
+        }
+      }
+    } finally { if (mountedRef.current) setBusy(false); }
+  }
+
+  async function finishDeviceCapture(capture: DeviceAudioCaptureController, signal?: AbortSignal, lockHeld = false) {
+    if ((deviceResultHandledRef.current && !lockHeld) || capture !== deviceCaptureRef.current) return;
+    deviceResultHandledRef.current = true;
+    setBusy(true); setMessage('Preparing the captured audio for review…');
+    try {
+      const adopted = await capture.consumeReady(signal);
+      if (capture !== deviceCaptureRef.current || !mountedRef.current || signal?.aborted) { await disposeLocalAudioSource(adopted.source); return; }
+      deviceCaptureRef.current = null;
+      setDeviceStatus(null);
+      await offerDeviceCapturedSource(capture, adopted.source, adopted.quiet);
+    } catch (error) {
+      if (mountedRef.current && !signal?.aborted) {
+        setMessage(`${error instanceof Error ? error.message : 'Could not open the captured audio.'} It may be silence or the source app may limit capture. Try again, use the microphone, or import a file.`);
+        try {
+          await capture.cancel();
+          if (deviceCaptureRef.current === capture) deviceCaptureRef.current = null;
+          setDeviceStatus(null);
+          deviceResultHandledRef.current = false;
+        } catch (cleanupError) {
+          setDeviceStatus(capture.getStatus());
+          setMessage(cleanupError instanceof Error ? cleanupError.message : 'Device audio cleanup is still finishing. Use Discard to retry cleanup.');
+        }
+      }
+    } finally { if (mountedRef.current) setBusy(false); }
+  }
+
+  async function offerDeviceCapturedSource(capture: DeviceAudioCaptureController, captured: LocalAudioSource, quiet: boolean) {
+    if (deviceSourceOfferedRef.current) {
+      if (!isDeviceAudioSourceAlreadyOwned(captured, sourceRef.current, pendingCaptureRef.current)) await disposeLocalAudioSource(captured);
+      return;
+    }
+    deviceSourceOfferedRef.current = true;
+    if (deviceCaptureRef.current === capture) deviceCaptureRef.current = null;
+    setDeviceStatus(null);
+    await offerCapturedSource(captured, 'Device audio recording', quiet);
+  }
+
+  async function discardDeviceCapture() {
+    const capture = deviceCaptureRef.current;
+    if (!capture) return;
+    controller.current?.abort();
+    try {
+      await capture.cancel();
+      if (deviceCaptureRef.current === capture) deviceCaptureRef.current = null;
+      deviceResultHandledRef.current = false;
+      if (mountedRef.current) { setDeviceStatus(null); setMessage('Device audio recording discarded. Nothing was saved.'); }
+    } catch (error) {
+      if (mountedRef.current) { setDeviceStatus(capture.getStatus()); setMessage(error instanceof Error ? error.message : 'Device audio cleanup is still finishing. Use Discard to retry cleanup.'); }
+    }
+  }
+
+  function confirmDiscardDeviceCapture() {
+    Alert.alert('Discard device recording?', 'The capture will stop and its temporary audio will be deleted. Your existing draft will be kept.', [
+      { text: 'Keep recording', style: 'cancel' },
+      { text: 'Discard recording', style: 'destructive', onPress: () => { void discardDeviceCapture(); } },
+    ]);
+  }
+
+  async function offerCapturedSource(captured: LocalAudioSource, title: string, quiet = false) {
+    pendingCaptureRef.current = captured;
+    if (!mountedRef.current) { pendingCaptureRef.current = null; await disposeLocalAudioSource(captured); return; }
+    if (quiet) {
+      Alert.alert('Very quiet recording', sourceRef.current ? 'Review the waveform and preview this capture before saving. Replacing the current draft requires your choice. Quiet audio can mean silence or an app that limits capture.' : 'Review the waveform and preview this capture before saving. Quiet audio can mean silence or an app that limits capture.', [
+        { text: 'Discard and retry', style: 'cancel', onPress: () => {
+          if (pendingCaptureRef.current === captured) pendingCaptureRef.current = null;
+          void disposeLocalAudioSource(captured);
+          setBusy(false); setMessage('The quiet recording was discarded. You can try another compatible app.');
+        } },
+        ...(sourceRef.current ? [{ text: 'Keep existing draft', onPress: () => {
+          if (pendingCaptureRef.current === captured) pendingCaptureRef.current = null;
+          void disposeLocalAudioSource(captured); setBusy(false); setMessage('The quiet recording was discarded. Your existing draft is ready.');
+        } }] : []),
+        { text: sourceRef.current ? 'Replace and review' : 'Review recording', onPress: () => { void adoptRecording(captured, title, true); } },
+      ]);
+      return;
+    }
+    if (sourceRef.current) {
+      Alert.alert('Review this recording?', 'This will replace the current draft after you choose to use it. You can keep editing the existing draft.', [
+        { text: 'Keep existing draft', style: 'cancel', onPress: () => {
+          if (pendingCaptureRef.current === captured) pendingCaptureRef.current = null;
+          void disposeLocalAudioSource(captured);
+          setBusy(false); setMessage('Recording discarded. Your existing draft is ready.');
+        } },
+        { text: 'Review recording', onPress: () => { void adoptRecording(captured, title, quiet); } },
+      ]);
+    } else await adoptRecording(captured, title, quiet);
+  }
+
+  async function adoptRecording(captured: LocalAudioSource, title = 'My recording', quiet = false) {
     if (pendingCaptureRef.current === captured) pendingCaptureRef.current = null;
     if (!mountedRef.current) { await disposeLocalAudioSource(captured); return; }
     const current = sourceRef.current;
     if (current) await disposeLocalAudioSource(current);
     if (!mountedRef.current) { await disposeLocalAudioSource(captured); return; }
     clearArtwork();
-    sourceRef.current = captured; setSource(captured); setName('My recording'); setStartMs(0); setEndMs(Math.min(60_000, captured.durationMs)); setRender(null); setFineTune(false); setStep('trim'); setMessage(''); setBusy(false); setRecordingElapsedMs(0);
+    sourceRef.current = captured; setSource(captured); setName(title); setStartMs(0); setEndMs(Math.min(60_000, captured.durationMs)); setRender(null); setFineTune(false); setStep('trim'); setMessage(quiet ? 'This capture is very quiet. Review the waveform and preview it; retry if you hear no useful audio.' : ''); setBusy(false); setRecordingElapsedMs(0);
   }
 
   function requestCancel() {
+    if (deviceCaptureRef.current) { confirmDiscardDeviceCapture(); return; }
     if (permissionPendingRef.current) {
       controller.current?.abort(); permissionPendingRef.current = false; setBusy(false);
       if (sourceRef.current) setMessage('Microphone request cancelled. Your existing draft is ready.');
@@ -297,6 +497,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   }
 
   function goBack() {
+    if (deviceCaptureRef.current) { confirmDiscardDeviceCapture(); return; }
     if (permissionPendingRef.current) { requestCancel(); return; }
     if (recorderRef.current) { confirmDiscardRecording(); return; }
     if (busy && sourceRef.current) { setMessage(saveLocked.current ? 'Saving is in progress. Please wait before leaving.' : 'Please wait for the current operation to finish.'); return; }
@@ -419,6 +620,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
 
   const steps: Array<{ id: Step; label: string }> = [{ id: 'source', label: 'Source' }, { id: 'trim', label: 'Trim' }, { id: 'customize', label: 'Details' }];
   const activeIndex = steps.findIndex((item) => item.id === step);
+  const deviceActive = Boolean(deviceStatus && ['requesting-permission', 'preparing', 'recording', 'stopping', 'ready'].includes(deviceStatus.state));
   return <View style={styles.root}>
     <View style={styles.header}>
       <Pressable onPress={goBack} disabled={busy && Boolean(source) && !recordingRef.current} accessibilityRole="button" accessibilityLabel={recording ? 'Discard recording' : step === 'source' ? 'Cancel sound creation' : 'Back'} style={styles.back}><Icon name="back" size={24} color={theme.text} /></Pressable>
@@ -437,7 +639,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     </View>
     <ScrollView ref={scrollRef} style={styles.scroll} onLayout={keyboardReveal.onViewportLayout} onScroll={keyboardReveal.onScroll} scrollEventThrottle={16} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       {step === 'source' ? <View style={styles.sourceScreen}>
-        {!recording && !recordingStopped ? <>
+        {!recording && !recordingStopped && !deviceActive ? <>
           <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800', marginBottom: 4 }}>Where’s your audio from?</Text>
           <Pressable onPress={() => void chooseSource()} disabled={busy} accessibilityRole="button" accessibilityLabel="Choose file, import audio from this device" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
             <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="file" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Import from device</Text><Text style={{ color: theme.muted }}>Choose an audio or video file</Text></View>
@@ -445,6 +647,10 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
           <Pressable onPress={() => void startRecording()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record a sound using the phone microphone" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: busy ? 0.6 : 1 }]}>
             <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="mic" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record a new sound</Text><Text style={{ color: theme.muted }}>Use your microphone</Text></View>
           </Pressable>
+          {isDeviceAudioCaptureSupported() ? <Pressable onPress={() => void startDeviceCapture()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record audio playing in compatible Android apps" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: busy ? 0.6 : 1 }]}>
+            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="music" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record device audio</Text><Text style={{ color: theme.muted }}>Compatible apps only · Android audio permission · up to 2 minutes</Text></View>
+          </Pressable> : null}
+          {Platform.OS === 'android' && Number(Platform.Version) < 29 ? <Text style={{ color: theme.muted, lineHeight: 18 }}>Device audio recording requires Android 10 or later.</Text> : null}
           {source ? <Panel theme={theme} style={styles.currentDraft}>
             <Text style={{ color: theme.text, fontWeight: '800' }}>Current draft</Text><Text style={{ color: theme.muted }} numberOfLines={1}>{source.title} · {formatTime(source.durationMs)}</Text>
             <ActionButton label="Continue editing this draft" onPress={() => { setStep('trim'); setMessage(''); }} theme={theme} variant="primary" disabled={busy} />
@@ -456,6 +662,13 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
           <Text style={{ color: theme.muted }}>{recordingStopped ? 'The recording reached the 5-minute limit.' : 'Keep this screen open. Recording stops if you leave the app.'}</Text>
           <ActionButton label={recordingStopped ? 'Use recording' : 'Stop recording'} icon={recordingStopped ? undefined : '■'} onPress={() => void stopRecording()} theme={theme} variant="recording" disabled={busy} />
           <ActionButton label="Discard" onPress={confirmDiscardRecording} theme={theme} variant="quiet" />
+        </Panel> : null}
+        {deviceActive ? <Panel theme={theme} style={styles.recordingPanel}>
+          <View style={styles.recordingHeadline}><View style={styles.recordingDot} /><Text style={{ color: theme.text, fontWeight: '800', fontSize: 18 }}>{deviceStatus?.state === 'ready' || deviceStatus?.state === 'stopping' ? 'Finishing device audio' : deviceStatus?.state === 'requesting-permission' ? 'Waiting for Android consent' : 'Recording device audio'}</Text></View>
+          <Text accessibilityLiveRegion="polite" style={{ color: theme.text, fontSize: 34, fontVariant: ['tabular-nums'], fontWeight: '800' }}>{formatTime(deviceStatus?.elapsedMs ?? 0)}</Text>
+          <Text style={{ color: theme.muted, textAlign: 'center' }}>{deviceStatus?.state === 'requesting-permission' ? 'Complete or cancel the Android permission and capture prompts. Your session will stay active while those prompts are shown.' : 'Switch to an app that permits playback capture. Android requires audio permission and shows an ongoing notification with Stop. Some apps limit capture.'}</Text>
+          {deviceStatus?.state === 'ready' ? <ActionButton label="Review captured audio" onPress={() => { const capture = deviceCaptureRef.current; if (capture) void finishDeviceCapture(capture, undefined, true); }} theme={theme} variant="primary" disabled={busy} /> : <ActionButton label={busy ? 'Finishing…' : 'Stop device audio'} icon="■" onPress={() => void stopDeviceCapture()} theme={theme} variant="recording" disabled={busy || deviceStatus?.state === 'requesting-permission'} />}
+          <ActionButton label="Discard" onPress={confirmDiscardDeviceCapture} theme={theme} variant="quiet" disabled={busy} />
         </Panel> : null}
       </View> : null}
 

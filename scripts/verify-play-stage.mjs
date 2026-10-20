@@ -25,6 +25,18 @@ const allowedDevLeaves = new Set([
   'app-client/src/types/react-native-audio-api.d.ts',
 ]);
 const allowedRootFiles = new Set(['package.json', '.yarnrc.yml', 'yarn.lock', 'play-stage-inventory.json']);
+export const allowedDeviceAudioModuleFiles = new Set([
+  'app-play/play-native-modules/soundboard-device-audio/package.json',
+  'app-play/play-native-modules/soundboard-device-audio/index.js',
+  'app-play/play-native-modules/soundboard-device-audio/index.d.ts',
+  'app-play/play-native-modules/soundboard-device-audio/expo-module.config.json',
+  'app-play/play-native-modules/soundboard-device-audio/android/build.gradle',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/CaptureStatus.kt',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/PcmWavWriter.kt',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioCaptureService.kt',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioConsentActivity.kt',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/SoundboardDeviceAudioModule.kt',
+]);
 const allowedWorkspaceManifests = new Map([
   ['shared/package.json', '@soundboard/shared'],
   ['service/package.json', '@soundboard/service'],
@@ -58,10 +70,13 @@ export function validateRecordingPermissionPolicy(appConfig) {
   if (options.enableBackgroundRecording !== false || options.enableBackgroundPlayback !== false) {
     throw new Error('Play audio must keep background recording and playback disabled.');
   }
+  if (blocked.includes('android.permission.POST_NOTIFICATIONS')) throw new Error('Play must allow notifications for device-audio recording Stop controls.');
+  if (!(appConfig.plugins ?? []).includes('./plugins/withDeviceAudioCapture')) throw new Error('Play must apply the isolated device-audio Android config plugin.');
 }
 
 export function isAllowedPath(relative) {
   const normalized = relative.replaceAll('\\', '/').replace(/^\.\//, '');
+  if (allowedDeviceAudioModuleFiles.has(normalized)) return true;
   if (normalized.split('/').some((segment) => forbiddenSegments.has(segment))) return false;
   if (/(^|\/)\.env([^/]*$|\/)|\.(?:keystore|jks|pem|p12|pfx|key|mobileprovision)$/i.test(normalized)) return false;
   if (/\.test\.(?:mjs|cjs|js|jsx|ts|tsx)$/i.test(normalized)) return false;
@@ -139,6 +154,7 @@ export function verifyStage(root) {
     }
   }
   validateRecordingPermissionPolicy(appConfig);
+  if (!fs.existsSync(path.join(root, 'app-play/plugins/withDeviceAudioCapture.js'))) throw new Error('Play device-audio config plugin is missing from the stage.');
   if (appConfig.android?.allowBackup !== false) throw new Error('Play must disable Android backup.');
   if (appConfig.android?.usesCleartextTraffic !== false) throw new Error('Play must disable cleartext traffic.');
 
@@ -152,7 +168,10 @@ export function verifyStage(root) {
     if (!autolinking?.[platform]?.exclude?.includes('soundboard-youtube')) throw new Error(`Play ${platform} autolinking does not exclude soundboard-youtube.`);
   }
   const nativeModulesPath = path.join(root, 'app-play', 'play-native-modules');
-  if (!fs.existsSync(nativeModulesPath) || fs.readdirSync(nativeModulesPath).length) throw new Error('Play nativeModulesDir must exist and contain no native modules.');
+  const nativeModuleFiles = collectFiles(nativeModulesPath).map(({ relative }) => `app-play/play-native-modules/${relative}`);
+  if (nativeModuleFiles.length !== allowedDeviceAudioModuleFiles.size || nativeModuleFiles.some((relative) => !allowedDeviceAudioModuleFiles.has(relative))) {
+    throw new Error('Play nativeModulesDir must contain only the exact device-audio module file allowlist.');
+  }
   const rootPackagePath = path.join(root, 'package.json');
   const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, 'utf8'));
   if (!rootPackage.workspaces?.includes('app-play')) throw new Error('Root package does not declare app-play as a workspace.');

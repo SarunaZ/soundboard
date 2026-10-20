@@ -7,7 +7,11 @@ data/
 !app-play/src/data/**
 app-play/android/
 app-play/ios/
-app-play/play-native-modules/
+app-play/play-native-modules/*
+!app-play/play-native-modules/soundboard-device-audio/
+!app-play/play-native-modules/soundboard-device-audio/**
+app-play/play-native-modules/soundboard-device-audio/**/build/
+app-play/play-native-modules/soundboard-device-audio/**/.gradle/
 
 # Yarn 4, node-modules linker: keep config, ignore the cache and state.
 .yarn/*

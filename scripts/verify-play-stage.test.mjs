@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isAllowedPath, forbiddenMarker, resolveLocalImport, validateRecordingPermissionPolicy, validateReleaseMetadata, verifyStage } from './verify-play-stage.mjs';
+import { allowedDeviceAudioModuleFiles, isAllowedPath, forbiddenMarker, resolveLocalImport, validateRecordingPermissionPolicy, validateReleaseMetadata, verifyStage } from './verify-play-stage.mjs';
 
 test('the Play stage accepts only declared profile inputs and explicit shared leaves', () => {
   assert.equal(isAllowedPath('app-play/App.tsx'), true);
@@ -20,6 +20,9 @@ test('the Play stage accepts only declared profile inputs and explicit shared le
   assert.equal(isAllowedPath('app-client/src/editor/EditorScreen.tsx'), false);
   assert.equal(isAllowedPath('app-client/modules/soundboard-youtube/index.js'), false);
   assert.equal(isAllowedPath('app-play/android/app/build.gradle'), false);
+  assert.equal(isAllowedPath('app-play/play-native-modules/soundboard-device-audio/android/build.gradle'), true);
+  assert.equal(isAllowedPath('app-play/play-native-modules/foreign/android/build.gradle'), false);
+  assert.equal(isAllowedPath('app-play/play-native-modules/soundboard-device-audio/android/src/main/AndroidManifest.xml'), false);
   assert.equal(isAllowedPath('app-play/.env.local'), false);
 });
 
@@ -58,7 +61,7 @@ test('release metadata rejects unsafe versions and non-positive or fractional co
 test('Play recording policy requires foreground recording permission and the iOS usage message', () => {
   const config = {
     android: { blockedPermissions: ['android.permission.READ_MEDIA_AUDIO'] },
-    plugins: [['expo-audio', {
+    plugins: ['./plugins/withDeviceAudioCapture', ['expo-audio', {
       microphonePermission: 'Stimmyz uses microphone access to record sounds you choose to save.',
       recordAudioAndroid: true,
       enableBackgroundRecording: false,
@@ -67,9 +70,12 @@ test('Play recording policy requires foreground recording permission and the iOS
   };
   assert.doesNotThrow(() => validateRecordingPermissionPolicy(config));
   assert.throws(() => validateRecordingPermissionPolicy({ ...config, android: { blockedPermissions: ['android.permission.RECORD_AUDIO'] } }), /allow RECORD_AUDIO/);
-  assert.throws(() => validateRecordingPermissionPolicy({ ...config, plugins: [['expo-audio', { ...config.plugins[0][1], recordAudioAndroid: false }]] }), /enable Android recording/);
-  assert.throws(() => validateRecordingPermissionPolicy({ ...config, plugins: [['expo-audio', { ...config.plugins[0][1], microphonePermission: false }]] }), /iOS microphone/);
-  assert.throws(() => validateRecordingPermissionPolicy({ ...config, plugins: [['expo-audio', { ...config.plugins[0][1], enableBackgroundRecording: true }]] }), /background recording/);
+  const replaceAudio = (options) => ({ ...config, plugins: [config.plugins[0], ['expo-audio', options]] });
+  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[1][1], recordAudioAndroid: false })), /enable Android recording/);
+  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[1][1], microphonePermission: false })), /iOS microphone/);
+  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[1][1], enableBackgroundRecording: true })), /background recording/);
+  assert.throws(() => validateRecordingPermissionPolicy({ ...config, android: { blockedPermissions: ['android.permission.POST_NOTIFICATIONS'] } }), /allow notifications/);
+  assert.throws(() => validateRecordingPermissionPolicy({ ...config, plugins: [['expo-audio', config.plugins[1][1]]] }), /config plugin/);
 });
 
 test('stage verifier accepts the isolated Play profile and rejects extractor source', () => {
@@ -97,7 +103,7 @@ test('stage verifier accepts the isolated Play profile and rejects extractor sou
           monochromeImage: './assets/stimyz/android-icon-monochrome.png',
         },
       },
-      plugins: [['expo-audio', { microphonePermission: 'Record local sounds.', recordAudioAndroid: true, enableBackgroundRecording: false, enableBackgroundPlayback: false }]],
+      plugins: ['./plugins/withDeviceAudioCapture', ['expo-audio', { microphonePermission: 'Record local sounds.', recordAudioAndroid: true, enableBackgroundRecording: false, enableBackgroundPlayback: false }]],
     } }));
     write('app-play/package.json', JSON.stringify({
       dependencies: { expo: '~57.0.13' },
@@ -112,8 +118,11 @@ test('stage verifier accepts the isolated Play profile and rejects extractor sou
     write('app-play/assets/stimyz/icon.png', 'test-icon');
     write('app-play/assets/stimyz/android-icon-foreground.png', 'test-foreground');
     write('app-play/assets/stimyz/android-icon-monochrome.png', 'test-monochrome');
-    fs.mkdirSync(path.join(root, 'app-play/play-native-modules'), { recursive: true });
-    assert.deepEqual(verifyStage(root), { files: 12, sourceFiles: 2 });
+    write('app-play/plugins/withDeviceAudioCapture.js', 'module.exports = () => {};\n');
+    for (const relative of allowedDeviceAudioModuleFiles) {
+      write(relative, relative.endsWith('.json') ? '{}' : '// device audio module test fixture\n');
+    }
+    assert.deepEqual(verifyStage(root), { files: 23, sourceFiles: 5 });
 
     fs.rmSync(path.join(root, 'app-play/assets/stimyz/icon.png'));
     assert.throws(() => verifyStage(root), /Play icon asset is missing from the stage/);
@@ -133,6 +142,9 @@ test('stage verifier accepts the isolated Play profile and rejects extractor sou
     assert.throws(() => verifyStage(root), /Forbidden extractor marker in staged file/);
     fs.rmSync(path.join(root, 'app-play/src'), { recursive: true, force: true });
     write('app-client/modules/soundboard-youtube/index.js', 'module.exports = {};\n');
+    assert.throws(() => verifyStage(root), /outside the Play build allowlist/);
+    fs.rmSync(path.join(root, 'app-client'), { recursive: true, force: true });
+    write('app-play/play-native-modules/soundboard-device-audio/android/src/main/AndroidManifest.xml', '<manifest />');
     assert.throws(() => verifyStage(root), /outside the Play build allowlist/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

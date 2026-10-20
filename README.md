@@ -49,11 +49,26 @@ or foreground microphone recording through Source → Trim → Details → Save.
 Audio sources are limited to five minutes and 32 MiB, and trim selections to 60
 seconds. Microphone permission is requested contextually in Play. Emulator checks
 passed first-use permission, recording through save and relaunch, and foreground
-interruption; the emulator has silent input by default, so physical microphone
-quality remains unverified. Play now accepts MP4 and MOV containers with audio;
+interruption; the emulator has silent input by default. A physical 52.52 s
+microphone capture reached Trim and the owner confirmed the spoken test phrase
+was audible; broader microphone quality remains unverified. Play now accepts MP4 and MOV containers with audio;
 share import and interrupted-draft restoration remain pending. See the
 [design plan](docs/stimmyz-design-plan.md) and
 [recording emulator record](docs/play-recording-emulator-2026-10-18.md).
+
+An optional Android device-playback recording spike lives on
+`feat-sound-recording`: **Record device audio** captures playback permitted by
+compatible apps into the existing local trim/save flow, with explicit Android
+consent, an ongoing Stop notification and a two-minute limit. It leaves the
+foreground-only microphone recorder and Dev app separate. See the
+[spike results](DEVICE_AUDIO_CAPTURE_RESULTS.md) and
+[test procedure](docs/device-audio-capture-testing.md). Current evidence includes
+controlled fixture tests, offline QA playback, permission and lifecycle checks,
+device and source comparisons, API 29/34/36 emulator baselines and isolated JVM
+writer-failure tests. A bounded API 29 service ENOSPC check also produced the
+expected error and stopped service/projection. The detailed evidence report is
+authoritative; remaining physical OEM and read-error checks are tracked there.
+The spike's testing build is 1.0.16/code 17, with ARM64 and x86_64 artifacts.
 
 The current visual authority for Play is the
 [Stimmyz Astra Clean Rebuild](docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/DESIGN_SOURCE_OF_TRUTH.md),
@@ -67,7 +82,7 @@ Build Play independently with `.\scripts\build-play-android.ps1` (or use
 `-StageOnly` to verify the source boundary without Docker). The build creates
 an unsigned testing APK and unsigned AAB under an isolated ignored `data/` stage;
 it does not sign, install or publish them.
-The latest Play test build is version 1.0.15/code 16 for ARM64 and x86_64.
+The clean-rebuild baseline Play test build is 1.0.15/code 16 for ARM64 and x86_64.
 Final native clean-rebuild and density checks passed; the signed testing APK is
 in [data/play-clean-rebuild-final-20261019/artifacts/](data/play-clean-rebuild-final-20261019/artifacts/)
 and has SHA-256 `b1367719f15861e5e8b4f5273e4969a0d272f1cdf5ca55cb715c9912ca0b7aed`.
