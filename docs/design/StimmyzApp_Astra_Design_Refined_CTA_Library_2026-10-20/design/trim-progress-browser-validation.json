@@ -1,0 +1,14 @@
+{
+  "scope": "HTML UI simulation only",
+  "checks": {
+    "play_pause": true,
+    "elapsed_progress": true,
+    "progress_fill": true,
+    "resume": true,
+    "fine_tune_reset": true,
+    "loop": true,
+    "end_boundary": true,
+    "no_js_errors": true
+  },
+  "android_native_playback": "NOT TESTED"
+}

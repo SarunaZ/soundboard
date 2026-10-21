@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, AppState, BackHandler, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
-import { play, stop } from '../../../app-client/src/audio/engine';
+import { createAudioPlayer, getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
+import { stop } from '../../../app-client/src/audio/engine';
 import { useKeyboardInputReveal } from '../../../app-client/src/keyboard/useKeyboardInputReveal';
 import { disposeLocalAudioSource, pickLocalAudioSource, renderLocalAudioRange, saveLocalAudioRender, type LocalAudioRender, type LocalAudioSource } from '../media/localAudio';
 import { createLocalAudioRecorder } from '../media/recording';
@@ -14,6 +14,7 @@ import { iconChoices, padColors } from './theme';
 import { formatTime, Waveform } from './Waveform';
 import { ArtworkPicker, pickGalleryArtwork } from './ArtworkPicker';
 import { Icon } from './Icons';
+import { TrimPreviewController, type TrimPreviewState } from '../media/trimPreview';
 
 export type AssignmentTarget = { boardId: string; padId?: string; expectedClipId?: string | null } | null;
 export type InitialAction = 'file' | 'record' | 'device-audio';
@@ -65,6 +66,8 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const [recording, setRecording] = useState(false);
   const [recordingStopped, setRecordingStopped] = useState(false);
   const [recordingElapsedMs, setRecordingElapsedMs] = useState(0);
+  const [previewState, setPreviewState] = useState<TrimPreviewState>({ positionMs: 0, playing: false, buffering: false, complete: false, error: null });
+  const [previewReady, setPreviewReady] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceAudioStatus | null>(null);
   const [message, setMessage] = useState('');
   const [artwork, setArtwork] = useState<DraftArtwork | null>(null);
@@ -80,6 +83,10 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const pendingCaptureRef = useRef<LocalAudioSource | null>(null);
   const saveLocked = useRef(false);
   const recorderRef = useRef<ReturnType<typeof createLocalAudioRecorder> | null>(null);
+  const previewControllerRef = useRef<TrimPreviewController | null>(null);
+  const previewRequestRef = useRef(0);
+  const previewAbortRef = useRef<AbortController | null>(null);
+  const previewPreparationRef = useRef(false);
   const deviceCaptureRef = useRef<DeviceAudioCaptureController | null>(null);
   const deviceRefreshPendingRef = useRef(false);
   const deviceResultHandledRef = useRef(false);
@@ -98,6 +105,10 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   }, [source]);
 
   useEffect(() => {
+    if (step !== 'trim' && (previewControllerRef.current || previewReady)) resetTrimPreview();
+  }, [step]);
+
+  useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (Keyboard.isVisible()) { Keyboard.dismiss(); return true; }
       if (pickerOpen) { setPickerOpen(false); setImagePreparing(false); return true; }
@@ -113,6 +124,11 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     return () => {
       mountedRef.current = false;
       controller.current?.abort();
+      previewRequestRef.current += 1;
+      previewAbortRef.current?.abort();
+      previewAbortRef.current = null;
+      previewControllerRef.current?.dispose();
+      previewControllerRef.current = null;
       stop();
       recordingRef.current = false;
       const recorder = recorderRef.current;
@@ -168,6 +184,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     }, 250);
     const subscription = AppState.addEventListener('change', (next) => {
       appStateRef.current = next;
+      if (next !== 'active') resetTrimPreview();
       if (next !== 'active' && recorderRef.current) {
         void interruptRecording();
       }
@@ -502,7 +519,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     if (recorderRef.current) { confirmDiscardRecording(); return; }
     if (busy && sourceRef.current) { setMessage(saveLocked.current ? 'Saving is in progress. Please wait before leaving.' : 'Please wait for the current operation to finish.'); return; }
     if (step === 'customize') setStep('trim');
-    else if (step === 'trim') setStep('source');
+    else if (step === 'trim') { resetTrimPreview(); setStep('source'); }
     else requestCancel();
   }
 
@@ -525,6 +542,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   }
 
   function setRange(start: number, end: number) {
+    resetTrimPreview();
     stop();
     setStartMs(start); setEndMs(end); setRender(null);
   }
@@ -537,23 +555,59 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     else setRange(startMs, Math.min(source.durationMs, Math.max(startMs + minimum, Math.min(startMs + maximum, endMs + amount))));
   }
 
+  function resetTrimPreview() {
+    previewRequestRef.current += 1;
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
+    previewControllerRef.current?.dispose();
+    previewControllerRef.current = null;
+    if (mountedRef.current) {
+      if (previewPreparationRef.current) setBusy(false);
+      previewPreparationRef.current = false;
+      setPreviewState({ positionMs: 0, playing: false, buffering: false, complete: false, error: null });
+      setPreviewReady(false);
+    }
+  }
+
   async function preview() {
     if (!source) return;
-    const op = new AbortController(); controller.current = op;
-    setBusy(true); setMessage('Preparing preview…');
+    if (previewControllerRef.current) {
+      if (previewState.playing || previewState.buffering) previewControllerRef.current.pause();
+      else void previewControllerRef.current.play();
+      return;
+    }
+    const request = ++previewRequestRef.current;
+    const op = new AbortController(); previewAbortRef.current = op; previewPreparationRef.current = true;
+    setBusy(true); setMessage('Preparing selected audio…');
     try {
       const previewRange = await renderLocalAudioRange(source, startMs, endMs, op.signal);
-      if (op.signal.aborted) return;
+      if (op.signal.aborted || request !== previewRequestRef.current || !mountedRef.current || step !== 'trim') return;
       setRender(previewRange);
-      await play(previewRange.uri, `preview-${source.id}`);
-      setMessage('Preview playing.');
+      const player = createAudioPlayer(previewRange.uri, { updateInterval: 40 });
+      const playerController = new TrimPreviewController(player, endMs - startMs, (state) => {
+        if (!mountedRef.current || previewControllerRef.current !== playerController) return;
+        setPreviewState(state);
+        if (state.error) setMessage(`Preview stopped: ${state.error}`);
+        else if (state.complete) setMessage('Preview finished. Play again to replay the selection.');
+      });
+      previewControllerRef.current = playerController;
+      setPreviewReady(true);
+      setMessage('');
+      await playerController.play();
     }
     catch (error) { if (!op.signal.aborted) setMessage(error instanceof Error ? error.message : 'Could not preview this file.'); }
-    finally { if (!op.signal.aborted) setBusy(false); }
+    finally {
+      if (previewAbortRef.current === op) previewAbortRef.current = null;
+      if (previewPreparationRef.current && request === previewRequestRef.current && mountedRef.current) {
+        previewPreparationRef.current = false;
+        setBusy(false);
+      }
+    }
   }
 
   async function renderRange() {
     if (!source) return;
+    resetTrimPreview();
     const op = new AbortController(); controller.current = op; setBusy(true); setMessage('Rendering your selection…');
     try {
       const rendered = await renderLocalAudioRange(source, startMs, endMs, op.signal);
@@ -641,16 +695,17 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       {step === 'source' ? <View style={styles.sourceScreen}>
         {!recording && !recordingStopped && !deviceActive ? <>
           <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800', marginBottom: 4 }}>Where’s your audio from?</Text>
-          <Pressable onPress={() => void chooseSource()} disabled={busy} accessibilityRole="button" accessibilityLabel="Choose file, import audio from this device" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
-            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="file" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Import from device</Text><Text style={{ color: theme.muted }}>Choose an audio or video file</Text></View>
+          {isDeviceAudioCaptureSupported() ? <Pressable onPress={() => void startDeviceCapture()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record device audio from a compatible app" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.primary, opacity: busy ? 0.6 : 1 }]}>
+            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="music" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record device audio</Text><Text style={{ color: theme.muted }}>Compatible apps only · Android will ask for permission · up to 2 minutes</Text></View>
+          </Pressable> : <View accessibilityRole="summary" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
+            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="music" size={24} color={theme.muted} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record device audio</Text><Text style={{ color: theme.muted }}>{Platform.OS === 'android' && Number(Platform.Version) < 29 ? 'Requires Android 10 or later. Record with the microphone or import audio or video instead.' : 'Unavailable on this device. Record with the microphone or import audio or video instead.'}</Text></View>
+          </View>}
+          <Pressable onPress={() => void startRecording()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record microphone" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: busy ? 0.6 : 1 }]}>
+            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="mic" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record microphone</Text><Text style={{ color: theme.muted }}>Use your phone microphone</Text></View>
           </Pressable>
-          <Pressable onPress={() => void startRecording()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record a sound using the phone microphone" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: busy ? 0.6 : 1 }]}>
-            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="mic" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record a new sound</Text><Text style={{ color: theme.muted }}>Use your microphone</Text></View>
+          <Pressable onPress={() => void chooseSource()} disabled={busy} accessibilityRole="button" accessibilityLabel="Import audio or video from this device" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: busy ? 0.6 : 1 }]}>
+            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="file" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Import audio or video</Text><Text style={{ color: theme.muted }}>Choose a file from this device</Text></View>
           </Pressable>
-          {isDeviceAudioCaptureSupported() ? <Pressable onPress={() => void startDeviceCapture()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record audio playing in compatible Android apps" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: busy ? 0.6 : 1 }]}>
-            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="music" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record device audio</Text><Text style={{ color: theme.muted }}>Compatible apps only · Android audio permission · up to 2 minutes</Text></View>
-          </Pressable> : null}
-          {Platform.OS === 'android' && Number(Platform.Version) < 29 ? <Text style={{ color: theme.muted, lineHeight: 18 }}>Device audio recording requires Android 10 or later.</Text> : null}
           {source ? <Panel theme={theme} style={styles.currentDraft}>
             <Text style={{ color: theme.text, fontWeight: '800' }}>Current draft</Text><Text style={{ color: theme.muted }} numberOfLines={1}>{source.title} · {formatTime(source.durationMs)}</Text>
             <ActionButton label="Continue editing this draft" onPress={() => { setStep('trim'); setMessage(''); }} theme={theme} variant="primary" disabled={busy} />
@@ -678,12 +733,23 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
           <View style={styles.compactSourceText}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 14 }} numberOfLines={1}>{source.title}</Text><Text style={{ color: theme.muted, fontSize: 12 }}>{formatTime(source.durationMs)} total · Up to 60 seconds</Text></View>
         </View>
         <View style={[styles.waveCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Waveform peaks={source.peaks} durationMs={source.durationMs} startMs={startMs} endMs={endMs} onChange={setRange} theme={theme} />
-          <Pressable onPress={() => void preview()} disabled={busy} accessibilityRole="button" accessibilityLabel="Preview selection"
-            style={({ pressed }) => [styles.previewButton, { backgroundColor: blendHex(theme.accent, theme.surface, 0.18), borderColor: theme.border, opacity: busy ? 0.55 : pressed ? 0.78 : 1 }]}>
-            <Icon name="play" size={20} color={theme.accent} />
-            <Text style={{ color: theme.text, fontSize: 13, fontWeight: '700' }}>Preview selection</Text>
-          </Pressable>
+          <Waveform peaks={source.peaks} durationMs={source.durationMs} startMs={startMs} endMs={endMs} previewPositionMs={previewReady ? startMs + previewState.positionMs : null} previewActive={previewReady} onChange={setRange} theme={theme} />
+          <View style={styles.previewTransport}>
+            <Pressable onPress={() => void preview()} disabled={busy} accessibilityRole="button" accessibilityLabel={previewState.playing || previewState.buffering ? 'Pause preview' : 'Play selected audio preview'} accessibilityState={{ disabled: busy, selected: previewState.playing }}
+              style={({ pressed }) => [styles.previewButton, { backgroundColor: blendHex(theme.accent, theme.surface, 0.18), borderColor: theme.border, opacity: busy ? 0.55 : pressed ? 0.78 : 1 }]}>
+              {previewState.playing || previewState.buffering ? <Text style={{ color: theme.accent, fontSize: 19, fontWeight: '900', lineHeight: 22 }}>Ⅱ</Text> : <Icon name="play" size={20} color={theme.accent} />}
+              <Text style={{ color: theme.text, fontSize: 13, fontWeight: '700' }}>{busy ? 'Preparing…' : previewState.playing || previewState.buffering ? 'Pause' : 'Play'}</Text>
+            </Pressable>
+            <View style={styles.previewProgress}>
+              <View accessibilityRole="progressbar" accessibilityLabel="Selected audio preview progress" accessibilityValue={{ min: 0, max: 100, now: Math.round((previewState.positionMs / Math.max(1, endMs - startMs)) * 100) }} style={[styles.previewTrack, { backgroundColor: theme.raised }]}>
+                <View style={[styles.previewFill, { width: `${Math.min(100, Math.max(0, (previewState.positionMs / Math.max(1, endMs - startMs)) * 100))}%`, backgroundColor: theme.primary }]} />
+              </View>
+              <View style={styles.previewTimes}>
+                <Text numberOfLines={1} adjustsFontSizeToFit accessibilityLabel={`Elapsed ${formatTime(previewState.positionMs)}${previewState.buffering ? ', buffering' : ''}`} accessibilityLiveRegion="polite" style={{ color: theme.text, fontVariant: ['tabular-nums'], fontSize: 11, fontWeight: '700' }}>{formatTime(previewState.positionMs)}{previewState.buffering ? ' · Buffering' : ''}</Text>
+                <Text numberOfLines={1} accessibilityLabel={`Total ${formatTime(endMs - startMs)}`} style={{ color: theme.text, fontVariant: ['tabular-nums'], fontSize: 11, fontWeight: '700' }}>{formatTime(endMs - startMs)}</Text>
+              </View>
+            </View>
+          </View>
         </View>
         <Panel theme={theme} style={styles.finePanel}>
           <Pressable onPress={() => setFineTune(!fineTune)} disabled={busy} accessibilityRole="button" accessibilityState={{ expanded: fineTune }} accessibilityLabel={fineTune ? 'Hide fine tune controls' : 'Show fine tune controls'} style={styles.fineDisclosure}>
@@ -735,6 +801,6 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
 const styles = StyleSheet.create({
   root: { flex: 1 }, header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 12 }, back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   progress: { flexDirection: 'row', alignItems: 'flex-start', position: 'relative', paddingBottom: 16 }, progressItem: { flex: 1, alignItems: 'center', gap: 5 }, progressDot: { width: 28, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1 }, connectorLayer: { position: 'absolute', top: 13, left: '16.666%', right: '16.666%', height: 2, flexDirection: 'row' }, connector: { height: 2, flex: 1 },
-  scroll: { flex: 1 }, content: { gap: 12, paddingBottom: 20 }, card: { gap: 14 }, sourceScreen: { gap: 10, paddingTop: 4 }, sourceCard: { minHeight: 82, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 14 }, sourceIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, sourceCardCopy: { flex: 1, gap: 4 }, currentDraft: { gap: 10 }, recordingPanel: { minHeight: 230, justifyContent: 'center', alignItems: 'center', gap: 16, borderColor: '#ff526b' }, recordingHeadline: { flexDirection: 'row', alignItems: 'center', gap: 10 }, recordingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#ff304f' }, compactSource: { minHeight: 80, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 1 }, compactSourceIcon: { width: 55, height: 55, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, compactSourceText: { flex: 1, gap: 2, minWidth: 0 }, waveCard: { borderRadius: 18, borderWidth: 1, padding: 15, gap: 0 }, previewButton: { minHeight: 47, width: '100%', borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }, finePanel: { paddingHorizontal: 12, paddingVertical: 10, gap: 0, borderRadius: 17 }, fineDisclosure: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, fineRight: { flexDirection: 'row', alignItems: 'center', gap: 8 }, fineControls: { gap: 10, paddingBottom: 12 }, tuneSection: { flexDirection: 'row', alignItems: 'center', gap: 8 }, tuneSectionStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 6 }, tuneLabels: { flexDirection: 'row', alignItems: 'center', gap: 2 }, tuneLabelsStacked: { justifyContent: 'space-between' }, tuneButtons: { flex: 1, flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }, tuneButtonsGrid: { flex: 0, width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, tuneButton: { minHeight: 44, minWidth: 0, flex: 1, borderRadius: 12, borderWidth: 1, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }, tuneButtonGrid: { minHeight: 48, flex: 0, width: '47%' },
+  scroll: { flex: 1 }, content: { gap: 12, paddingBottom: 20 }, card: { gap: 14 }, sourceScreen: { gap: 10, paddingTop: 4 }, sourceCard: { minHeight: 82, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 14 }, sourceIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, sourceCardCopy: { flex: 1, gap: 4 }, currentDraft: { gap: 10 }, recordingPanel: { minHeight: 230, justifyContent: 'center', alignItems: 'center', gap: 16, borderColor: '#ff526b' }, recordingHeadline: { flexDirection: 'row', alignItems: 'center', gap: 10 }, recordingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#ff304f' }, compactSource: { minHeight: 80, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 1 }, compactSourceIcon: { width: 55, height: 55, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, compactSourceText: { flex: 1, gap: 2, minWidth: 0 }, waveCard: { borderRadius: 18, borderWidth: 1, padding: 15, gap: 0 }, previewTransport: { flexDirection: 'column', alignItems: 'stretch', gap: 10, marginTop: 4 }, previewButton: { minHeight: 48, width: '100%', paddingHorizontal: 12, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, previewProgress: { width: '100%', minWidth: 0, gap: 7 }, previewTrack: { height: 6, borderRadius: 3, overflow: 'hidden' }, previewFill: { height: '100%', borderRadius: 3 }, previewTimes: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 }, finePanel: { paddingHorizontal: 12, paddingVertical: 10, gap: 0, borderRadius: 17 }, fineDisclosure: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, fineRight: { flexDirection: 'row', alignItems: 'center', gap: 8 }, fineControls: { gap: 10, paddingBottom: 12 }, tuneSection: { flexDirection: 'row', alignItems: 'center', gap: 8 }, tuneSectionStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 6 }, tuneLabels: { flexDirection: 'row', alignItems: 'center', gap: 2 }, tuneLabelsStacked: { justifyContent: 'space-between' }, tuneButtons: { flex: 1, flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }, tuneButtonsGrid: { flex: 0, width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, tuneButton: { minHeight: 44, minWidth: 0, flex: 1, borderRadius: 12, borderWidth: 1, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }, tuneButtonGrid: { minHeight: 48, flex: 0, width: '47%' },
   artworkPreviewCard: { minHeight: 112, flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12 }, artworkPreview: { width: 86, height: 86, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, artworkSummary: { flex: 1, gap: 7 }, fieldLabel: { color: '#baa8ad', fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginTop: 8, marginBottom: -5 }, artOptions: { flexDirection: 'row', gap: 8 }, artOption: { flex: 1, minHeight: 82, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }, searchInfo: { gap: 8 }, footer: { paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
 });

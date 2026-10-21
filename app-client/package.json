@@ -26,7 +26,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/manifest.test.mjs src/editor/protocol.test.mjs src/editor/catalog.test.mjs src/editor/importValidation.test.mjs src/editor/deviceImport.test.mjs src/editor/localAudio.test.mjs src/board/assignments.test.mjs src/board/search.test.mjs src/board/reorderGeometry.test.mjs src/editor/snapshot-writes.test.mjs src/editor/onDeviceYoutube.test.mjs src/editor/playback.test.mjs src/audio/playbackState.test.mjs src/audio/engine.test.mjs src/keyboard/keyboardGeometry.test.mjs src/keyboard/useKeyboardInputReveal.test.mjs release-profile.test.cjs",
+    "test": "node --experimental-strip-types --test src/manifest.test.mjs src/editor/protocol.test.mjs src/editor/catalog.test.mjs src/editor/importValidation.test.mjs src/editor/deviceImport.test.mjs src/editor/localAudio.test.mjs src/transfer/folderTransfer.test.mjs src/board/assignments.test.mjs src/board/search.test.mjs src/board/reorderGeometry.test.mjs src/editor/snapshot-writes.test.mjs src/editor/onDeviceYoutube.test.mjs src/editor/playback.test.mjs src/audio/playbackState.test.mjs src/audio/engine.test.mjs src/keyboard/keyboardGeometry.test.mjs src/keyboard/useKeyboardInputReveal.test.mjs release-profile.test.cjs",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

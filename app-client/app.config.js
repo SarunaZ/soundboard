@@ -24,11 +24,11 @@ module.exports = () => {
     return {
       ...config,
       name: 'StimyzApp',
-      version: '1.0.3',
+      version: '1.0.4',
       android: {
         ...config.android,
         package: 'dev.sarunas.soundboard.sideload',
-        versionCode: 4,
+        versionCode: 5,
         allowBackup: false,
         blockedPermissions,
       },

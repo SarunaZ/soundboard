@@ -342,6 +342,11 @@ pending until implementation and the stated acceptance check are confirmed.
 ## Design refresh (D-series, implementation started 2026-10-17)
 
 Source: [Stimmyz design implementation plan](docs/stimmyz-design-plan.md).
+The [October 20 device-first handoff](docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/DESIGN_SOURCE_OF_TRUTH.md)
+supersedes earlier screen hierarchy and Library icon specifications. Its source,
+previews and Trim playback contract are preserved in `docs/design/`. Current
+implementation and validation are recorded in the
+[October 20 QA record](docs/play-device-first-design-2026-10-20.md).
 The imported design bundle and repository audit are complete. Implementation
 has started in the separate `app-play/` workspace. All milestones remain open
 until their full acceptance checks pass; they do not close the L-series checks.
@@ -389,8 +394,10 @@ SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-20
   recovery. In-board reorder preserves whole pad records and persists via the
   existing snapshots; see the [native reorder checks](docs/play-pad-reorder-2026-10-18.md).
   Finish cross-board move UI and retention actions. Keep Dev
-  storage/defaults intact; use v1 snapshots as compatibility fixtures only, with
-  no real Dev-to-Play migration.
+  storage/defaults intact. Automatic access to Dev's private sandbox remains
+  excluded; the user's later migration request is handled through explicit
+  shared-folder clip export/import, documented in the
+  [transfer guide](docs/soundbite-transfer.md).
 - [ ] **D3 — Play presentation.** Board, Editor and Library screens use the six
   clean-rebuild palettes. The [visual-fixes record](docs/play-visual-fixes-2026-10-17.md)
   and [native follow-ups](docs/play-recording-emulator-2026-10-18.md) include the
@@ -492,6 +499,14 @@ SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-20
 - [ ] **D9 — Play backup/export/import (P1).** Add bounded, validated archives
   for Play boards, metadata and owned media; handle conflicts, duplicates,
   corruption, cancellation and interrupted writes without touching Dev data.
+  A user-requested saved-clip transfer slice now adds old-app Library export
+  and Play Library import through a shared Android folder. It preserves audio
+  bytes/names, skips existing IDs and leaves source clips and boards intact.
+  This does not close full board backup/export/import or process-death recovery.
+  Both updates are installed on the connected SM-S928B. Its four old Library
+  clips were copied successfully into Play (5 existing + 4 imported = 9), with
+  restart persistence and native playback activity verified; originals remain.
+  See the [transfer guide](docs/soundbite-transfer.md) for current verification.
 
 ## Historical remote pipeline roadmap (steps 1–27)
 

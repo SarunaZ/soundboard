@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { Alert, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import type { BoardCollection } from '../data/boards';
 import type { LocalClip } from '../data/library';
 import { ActionButton, Panel } from './controls';
@@ -9,6 +9,8 @@ import { contrastForeground } from './contrast';
 import { formatTime } from './Waveform';
 import { ArtworkPicker, pickGalleryArtwork } from './ArtworkPicker';
 import type { DraftArtwork } from '../media/artwork';
+import { isDeviceAudioCaptureSupported } from '../media/deviceAudioCapture';
+import type { SoundbiteImportResult } from '../media/soundbiteTransfer';
 
 type SortMode = 'az' | 'newest' | 'duration';
 const sortLabels: Record<SortMode, string> = { az: 'A–Z', newest: 'Newest', duration: 'Duration' };
@@ -25,12 +27,13 @@ function mixHex(foreground: string, background: string, foregroundWeight: number
   return `#${channels.join('')}`;
 }
 
-export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, onPlay, onCreate, onRename, onDelete, onChangeArtwork, onAddToBoard, onAssignToTarget }: {
+export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, onPlay, onCreate, onRename, onDelete, onChangeArtwork, onAddToBoard, onAssignToTarget, onImportSoundbites }: {
   theme: Theme; clips: LocalClip[]; boards: BoardCollection; onPlay: (clip: LocalClip) => void;
-  onCreate: (initialAction?: 'file') => void; onAppearance?: () => void; onRename: (clip: LocalClip, title: string) => void; onDelete: (clip: LocalClip) => void;
+  onCreate: (initialAction?: 'file' | 'record' | 'device-audio') => void; onAppearance?: () => void; onRename: (clip: LocalClip, title: string) => void; onDelete: (clip: LocalClip) => void;
   onChangeArtwork?: (clip: LocalClip, artwork: DraftArtwork) => void;
   onAddToBoard: (clip: LocalClip, boardId: string, padId?: string) => void;
   assignmentTarget?: { boardId: string; padId?: string; expectedClipId?: string | null } | null; onAssignToTarget?: (clip: LocalClip, target: { boardId: string; padId?: string; expectedClipId?: string | null }) => void;
+  onImportSoundbites?: (signal: AbortSignal) => Promise<SoundbiteImportResult | null>;
 }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<LocalClip | null>(null);
@@ -42,10 +45,17 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
   const [artworkTarget, setArtworkTarget] = useState<LocalClip | null>(null);
   const [artworkSourceMenu, setArtworkSourceMenu] = useState(false);
   const [memePickerOpen, setMemePickerOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importController = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
   const [clipMenu, setClipMenu] = useState<{ clip: LocalClip; left: number; top: number; width: number } | null>(null);
   const menuButtonRefs = useRef(new Map<string, View>());
   const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
   const [failedArtworkUris, setFailedArtworkUris] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; importController.current?.abort(); };
+  }, []);
   const filtered = useMemo(() => clips
     .filter((clip) => clip.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
     .sort((a, b) => sort === 'newest' ? b.createdAt.localeCompare(a.createdAt) || a.title.localeCompare(b.title) : sort === 'duration' ? a.durationMs - b.durationMs || a.title.localeCompare(b.title) : a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })), [clips, query, sort]);
@@ -89,6 +99,25 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
       Alert.alert('Could not choose artwork', cause instanceof Error ? cause.message : 'Choose another image and try again.');
     } finally { setArtworkTarget(null); setArtworkSourceMenu(false); }
   }
+  async function importSoundbites() {
+    if (!onImportSoundbites || importing) return;
+    const controller = new AbortController();
+    importController.current = controller;
+    setImporting(true);
+    try {
+      const result = await onImportSoundbites(controller.signal);
+      if (!controller.signal.aborted && result) {
+        Alert.alert('Import complete', `${result.imported} ${result.imported === 1 ? 'soundbite was' : 'soundbites were'} imported. ${result.skipped} ${result.skipped === 1 ? 'existing soundbite was' : 'existing soundbites were'} skipped.`);
+      }
+    } catch (cause) {
+      if (!controller.signal.aborted && !(cause instanceof Error && cause.name === 'AbortError')) {
+        Alert.alert('Could not import soundbites', cause instanceof Error ? cause.message : 'Choose a valid exported folder and try again.');
+      }
+    } finally {
+      if (importController.current === controller) importController.current = null;
+      if (mounted.current) setImporting(false);
+    }
+  }
 
   return <View style={styles.root}>
     <View style={styles.libraryHeader}>
@@ -97,7 +126,14 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
         <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 19.5 * fontScale }}>{assignmentTarget ? assignmentTarget.padId ? 'Choose a sound for the selected pad.' : 'Choose a sound to add to this board.' : `Saved sounds stay on this device.\nAdd a clip to any pad for offline playback.`}</Text>
       </View>
     </View>
-    <View style={styles.fullWidthButton}><ActionButton label="Edit a device file" icon="＋" onPress={() => onCreate('file')} theme={theme} variant="primary" /></View>
+    <View style={styles.fullWidthButton}><ActionButton label="Record device audio" onPress={() => {
+      if (isDeviceAudioCaptureSupported()) onCreate('device-audio');
+      else Alert.alert('Device audio is unavailable', 'Use More ways to add a sound to record with your microphone or choose a local file.');
+    }} theme={theme} variant="primary" buttonStyle={{ minHeight: 54 }} /></View>
+    {onImportSoundbites ? <View style={{ marginTop: -7, marginBottom: 13, gap: 5 }}>
+      <ActionButton label={importing ? 'Importing soundbites…' : 'Import soundbites'} onPress={() => void importSoundbites()} theme={theme} variant="secondary" disabled={importing} />
+      <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 17 * fontScale }}>Choose a Soundboard transfer folder. Audio and names are copied into this device’s private Library without changing existing sounds or boards.</Text>
+    </View> : null}
     <View style={styles.searchRow}>
       <View style={[styles.searchWrap, { backgroundColor: theme.surface, borderColor: theme.border }]}><Icon name="search" size={22} color={theme.muted} /><TextInput value={query} onChangeText={setQuery} placeholder="Search sounds..." placeholderTextColor={theme.muted}
         accessibilityLabel="Search library" returnKeyType="search" selectionColor={theme.focus} style={[styles.search, { color: theme.text }]} /></View>
@@ -117,10 +153,10 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
         <Pressable onPress={() => !clip.missing && onPlay(clip)} accessibilityRole="button" accessibilityLabel={clip.missing ? `${clip.title}, file unavailable` : `Play ${clip.title}`} disabled={clip.missing} style={[styles.playButton, { backgroundColor: mixHex(theme.accent, theme.surfaceAlt, 0.14) }]}><Icon name="play" size={19} color={theme.accent} /></Pressable>
         <Pressable ref={(node) => { if (node) menuButtonRefs.current.set(clip.id, node); else menuButtonRefs.current.delete(clip.id); }} onPress={() => showActions(clip)} accessibilityRole="button" accessibilityLabel={`Options for ${clip.title}`} style={styles.menu}><Icon name="more" size={22} color={theme.accent} /></Pressable>
       </Panel>) : <Panel theme={theme} style={styles.empty}><Text style={{ color: theme.text, fontSize: 18, fontWeight: '800' }}>{query ? 'No matches' : 'Your Library is empty'}</Text>
-        <Text style={{ color: theme.muted, lineHeight: 21 }}>{query ? 'Try a different name.' : 'Import a sound file to trim it and save your first clip.'}</Text>
+        <Text style={{ color: theme.muted, lineHeight: 21 }}>{query ? 'Try a different name.' : 'Record or import a sound to trim and save your first clip.'}</Text>
       </Panel>}
       <Pressable onPress={() => onCreate()} accessibilityRole="button" style={[styles.makeAnother, { borderColor: theme.accent, backgroundColor: theme.surface }]}>
-        <View style={[styles.plusCircle, { backgroundColor: theme.accent }]}><Icon name="plus" size={24} color="#FFFFFF" /></View><Text style={{ color: theme.text, fontWeight: '800', fontSize: 14 }}>Make another sound</Text><Text style={{ color: theme.muted, fontSize: 12 }}>Import or record a clip</Text>
+        <View style={[styles.plusCircle, { backgroundColor: theme.accent }]}><Icon name="plus" size={24} color="#FFFFFF" /></View><Text style={{ color: theme.text, fontWeight: '800', fontSize: 14, textAlign: 'center' }}>More ways to add a sound</Text>
       </Pressable>
     </ScrollView>
 
@@ -174,6 +210,18 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
     </Modal>
     <ArtworkPicker visible={memePickerOpen} theme={theme} onClose={() => { setMemePickerOpen(false); setArtworkTarget(null); }} onPreparingChange={() => {}}
       onSelect={(artwork) => { if (artworkTarget) onChangeArtwork?.(artworkTarget, artwork); setArtworkTarget(null); }} />
+    <Modal visible={importing} transparent animationType="fade" onRequestClose={() => importController.current?.abort()} accessibilityViewIsModal>
+      <View style={styles.scrim}>
+        <Panel theme={theme} style={styles.importPanel}>
+          <ActivityIndicator color={theme.accent} size="large" />
+          <Text accessibilityRole="header" style={{ color: theme.text, fontSize: 19, fontWeight: '800', textAlign: 'center' }}>Importing soundbites</Text>
+          <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, lineHeight: 20, textAlign: 'center' }}>Validating and copying audio into your private Library. Your boards and existing sounds stay unchanged.</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel soundbite import" onPress={() => importController.current?.abort()} style={[styles.importCancel, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
+            <Text style={{ color: theme.text, fontSize: 13, fontWeight: '800' }}>Cancel import</Text>
+          </Pressable>
+        </Panel>
+      </View>
+    </Modal>
   </View>;
 }
 
@@ -191,4 +239,5 @@ function MenuItem({ label, icon, theme, onPress, disabled = false, destructive =
 const styles = StyleSheet.create({
   root: { flex: 1, gap: 0 }, libraryHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 15, marginTop: 21, marginBottom: 25 }, headerCopy: { flex: 1, gap: 9, minWidth: 0 }, headerTitle: { fontSize: 28, lineHeight: 37, fontWeight: '800', letterSpacing: -0.8, includeFontPadding: false }, fullWidthButton: { alignSelf: 'stretch', marginBottom: 15 }, searchRow: { flexDirection: 'row', gap: 8, marginBottom: 13 }, searchWrap: { flex: 1, minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }, search: { flex: 1, minHeight: 44, paddingHorizontal: 0, fontSize: 14 }, sortButton: { minHeight: 48, minWidth: 49, width: 49, height: 48, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }, count: { textAlign: 'right', fontSize: 12, lineHeight: 16, marginTop: -4, marginBottom: 16 }, results: { flex: 1 }, list: { gap: 8, paddingBottom: 16 }, row: { minHeight: 79, flexDirection: 'row', alignItems: 'center', padding: 10, gap: 11, borderRadius: 16 }, preview: { width: 61, height: 61, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, details: { flex: 1, minWidth: 0 }, playButton: { width: 43, height: 43, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }, menu: { width: 32, height: 48, alignItems: 'center', justifyContent: 'center' },
   makeAnother: { minHeight: 118, alignSelf: 'stretch', marginTop: 18, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 17, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8 }, plusCircle: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' }, empty: { alignItems: 'flex-start', gap: 12 }, scrim: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.62)' }, sheet: { width: '100%', maxWidth: 480, maxHeight: '90%', alignSelf: 'center', gap: 16 }, dialog: { width: '100%', maxWidth: 380, maxHeight: '90%', alignSelf: 'center', gap: 16 }, modalHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 }, nameInput: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontSize: 16 }, optionStack: { gap: 10 }, menuModal: { flex: 1 }, clipMenu: { position: 'absolute', paddingVertical: 4, borderWidth: 1, borderRadius: 14, elevation: 14, shadowColor: '#000', shadowOpacity: 0.32, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } }, menuItem: { minHeight: 40, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, attribution: { minHeight: 40, alignItems: 'center', justifyContent: 'center' },
+  importPanel: { width: '100%', maxWidth: 360, alignSelf: 'center', alignItems: 'center', gap: 16 }, importCancel: { minHeight: 46, minWidth: 150, paddingHorizontal: 18, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 });

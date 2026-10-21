@@ -13,6 +13,8 @@ test('the Play stage accepts only declared profile inputs and explicit shared le
   assert.equal(isAllowedPath('app-play/assets/stimyz/android-icon-monochrome.png'), true);
   assert.equal(isAllowedPath('app-play/assets/stimyz/extra.png'), false);
   assert.equal(isAllowedPath('app-client/src/audio/engine.ts'), true);
+  assert.equal(isAllowedPath('app-client/src/transfer/folderTransfer.ts'), true);
+  assert.equal(isAllowedPath('app-client/src/transfer/other.ts'), false);
   assert.equal(isAllowedPath('app-client/src/board/reorderGeometry.ts'), true);
   assert.equal(isAllowedPath('app-client/src/board/Board.tsx'), false);
   assert.equal(isAllowedPath('app-client/package.json'), true);

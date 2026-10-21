@@ -5,6 +5,11 @@ application ID (`dev.sarunas.soundboard.play`) and private data sandbox. Its
 entrypoint is `index.ts`; it does not mount the Dev app or import the Dev
 YouTube authoring flow.
 
+**Library → Import soundbites** copies saved clips from a shared folder created
+by the old app's **Export soundbites** action. Audio and names are retained
+without re-trimming; existing clips and boards stay in place. Repeated imports
+skip existing clip IDs. See the [transfer guide](../docs/soundbite-transfer.md).
+
 The `feat-sound-recording` spike adds **Record device audio** on Android 10+
 through a Play-only native playback-capture module. It requests Android audio,
 notification and projection consent, continues while switching apps, and stops
@@ -12,7 +17,9 @@ from its ongoing notification or the creation screen. Sessions are bounded to
 two minutes, use permitted playback only, and feed the existing Trim → Details
 → Save flow. Microphone recording retains its foreground-only behavior.
 Silence is rejected; very quiet captures require explicit review. This optional
-source requires notifications to be enabled so Stop remains visible. Current
+source requires notifications to be enabled so Stop remains visible. The
+October 20 design makes it the primary creation action while keeping microphone
+and local import available. Current
 physical, API 29/34/36 emulator and JVM evidence, source-compatibility results
 and remaining physical OEM/read-error/lifecycle checks are summarized in the
 [authoritative test results](../DEVICE_AUDIO_CAPTURE_RESULTS.md); follow the
@@ -22,7 +29,9 @@ The first slice starts with an empty 16-pad board and an empty Library. The Boar
 has a measured responsive pad grid, board selector, Edit board controls and a
 Quick add tile fixed at the start of the scrolling grid. It is separate from
 saved pads, remains visible during search, and never consumes a pad slot. Quick
-add remembers whether to start local audio import, record a sound or open Library; the new sound
+add remembers device recording, microphone recording, local import or Library;
+new eligible users default to device recording. Existing choices survive the
+update. The new sound
 uses the board's next empty pad or appends after the existing pads. Its action
 chevron appears only while Edit board is active; tapping the tile uses the saved
 action. Assigned pads play immediately; sound-pad overflow actions are available
@@ -31,16 +40,18 @@ trigger controls. The Library includes search, sorting, preview and clip actions
 The six saved palettes are Peach, Mint, Snow, Ice, Vanilla and Coffee, with the
 theme picker in the Board header options.
 
-The Editor opens directly to its dashed **Choose file** source card and
-**Record sound** action. Choose file opens the device picker; Record sound
-requests microphone permission and starts foreground recording. Both actions
-continue through the shared Source → Trim → Details flow. Board and Library creation entry points still
-show the general source choices. Creation supports importing one local audio
-file or recording from the microphone, trimming up to 60 seconds, choosing a clip name and built-in
+The Editor opens to the **Record device audio** hero with smaller **Record your
+voice** and **Import audio or video** cards. Library's main recording action
+starts device capture; **More ways to add a sound** opens the device-first source
+chooser. Import opens the device picker; microphone recording requests
+permission and starts foreground capture. All three methods continue through
+Source → Trim → Details. Trim shows player-synchronized waveform progress,
+elapsed/total time and Play/Pause with resume and replay. Creation supports
+trimming up to 60 seconds, choosing a clip name and built-in
 icon/color, then saving to the Play Library and optionally assigning to the
 board/pad captured when creation began. Imported and recorded source audio is
 limited to five minutes and 32 MiB. Recording requests microphone permission
-only after the user chooses **Record sound** and uses the foreground UI; leaving
+only after the user chooses microphone recording and uses the foreground UI; leaving
 the foreground interrupts and cancels capture. The Details stage has a live pad
 preview and fixed Save action. Details offers a **Choose image** action for Imgflip's free
 popular-template picker, with local name filtering, optional image removal and
@@ -115,11 +126,12 @@ Run the data/media tests and TypeScript check with the repository's Docker tools
 docker compose --profile tools run --rm --no-deps --entrypoint /bin/sh deps -lc 'corepack enable && yarn workspace app-play test && yarn workspace app-play check'
 ```
 
-The current visual authority is the [Stimmyz Astra Clean Rebuild](../docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/DESIGN_SOURCE_OF_TRUTH.md),
-with its [implementation guide](../docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/ASTRA_IMPLEMENTATION.md),
-tokens and prototype. Earlier design handoffs and research audits remain
-historical references. The current native QA record is
-[docs/play-clean-rebuild-2026-10-18.md](../docs/play-clean-rebuild-2026-10-18.md).
+The current visual authority is the [October 20 device-first design](../docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/DESIGN_SOURCE_OF_TRUTH.md),
+with its [implementation guide](../docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/ASTRA_IMPLEMENTATION.md),
+prototype and captured previews. Read the [Trim playback contract](../docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/TRIM_PLAYBACK_PROGRESS_REQUIREMENTS.md)
+for actual-player progress, pause/resume and lifecycle behavior. Earlier design
+handoffs and research audits remain historical references. The current changes
+and verification are tracked in the [October 20 QA record](../docs/play-device-first-design-2026-10-20.md).
 The [first-slice verification record](../docs/play-verification-2026-10-17.md)
 contains the passing unsigned APK/AAB build results and artifact checksums.
 Local recording/video and reliable creation take priority over further visual

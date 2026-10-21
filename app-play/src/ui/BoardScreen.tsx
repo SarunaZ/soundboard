@@ -5,6 +5,7 @@ import { stop } from '../../../app-client/src/audio/engine';
 import { clearPad, createBoard as persistBoard, loadBoards, movePad, renamePad, reorderPad, selectBoard, type Board, type BoardCollection, type BoardPad } from '../data/boards';
 import type { LocalClip } from '../data/library';
 import { loadPlayPreferences, savePlayPreferences, type QuickAction } from '../data/preferences';
+import { isDeviceAudioCaptureSupported } from '../media/deviceAudioCapture';
 import { ActionButton, Heading, Panel } from './controls';
 import { Icon } from './Icons';
 import { calculateBoardGrid, calculateBoardTileHeight } from './boardLayout';
@@ -19,7 +20,7 @@ type Props = {
   clips: LocalClip[];
   onChange: (collection: BoardCollection) => void;
   onPlay: (clip: LocalClip, padId: string) => void;
-  onCreate: (boardId: string, padId?: string, initialAction?: 'file' | 'record') => void;
+  onCreate: (boardId: string, padId?: string, initialAction?: 'file' | 'record' | 'device-audio') => void;
   onAddClip: () => void;
   onOpenLibrary: (target?: { boardId: string; padId?: string }) => void;
   onAppearance?: () => void;
@@ -62,7 +63,10 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const moved = useRef(false);
   const lastNewBoardRequest = useRef(newBoardRequest ?? 0);
   const [quickAction, setQuickAction] = useState<QuickAction>(() => {
-    try { return loadPlayPreferences().quickAction; } catch { return 'file'; }
+    try {
+      const saved = loadPlayPreferences(isDeviceAudioCaptureSupported()).quickAction;
+      return saved === 'device-audio' && !isDeviceAudioCaptureSupported() ? 'file' : saved;
+    } catch { return 'file'; }
   });
   const { fontScale, width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -74,7 +78,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const popupMaxHeight = Math.max(180, Math.min(420, windowHeight - insets.top - insets.bottom - 24));
   const popupEstimatedHeight = popup?.kind === 'boards' ? Math.min(44 * (collection.boards.length + 3), popupMaxHeight)
     : popup?.kind === 'pad' ? 44 * 4 : popup?.kind === 'move' ? Math.min(44 * Math.max(1, collection.boards.length - 1), popupMaxHeight)
-      : popup?.kind === 'replace' ? 44 * 2 : 44 * 3;
+      : popup?.kind === 'replace' ? 44 * 2 : popup?.kind === 'quick' ? 44 * 4 : 44 * 3;
   const popupLeft = popup ? Math.min(Math.max(insets.left + 10, popup.rect.x), windowWidth - insets.right - popupWidth - 10) : 0;
   const popupBelow = popup ? popup.rect.y + popup.rect.height + 6 : 0;
   const popupTop = popup ? (popupBelow + popupEstimatedHeight <= windowHeight - insets.bottom - 10 ? popupBelow : Math.max(insets.top + 10, popup.rect.y - popupEstimatedHeight - 6)) : 0;
@@ -265,7 +269,9 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   function chooseQuickAction(action: QuickAction) {
     try {
       const current = loadPlayPreferences();
-      setQuickAction(savePlayPreferences({ appearance: current.appearance, quickAction: action }).quickAction);
+      const supportedAction = action === 'device-audio' && !isDeviceAudioCaptureSupported() ? 'file' : action;
+      setQuickAction(savePlayPreferences({ appearance: current.appearance, quickAction: supportedAction }, isDeviceAudioCaptureSupported()).quickAction);
+      if (action === 'device-audio' && supportedAction === 'file') Alert.alert('Device audio is unavailable', 'Choose a local file or record with your microphone on this device.');
     } catch (error) {
       Alert.alert('Could not save Quick add preference', error instanceof Error ? error.message : 'Try again.');
     }
@@ -273,7 +279,9 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   }
 
   function runQuickAction() {
-    if (quickAction === 'file' || quickAction === 'record') onCreate(active.id, undefined, quickAction);
+    if (quickAction === 'device-audio' && isDeviceAudioCaptureSupported()) onCreate(active.id, undefined, quickAction);
+    else if (quickAction === 'file' || quickAction === 'device-audio') onCreate(active.id, undefined, 'file');
+    else if (quickAction === 'record') onCreate(active.id, undefined, quickAction);
     else onOpenLibrary({ boardId: active.id });
   }
 
@@ -348,11 +356,11 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
       contentContainerStyle={[styles.grid, { gap: layout.gap }]} keyboardShouldPersistTaps="handled">
       <View ref={quickAnchor} style={[styles.tileWrap, { width: layout.tileWidth, height: tileHeight }]}>
         <Pressable onPress={runQuickAction} accessibilityRole="button"
-          accessibilityLabel={`Quick add to ${active.name}, using ${quickAction === 'record' ? 'recording' : quickAction === 'file' ? 'audio file' : 'Library'}`}
+          accessibilityLabel={`Quick add to ${active.name}, using ${quickAction === 'device-audio' ? 'device audio recording' : quickAction === 'record' ? 'microphone recording' : quickAction === 'file' ? 'audio file' : 'Library'}`}
           style={({ pressed }) => [styles.tile, styles.quickTile, { backgroundColor: theme.surface, borderColor: theme.accent, opacity: pressed ? 0.8 : 1 }]}>
-          <Icon name="plus" size={34} color={theme.accent} />
+          <Icon name="plus" size={30} color={theme.accent} />
           <Text numberOfLines={2} style={[styles.tileLabel, { color: theme.text }]}>Quick add</Text>
-          <Text numberOfLines={2} style={[styles.padIdentity, { color: theme.muted }]}>{quickAction === 'record' ? 'Record sound' : quickAction === 'file' ? 'Choose file' : 'Open library'}</Text>
+          <Text numberOfLines={2} style={[styles.padIdentity, { color: theme.muted, fontSize: 9.5, lineHeight: 11.5 }]}>{quickAction === 'device-audio' ? 'Record device audio' : quickAction === 'record' ? 'Record microphone' : quickAction === 'file' ? 'Import audio or video' : 'Open library'}</Text>
         </Pressable>
         {editing ? <Pressable onPress={() => openPopupFromRef('quick', quickAnchor.current)} accessibilityRole="button" accessibilityLabel="Choose Quick add action" style={[styles.quickMenuButton, { backgroundColor: theme.accent }]}>
           <Icon name="chevron" size={16} color="#fff" />
@@ -414,8 +422,9 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
               {popupRow('Stop playback', 'stop', () => { stop(); setPopup(null); })}
             </> : null}
             {popup.kind === 'quick' ? <>
-              {popupRow('Record new sound', 'mic', () => chooseQuickAction('record'), false, quickAction === 'record')}
-              {popupRow('Choose local file', 'file', () => chooseQuickAction('file'), false, quickAction === 'file')}
+              {popupRow('Record device audio', 'music', () => chooseQuickAction('device-audio'), false, quickAction === 'device-audio')}
+              {popupRow('Record microphone', 'mic', () => chooseQuickAction('record'), false, quickAction === 'record')}
+              {popupRow('Import audio or video', 'file', () => chooseQuickAction('file'), false, quickAction === 'file')}
               {popupRow('Open library', 'library', () => chooseQuickAction('library'), false, quickAction === 'library')}
             </> : null}
             {popup.kind === 'pad' ? <>

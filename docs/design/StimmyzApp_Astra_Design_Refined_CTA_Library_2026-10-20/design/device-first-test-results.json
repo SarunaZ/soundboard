@@ -1,0 +1,52 @@
+{
+  "quick_add_first": true,
+  "quick_add_default": true,
+  "quick_add_has_no_arrow_in_normal_mode": true,
+  "nav_icon_size": "29px",
+  "quick_arrow_only_in_edit": true,
+  "quick_choices": [
+    "Record device audio",
+    "Record microphone",
+    "Import audio or video",
+    "Open library"
+  ],
+  "has_four_quick_choices": true,
+  "pad_menu_items": [
+    "Replace sound",
+    "Rename",
+    "Move to board",
+    "Clear pad"
+  ],
+  "pad_menu_operable": true,
+  "library_menu_items": [
+    "Play",
+    "Rename",
+    "Change artwork",
+    "Add to board",
+    "Delete"
+  ],
+  "library_menu_operable": true,
+  "main_cta": "Record device audio",
+  "secondary_methods": [
+    "Record your voice",
+    "Import audio or video"
+  ],
+  "device_first_editor": true,
+  "active_device_recording": true,
+  "device_capture_to_trim": true,
+  "waveform_drag": true,
+  "customize_step": true,
+  "saved_sound_visible": true,
+  "quick_add_persists_after_save": true,
+  "library_cta": "Record device audio",
+  "source_order": [
+    "Record device audio FEATURED",
+    "Record your voice",
+    "Import audio or video"
+  ],
+  "source_device_first": true,
+  "featured_source_starts_Vanilla": true,
+  "featured_source_starts_Coffee": true,
+  "no_360_width_overflow": true,
+  "js_errors": []
+}

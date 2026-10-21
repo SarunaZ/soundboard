@@ -11,8 +11,8 @@ export function formatTime(milliseconds: number): string {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
 }
 
-export function Waveform({ peaks, durationMs, startMs, endMs, onChange, theme }: {
-  peaks: number[]; durationMs: number; startMs: number; endMs: number; onChange: (start: number, end: number) => void; theme: Theme;
+export function Waveform({ peaks, durationMs, startMs, endMs, previewPositionMs, previewActive = false, onChange, theme }: {
+  peaks: number[]; durationMs: number; startMs: number; endMs: number; previewPositionMs?: number | null; previewActive?: boolean; onChange: (start: number, end: number) => void; theme: Theme;
 }) {
   const { fontScale } = useWindowDimensions();
   const [width, setWidth] = useState(1);
@@ -45,6 +45,10 @@ export function Waveform({ peaks, durationMs, startMs, endMs, onChange, theme }:
   }) : Array.from({ length: 64 }, () => 0.08);
   const startX = timeToPosition(startMs, durationMs, width);
   const endX = timeToPosition(endMs, durationMs, width);
+  const selectedColor = theme.name === 'Coffee' ? theme.primary : theme.focus;
+  const playedColor = theme.name === 'Coffee' ? theme.focus : theme.primary;
+  const playheadMs = previewPositionMs == null ? startMs : Math.max(startMs, Math.min(endMs, previewPositionMs));
+  const playheadX = timeToPosition(playheadMs, durationMs, width);
   const stackedTimes = fontScale > 1.2 || width < 300;
   return <View>
     <View onLayout={(event) => setWidth(Math.max(1, event.nativeEvent.layout.width))} {...pan.panHandlers}
@@ -55,8 +59,10 @@ export function Waveform({ peaks, durationMs, startMs, endMs, onChange, theme }:
       <View pointerEvents="none" style={styles.bars}>{bars.map((peak, index) => {
         const ratio = (index + 0.5) / bars.length;
         const selected = ratio >= startMs / durationMs && ratio <= endMs / durationMs;
-        return <View key={index} style={[styles.bar, { height: `${Math.max(8, peak * 90)}%`, backgroundColor: selected ? theme.focus : theme.muted }]} />;
+        const played = selected && previewActive && ratio <= playheadMs / durationMs;
+        return <View key={index} style={[styles.bar, { height: `${Math.max(8, peak * 90)}%`, backgroundColor: played ? playedColor : selected ? selectedColor : theme.muted }]} />;
       })}</View>
+      {previewActive ? <View pointerEvents="none" style={[styles.playhead, { left: playheadX, backgroundColor: playedColor }]} /> : null}
       <View pointerEvents="none" style={[styles.handle, { left: startX, backgroundColor: theme.primary }]}><View style={[styles.grip, { backgroundColor: '#ffffff' }]} /></View>
       <View pointerEvents="none" style={[styles.handle, { left: endX, backgroundColor: theme.primary }]}><View style={[styles.grip, { backgroundColor: '#ffffff' }]} /></View>
     </View>
@@ -77,6 +83,7 @@ const styles = StyleSheet.create({
   bars: { height: '76%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', gap: 2 },
   bar: { flex: 1, minWidth: 1, borderRadius: 2, opacity: 0.92 },
   handle: { position: 'absolute', top: 0, bottom: 0, width: 18, marginLeft: -9, borderRadius: 8, alignItems: 'center', justifyContent: 'center', zIndex: 2, borderWidth: 1, borderColor: '#f2d6ff' },
+  playhead: { position: 'absolute', top: 8, bottom: 8, width: 3, marginLeft: -1.5, opacity: 0.95, zIndex: 1, borderRadius: 2 },
   grip: { width: 4, height: 38, borderRadius: 3 },
   timeText: { fontSize: 12, fontWeight: '700' },
   times: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 9, marginBottom: 17, alignItems: 'center', gap: 4 },

@@ -82,6 +82,57 @@ export function commitImportedClip(entry: SavedClip): LocalClip {
   return { ...validated, extension: validated.extension ?? 'm4a', uri: file.uri, missing: false };
 }
 
+export interface PreparedClipImport {
+  entries: SavedClip[];
+  skipped: number;
+}
+
+/** Check capacity and private paths before the transfer starts writing any files. */
+export function prepareImportedClips(entries: readonly SavedClip[]): PreparedClipImport {
+  const validated = parseClipCatalog({ version: 1, clips: [...entries] }).clips;
+  const catalog = readCatalog();
+  const existingIds = new Set(catalog.clips.map((clip) => clip.id));
+  const seen = new Set<string>();
+  const additions = validated.filter((clip) => {
+    if (existingIds.has(clip.id) || seen.has(clip.id)) return false;
+    seen.add(clip.id);
+    return true;
+  });
+  const skipped = validated.length - additions.length;
+  if (catalog.clips.length + additions.length > MAX_SOUNDBITES) {
+    throw new Error(`The library can hold up to ${MAX_SOUNDBITES} soundbites. Remove some sounds before importing this folder.`);
+  }
+
+  const destinations = additions.map((clip) => ({ clip, file: audioFile(clip.id, clip.extension ?? 'm4a') }));
+  for (const { clip, file } of destinations) {
+    if (file.exists) throw new Error(`A private audio file already exists for “${clip.title}”. The import was stopped to protect it.`);
+  }
+  return { entries: additions, skipped };
+}
+
+/** Commit a completed folder import in one catalog snapshot, preserving existing order. */
+export function commitImportedClips(prepared: PreparedClipImport): { imported: LocalClip[]; skipped: number } {
+  const additions = parseClipCatalog({ version: 1, clips: [...prepared.entries] }).clips;
+  const catalog = readCatalog();
+  const existingIds = new Set(catalog.clips.map((clip) => clip.id));
+  if (additions.some((clip) => existingIds.has(clip.id))) throw new Error('The Library changed during import. Try importing the folder again.');
+  if (catalog.clips.length + additions.length > MAX_SOUNDBITES) {
+    throw new Error(`The library can hold up to ${MAX_SOUNDBITES} soundbites. Remove some sounds before importing this folder.`);
+  }
+  const destinations = additions.map((clip) => ({ clip, file: audioFile(clip.id, clip.extension ?? 'm4a') }));
+  for (const { clip, file } of destinations) {
+    if (!file.exists || file.size <= 0) throw new Error(`The copied audio for “${clip.title}” is missing or empty.`);
+  }
+
+  // Existing entries stay in place; transferred entries follow in manifest order.
+  const next = parseClipCatalog({ version: 1, clips: [...catalog.clips, ...additions] });
+  persistCatalog(next);
+  return {
+    imported: destinations.map(({ clip, file }) => ({ ...clip, extension: clip.extension ?? 'm4a', uri: file.uri, missing: false })),
+    skipped: prepared.skipped,
+  };
+}
+
 export function renameLocalClip(id: string, title: string): void {
   persistCatalog(renameClip(readCatalog(), id, title));
 }

@@ -74,6 +74,57 @@ test('catalog commits and renames are durable and use the Play-only directory', 
   assert.equal(h.state.files.has('file:///documents/local-clips/catalog.json'), false);
 });
 
+test('folder batch appends in manifest order, skips UUID duplicates, and preserves existing clips', async (t) => {
+  const h = await harness(t);
+  const { library } = await h.load();
+  const first = clip(id, 'Existing');
+  h.state.files.set(`file:///documents/play-library/${id}.wav`, 'existing audio');
+  library.commitImportedClip(first);
+  const secondId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const thirdId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const additions = [clip(id, 'Duplicate'), clip(secondId, 'Second'), clip(thirdId, 'Third')];
+  const prepared = library.prepareImportedClips(additions);
+  assert.equal(prepared.skipped, 1);
+  assert.deepEqual(prepared.entries.map((entry) => entry.id), [secondId, thirdId]);
+  h.state.files.set(`file:///documents/play-library/${secondId}.wav`, 'second audio');
+  h.state.files.set(`file:///documents/play-library/${thirdId}.wav`, 'third audio');
+  const committed = library.commitImportedClips(prepared);
+  assert.deepEqual(committed.imported.map((entry) => entry.id), [secondId, thirdId]);
+  assert.equal(committed.skipped, 1);
+  assert.deepEqual(library.loadLocalClips().map((entry) => entry.title), ['Existing', 'Second', 'Third']);
+});
+
+test('folder batch checks total capacity before writing and protects orphan destination files', async (t) => {
+  const h = await harness(t);
+  const { library } = await h.load();
+  const ids = Array.from({ length: 1000 }, (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`);
+  const catalog = { version: 1, clips: ids.map((clipId) => clip(clipId, `Sound ${clipId}`)) };
+  h.state.files.set('file:///documents/play-library/catalog.json', JSON.stringify(catalog));
+  assert.throws(() => library.prepareImportedClips([clip('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'Extra')]), /up to 1000/);
+  const orphanId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+  h.state.files.set(`file:///documents/play-library/${orphanId}.wav`, 'orphan bytes');
+  h.state.files.set('file:///documents/play-library/catalog.json', JSON.stringify({ version: 1, clips: [] }));
+  assert.throws(() => library.prepareImportedClips([clip(orphanId, 'Orphan collision')]), /already exists/);
+  assert.equal(h.state.files.get(`file:///documents/play-library/${orphanId}.wav`), 'orphan bytes');
+});
+
+test('failed folder catalog commit retains the old catalog for caller rollback', async (t) => {
+  const h = await harness(t);
+  const { library } = await h.load();
+  h.state.files.set(`file:///documents/play-library/${id}.wav`, 'original');
+  library.commitImportedClip(clip(id, 'Original'));
+  const newId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const prepared = library.prepareImportedClips([clip(newId, 'New')]);
+  h.state.files.set(`file:///documents/play-library/${newId}.wav`, 'copied');
+  const before = h.state.files.get('file:///documents/play-library/catalog.json');
+  h.state.failMoveTo = 'file:///documents/play-library/catalog.json';
+  assert.throws(() => library.commitImportedClips(prepared), /Simulated move failure/);
+  h.state.failMoveTo = null;
+  assert.equal(h.state.files.get('file:///documents/play-library/catalog.json'), before);
+  assert.equal(library.loadLocalClips().length, 1);
+  assert.equal(h.state.files.get(`file:///documents/play-library/${newId}.wav`), 'copied');
+});
+
 test('v1 artwork metadata is path-safe, resolves locally, and missing previews fall back cleanly', async (t) => {
   const h = await harness(t);
   const { library, presentation } = await h.load();
@@ -131,23 +182,31 @@ test('board collection creation and active selection survive reload', async (t) 
 test('appearance and quick action preferences persist, recover from backup, and support repeated writes', async (t) => {
   const h = await harness(t);
   const { preferences: prefs } = await h.load();
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance: 'Vanilla', quickAction: 'file' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance: 'Vanilla', quickAction: 'file' });
+  assert.deepEqual(prefs.loadPlayPreferences(true), { version: 3, appearance: 'Vanilla', quickAction: 'device-audio' });
   for (const appearance of ['Peach', 'Mint', 'Snow', 'Ice', 'Vanilla', 'Coffee']) {
     prefs.savePlayPreferences({ appearance, quickAction: 'record' });
-    assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance, quickAction: 'record' });
+    assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance, quickAction: 'record' });
   }
   prefs.savePlayPreferences({ appearance: 'Mint', quickAction: 'file' });
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance: 'Mint', quickAction: 'file' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance: 'Mint', quickAction: 'file' });
+  prefs.savePlayPreferences({ appearance: 'Ice', quickAction: 'device-audio' }, true);
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance: 'Ice', quickAction: 'device-audio' });
   h.state.files.set('file:///documents/play-library/preferences.json', '{broken');
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance: 'Coffee', quickAction: 'record' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance: 'Mint', quickAction: 'file' });
 });
 
-test('legacy appearance preferences migrate without losing the saved quick action', async (t) => {
+test('legacy preferences migrate appearance without replacing any saved Quick add choice', async (t) => {
   const h = await harness(t);
   const { preferences: prefs } = await h.load();
+  for (const quickAction of ['file', 'record', 'library']) {
+    h.state.files.set('file:///documents/play-library/preferences.json', JSON.stringify({ version: 2, appearance: 'Coffee', quickAction }));
+    assert.deepEqual(prefs.loadPlayPreferences(true), { version: 3, appearance: 'Coffee', quickAction });
+    assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 3, appearance: 'Coffee', quickAction });
+  }
   h.state.files.set('file:///documents/play-library/preferences.json', JSON.stringify({ version: 1, appearance: 'dark', quickAction: 'library' }));
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 2, appearance: 'Coffee', quickAction: 'library' });
-  assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 2, appearance: 'Coffee', quickAction: 'library' });
+  assert.deepEqual(prefs.loadPlayPreferences(true), { version: 3, appearance: 'Coffee', quickAction: 'library' });
+  assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 3, appearance: 'Coffee', quickAction: 'library' });
 });
 
 test('catalog reads a valid backup after primary corruption and never resets when both copies are corrupt', async (t) => {

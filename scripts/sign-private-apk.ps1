@@ -109,7 +109,7 @@ if grep -Eiq 'CN=Android Debug|androiddebugkey|fac61745dc0903786fb9ede62a962b399
   exit 1
 fi
 badging="$(/opt/android-sdk/build-tools/36.0.0/aapt dump badging "$candidate")"
-printf '%s\n' "$badging" | grep -F "package: name='dev.sarunas.soundboard.sideload' versionCode='4' versionName='1.0.3'"
+printf '%s\n' "$badging" | grep -F "package: name='dev.sarunas.soundboard.sideload' versionCode='5' versionName='1.0.4'"
 native_code="$(printf '%s\n' "$badging" | sed -n 's/^native-code: //p')"
 if [ "$native_code" != "'arm64-v8a'" ]; then
   echo "Expected an arm64-only APK, found native-code: ${native_code:-<none>}" >&2

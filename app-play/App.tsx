@@ -9,6 +9,8 @@ import { emptyBoardCollection } from './src/data/boardModel';
 import { deleteLocalClip, loadLocalClips, renameLocalClip, setLocalClipPresentation, type LocalClip } from './src/data/library';
 import { loadPlayPreferences, savePlayPreferences } from './src/data/preferences';
 import { commitDraftArtwork, disposeDraftArtwork, type DraftArtwork } from './src/media/artwork';
+import { isDeviceAudioCaptureSupported } from './src/media/deviceAudioCapture';
+import { importSoundbites } from './src/media/soundbiteTransfer';
 import { CreateFlow, type AssignmentTarget, type InitialAction } from './src/ui/CreateFlow';
 import { ActionButton } from './src/ui/controls';
 import { BoardIcon, EditorIcon, Icon, LibraryIcon } from './src/ui/Icons';
@@ -21,7 +23,7 @@ type Page = 'board' | 'editor' | 'library';
 
 export default function App() {
   const [appearance, setAppearance] = useState<ThemeName>(() => {
-    try { return loadPlayPreferences().appearance; } catch { return 'Vanilla'; }
+    try { return loadPlayPreferences(isDeviceAudioCaptureSupported()).appearance; } catch { return 'Vanilla'; }
   });
   const { theme, isDark } = useTheme(appearance);
   const [page, setPage] = useState<Page>('board');
@@ -156,6 +158,7 @@ export default function App() {
           }} /> :
         page === 'editor' ? <EditorScreen theme={theme} onCreate={(initialAction) => startCreation(null, initialAction)} /> :
         <LibraryScreen theme={theme} clips={clips} boards={boards} assignmentTarget={assignmentTarget} onPlay={(clip) => playClip(clip)} onCreate={(initialAction) => startCreation(assignmentTarget, initialAction)}
+          onImportSoundbites={async (signal) => { const result = await importSoundbites(signal); if (result) refresh(); return result; }}
           onChangeArtwork={(clip, artwork) => { try { commitDraftArtwork(clip.id, artwork, true); refresh(); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not update this artwork.'); } finally { disposeDraftArtwork(artwork); } }}
           onRename={(clip, title) => { try { renameLocalClip(clip.id, title.trim()); refresh(); } catch (cause) { Alert.alert('Could not rename sound', cause instanceof Error ? cause.message : 'Try again.'); } }}
           onDelete={(clip) => { try { deleteLocalClip(clip.id); refresh(); } catch (cause) { Alert.alert('Could not delete sound', cause instanceof Error ? cause.message : 'Try again.'); } }}
@@ -194,7 +197,7 @@ export default function App() {
           const swatch = themes[option];
           return <Pressable key={option} accessibilityRole="button" accessibilityState={{ selected: appearance === option }} accessibilityLabel={`${option} theme${appearance === option ? ', current' : ''}`} onPress={() => {
             setAppearance(option);
-            try { const current = loadPlayPreferences(); savePlayPreferences({ ...current, appearance: option }); }
+            try { const current = loadPlayPreferences(isDeviceAudioCaptureSupported()); savePlayPreferences({ ...current, appearance: option }, isDeviceAudioCaptureSupported()); }
             catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save appearance preference.'); }
           }} style={[styles.themeChoice, { backgroundColor: theme.surfaceAlt, borderColor: appearance === option ? theme.accent : theme.border }]}>
             <View style={[styles.swatch, { backgroundColor: swatch.background }]} /><Text style={{ color: theme.text, fontWeight: '700' }}>{option}</Text>

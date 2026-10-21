@@ -44,10 +44,10 @@ test('prototype profile keeps its separate package and module plugin', () => {
 test('private profile has stable identity, fresh-data package and restrictive Android settings', () => {
   const config = resolveConfig({ privateRelease: true });
   assert.equal(config.name, 'StimyzApp');
-  assert.equal(config.version, '1.0.3');
+  assert.equal(config.version, '1.0.4');
   assert.equal(config.android.package, 'dev.sarunas.soundboard.sideload');
   assertJavaPackage(config.android.package);
-  assert.equal(config.android.versionCode, 4);
+  assert.equal(config.android.versionCode, 5);
   assert.equal(config.android.allowBackup, false);
   assert.ok(config.android.blockedPermissions.includes('android.permission.RECORD_AUDIO'));
   assert.ok(config.android.blockedPermissions.includes('android.permission.SYSTEM_ALERT_WINDOW'));

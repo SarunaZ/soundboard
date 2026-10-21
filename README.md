@@ -71,12 +71,13 @@ authoritative; remaining physical OEM and read-error checks are tracked there.
 The spike's testing build is 1.0.16/code 17, with ARM64 and x86_64 artifacts.
 
 The current visual authority for Play is the
-[Stimmyz Astra Clean Rebuild](docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/DESIGN_SOURCE_OF_TRUTH.md),
-with its [implementation guide](docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/ASTRA_IMPLEMENTATION.md),
-tokens and prototype. The earlier reviewed handoff and research audit remain
-historical planning records and are superseded for current Play visual
-decisions. Native clean-rebuild simulator verification is complete; see the
-[QA record](docs/play-clean-rebuild-2026-10-18.md).
+[October 20 device-first design](docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/DESIGN_SOURCE_OF_TRUTH.md),
+with its [implementation guide](docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/ASTRA_IMPLEMENTATION.md),
+prototype and captured previews. It preserves the six approved themes and Board
+interactions while making device recording primary, refining the Library icon
+and adding player-synchronized Trim progress. Earlier handoffs remain historical
+records. See the [October 20 implementation and QA record](docs/play-device-first-design-2026-10-20.md)
+and the [previous clean-rebuild QA](docs/play-clean-rebuild-2026-10-18.md).
 
 Build Play independently with `.\scripts\build-play-android.ps1` (or use
 `-StageOnly` to verify the source boundary without Docker). The build creates
@@ -112,8 +113,8 @@ The six Play palettes are Peach, Mint, Snow, Ice, Vanilla and Coffee; Appearance
 is reachable from the Board header options. Board and waveform Quick add can
 start Record, Choose file or Library. Quick add actions and pad overflow menus
 are anchored to their controls and remain available in the modes defined by the
-design. The Editor opens directly to its dashed file-source card and recording
-action, then uses Source → Trim → Details. Library artwork can be selected from
+design. The Editor now features Record device audio, with microphone and local
+import as secondary cards, then uses Source → Trim → Details. Library artwork can be selected from
 the device gallery or Imgflip and changed on saved clips. The simulator checks
 also covered offline relaunch, direct Quick file/record actions, large-text
 reflow, and retention of existing clips and assignments. See the complete
@@ -296,3 +297,11 @@ See the [operations notes](deploy/shared-imli/ops/README.md),
 Private, personal, non-commercial. Use YouTube sources only when you own them or
 are allowed to use them. The local editor does not bypass YouTube login, bot, or
 access restrictions; see the current-direction section in [DESIGN.md](DESIGN.md).
+
+## Transfer saved clips between apps
+
+The old app's Library offers **Export soundbites**. Choose a shared folder,
+then select the created `Soundboard-transfer-…` folder using Stimmyz's
+**Library → Import soundbites**. The transfer copies saved audio and names,
+keeps existing clips, and skips already imported IDs. Board layouts are not
+migrated. See the [transfer guide and verification](docs/soundbite-transfer.md).

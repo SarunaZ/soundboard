@@ -1,11 +1,12 @@
 import { Text, View } from 'react-native';
 
-export type IconName = 'board' | 'waveform' | 'database' | 'library' | 'controller' | 'pencil' | 'chevron' | 'close' | 'back' | 'file' | 'mic' | 'check' | 'music' | 'image' | 'search' | 'play' | 'stop' | 'plus' | 'spark' | 'sun' | 'sort' | 'more' | 'upload' | 'video';
+export type IconName = 'board' | 'waveform' | 'database' | 'library' | 'device-audio' | 'controller' | 'pencil' | 'chevron' | 'close' | 'back' | 'file' | 'mic' | 'check' | 'music' | 'image' | 'search' | 'play' | 'stop' | 'plus' | 'spark' | 'sun' | 'sort' | 'more' | 'upload' | 'video';
 
 export function Icon({ name, size = 22, color = '#FFFFFF', cutColor = '#FFFFFF' }: { name: IconName; size?: number; color?: string; cutColor?: string }) {
   if (name === 'board') return <BoardIcon size={size} color={color} />;
   if (name === 'waveform') return <EditorIcon size={size} color={color} />;
   if (name === 'database' || name === 'library') return <LibraryIcon size={size} color={color} />;
+  if (name === 'device-audio') return <DeviceAudioIcon size={size} color={color} />;
   if (name === 'search') return <SearchIcon size={size} color={color} />;
   if (name === 'mic') return <MicIcon size={size} color={color} />;
   if (name === 'upload') return <UploadIcon size={size * 1.12} color={color} />;
@@ -43,27 +44,23 @@ export function EditorIcon({ size = 29, color = '#8B5CF6' }: { size?: number; co
 }
 
 export function LibraryIcon({ size = 29, color = '#8B5CF6' }: { size?: number; color?: string }) {
-  const stroke = Math.max(1.4, size * 0.07);
-  const ellipseDiameter = size * 0.78;
-  const ellipseScale = 0.3;
-  const ellipseVisualOffset = ellipseDiameter * (1 - ellipseScale) / 2;
-  const ellipseStyle = (visualTop: number, filled = false) => ({
-    position: 'absolute' as const,
-    top: visualTop - ellipseVisualOffset,
-    width: ellipseDiameter,
-    height: ellipseDiameter,
-    borderRadius: ellipseDiameter,
-    borderWidth: stroke,
-    borderColor: color,
-    backgroundColor: filled ? color : 'transparent',
-    transform: [{ scaleY: ellipseScale }],
-  });
+  const stroke = Math.max(1.5, size * 0.075);
+  const cardWidth = size * 0.65;
+  const cardHeight = size * 0.72;
   return <View accessible={false} style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-    <View style={{ position: 'absolute', top: size * 0.26, left: (size - ellipseDiameter) / 2, width: stroke, height: size * 0.49, backgroundColor: color }} />
-    <View style={{ position: 'absolute', top: size * 0.26, right: (size - ellipseDiameter) / 2, width: stroke, height: size * 0.49, backgroundColor: color }} />
-    <View style={ellipseStyle(size * 0.13, true)} />
-    <View style={ellipseStyle(size * 0.4)} />
-    <View style={ellipseStyle(size * 0.67)} />
+    <View style={{ position: 'absolute', top: size * 0.08, left: size * 0.08, width: cardWidth, height: cardHeight, borderWidth: stroke, borderColor: color, borderRadius: size * 0.14, backgroundColor: 'transparent' }} />
+    <View style={{ position: 'absolute', top: size * 0.2, left: size * 0.25, width: cardWidth, height: cardHeight, borderWidth: stroke, borderColor: color, borderRadius: size * 0.14, backgroundColor: color }} />
+    <View style={{ position: 'absolute', top: size * 0.46, left: size * 0.49, width: 0, height: 0, borderTopWidth: size * 0.15, borderBottomWidth: size * 0.15, borderLeftWidth: size * 0.22, borderTopColor: 'transparent', borderBottomColor: 'transparent', borderLeftColor: '#FFFFFF' }} />
+  </View>;
+}
+
+export function DeviceAudioIcon({ size = 48, color = '#FFFFFF' }: { size?: number; color?: string }) {
+  const stroke = Math.max(1.7, size * 0.06);
+  return <View accessible={false} style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ position: 'absolute', width: size * 0.43, height: size * 0.78, borderWidth: stroke, borderColor: color, borderRadius: size * 0.11 }} />
+    <View style={{ position: 'absolute', bottom: size * 0.15, width: size * 0.09, height: size * 0.09, borderRadius: size, backgroundColor: color }} />
+    <View style={{ position: 'absolute', right: size * 0.07, width: size * 0.19, height: size * 0.38, borderRightWidth: stroke, borderColor: color, borderRadius: size, transform: [{ scaleX: 0.75 }] }} />
+    <View style={{ position: 'absolute', right: -size * 0.015, width: size * 0.28, height: size * 0.62, borderRightWidth: stroke, borderColor: color, borderRadius: size, transform: [{ scaleX: 0.75 }] }} />
   </View>;
 }
 

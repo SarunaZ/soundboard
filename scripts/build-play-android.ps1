@@ -54,6 +54,7 @@ $sharedLeaves = @(
   'app-client/src/audio/playbackState.ts',
   'app-client/src/editor/catalog.ts',
   'app-client/src/editor/importValidation.ts',
+  'app-client/src/transfer/folderTransfer.ts',
   'app-client/src/editor/localAudioPcm.ts',
   'app-client/src/limits.ts',
   'app-client/src/keyboard/keyboardGeometry.ts',
@@ -295,6 +296,7 @@ printf 'applicationId=%s\nversionName=%s\nversionCode=%s\nsigned=false\nallowBac
 printf 'sourceStageVerified=true\nextractorSourceOrBinaryMarkers=absent\nnativeModuleAutolinking=device-audio-only\n' >> /workspace/artifacts/release-info.txt
 sha256sum /workspace/artifacts/native-autolinking-files.txt /workspace/artifacts/native-autolinking-sha256.txt /workspace/artifacts/release-info.txt >> /workspace/artifacts/SHA256SUMS
 '@
+$containerBuild = [regex]::Replace($containerBuild, "`r`n?", "`n")
 $dockerArgs = @(
   'run', '--rm',
   '-e', 'EXPO_NO_DOTENV=1',

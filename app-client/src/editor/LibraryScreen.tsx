@@ -1,6 +1,6 @@
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { Pad } from '../pads';
 import type { BoardAssignments } from '../board/assignments';
@@ -11,6 +11,7 @@ import { MAX_SOUNDBITES } from '../limits';
 import { normalizeClipTitle } from './catalog';
 import { formatTime } from './WaveformRange';
 import { useKeyboardInputReveal } from '../keyboard/useKeyboardInputReveal';
+import { exportClipsToFolder } from '../transfer/folderTransfer';
 
 interface LibraryScreenProps {
   onBack: () => void;
@@ -40,6 +41,8 @@ export function LibraryScreen({
   const player = useAudioPlayer(null, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [pickerClip, setPickerClip] = useState<LocalClip | null>(null);
   const [query, setQuery] = useState('');
@@ -49,6 +52,8 @@ export function LibraryScreen({
   const listRef = useRef<FlatList<LocalClip>>(null);
   const renameScrollRef = useRef<ScrollView>(null);
   const renameInputRef = useRef<TextInput>(null);
+  const exportController = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
   const keyboardReveal = useKeyboardInputReveal(renameScrollRef, Platform.OS === 'android' && Boolean(renameClip));
   const filteredClips = filterSoundbites(clips, query);
   const originalIndexes = new Map(clips.map((clip, index) => [clip.id, index]));
@@ -64,6 +69,11 @@ export function LibraryScreen({
       subscription.remove();
     };
   }, [player]);
+
+  useEffect(() => () => {
+    mounted.current = false;
+    exportController.current?.abort();
+  }, []);
 
   useEffect(() => {
     if (status.error) setError(`Audio playback failed: ${status.error}`);
@@ -86,6 +96,29 @@ export function LibraryScreen({
       setPlayingId(clip.id);
     } catch {
       setError(`Could not play “${clip.title}”. The audio file may be damaged.`);
+    }
+  };
+
+  const startExport = async () => {
+    if (exporting || clips.length === 0) return;
+    const controller = new AbortController();
+    exportController.current = controller;
+    setError('');
+    setNotice('');
+    setExporting(true);
+    try {
+      try { player.pause(); } catch { /* The player may be releasing during navigation. */ }
+      setPlayingId(null);
+      const result = await exportClipsToFolder(clips, controller.signal);
+      if (!mounted.current) return;
+      if (result) setNotice(`Exported ${result.count} soundbites to a new folder.`);
+    } catch (cause) {
+      if (mounted.current && !controller.signal.aborted) {
+        setError(cause instanceof Error ? cause.message : 'Could not export the soundbites. Try again.');
+      }
+    } finally {
+      if (exportController.current === controller) exportController.current = null;
+      if (mounted.current) setExporting(false);
     }
   };
 
@@ -151,12 +184,26 @@ export function LibraryScreen({
         ListHeaderComponent={(
           <View style={styles.listHeader}>
             {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+            {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
             {assignmentError ? <Text accessibilityRole="alert" style={styles.error}>Board assignments could not be read. The damaged state was preserved, so assignment controls are paused. {assignmentError}</Text> : null}
             <View style={styles.editPanel}>
               <Pressable accessibilityRole="button" accessibilityLabel="Edit an audio file from this device" onPress={onOpenEditor} style={styles.editFileButton}>
                 <Text style={styles.editFileButtonText}>EDIT A DEVICE FILE</Text>
               </Pressable>
               <Text style={styles.editHelp}>Choose a file in the editor, trim a selection, then save it to this library.</Text>
+            </View>
+            <View style={styles.exportPanel}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Export soundbites"
+                accessibilityState={{ disabled: clips.length === 0 || exporting }}
+                disabled={clips.length === 0 || exporting}
+                onPress={() => void startExport()}
+                style={[styles.exportButton, (clips.length === 0 || exporting) && styles.disabled]}
+              >
+                <Text style={styles.exportButtonText}>EXPORT SOUNDBITES</Text>
+              </Pressable>
+              <Text style={styles.exportHelp}>Choose a shared folder. We’ll create a uniquely named folder inside it and copy every saved soundbite with its name.</Text>
             </View>
             <View style={styles.searchBlock}>
               <View style={styles.searchRow}>
@@ -290,6 +337,24 @@ export function LibraryScreen({
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
+      <Modal
+        visible={exporting}
+        transparent
+        animationType="fade"
+        onRequestClose={() => exportController.current?.abort()}
+        accessibilityViewIsModal
+      >
+        <View style={styles.exportScrim}>
+          <View style={styles.exportProgressPanel}>
+            <ActivityIndicator color="#9ef0d2" size="large" />
+            <Text accessibilityRole="header" style={styles.exportProgressHeading}>Exporting soundbites</Text>
+            <Text accessibilityLiveRegion="polite" style={styles.exportProgressCopy}>Copying {clips.length} saved soundbites to the shared folder. Your library stays unchanged.</Text>
+            <Pressable accessibilityRole="button" onPress={() => exportController.current?.abort()} style={styles.exportCancel}>
+              <Text style={styles.exportCancelText}>CANCEL EXPORT</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -316,6 +381,11 @@ const styles = StyleSheet.create({
   editFileButton: { borderRadius: 11, paddingVertical: 15, alignItems: 'center', backgroundColor: '#315747' },
   editFileButtonText: { color: '#d6ffed', fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
   editHelp: { color: '#91a49b', fontSize: 10, lineHeight: 15, textAlign: 'center' },
+  exportPanel: { borderRadius: 15, backgroundColor: '#20262c', borderWidth: 1, borderColor: '#39444c', padding: 13, gap: 8 },
+  exportButton: { borderRadius: 11, paddingVertical: 15, alignItems: 'center', backgroundColor: '#354653' },
+  exportButtonText: { color: '#d8efff', fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
+  exportHelp: { color: '#9ba9b1', fontSize: 10, lineHeight: 15, textAlign: 'center' },
+  notice: { color: '#a4e8ce', fontSize: 13, lineHeight: 20, backgroundColor: '#1c3029', borderRadius: 10, padding: 12 },
   clipRow: { borderRadius: 14, overflow: 'hidden', backgroundColor: '#1a1e23', borderWidth: 1, borderColor: '#272e33' },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 11, paddingTop: 12, paddingBottom: 8, gap: 10, minHeight: 62 },
   rowActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 12, paddingBottom: 9 },
@@ -345,6 +415,12 @@ const styles = StyleSheet.create({
   error: { color: '#ff9ba7', fontSize: 13, lineHeight: 20, backgroundColor: '#361f25', borderRadius: 10, padding: 12 },
   storage: { color: '#667178', fontSize: 10, lineHeight: 16, textAlign: 'center', paddingHorizontal: 18, paddingTop: 10 },
   modalScrim: { flex: 1, paddingHorizontal: 20, backgroundColor: 'rgba(0,0,0,0.72)' },
+  exportScrim: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, backgroundColor: 'rgba(0,0,0,0.76)' },
+  exportProgressPanel: { alignItems: 'center', borderRadius: 18, padding: 22, backgroundColor: '#1a1e23', borderWidth: 1, borderColor: '#343b40', gap: 14 },
+  exportProgressHeading: { color: '#f4f5f6', fontSize: 19, fontWeight: '700' },
+  exportProgressCopy: { color: '#a1adb3', fontSize: 12, lineHeight: 19, textAlign: 'center' },
+  exportCancel: { minHeight: 44, paddingHorizontal: 16, borderRadius: 10, backgroundColor: '#302428', alignItems: 'center', justifyContent: 'center' },
+  exportCancelText: { color: '#e6a4ab', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   renameScroll: { flex: 1 },
   renameScrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 20 },
   renamePanel: { borderRadius: 18, padding: 18, backgroundColor: '#1a1e23', borderWidth: 1, borderColor: '#343b40', gap: 10 },
