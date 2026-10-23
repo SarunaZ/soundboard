@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Alert, AppState, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { ReactNode } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { play, stop } from '../app-client/src/audio/engine';
+import { getClipPlaybackPreference } from './src/data/clipPlayback';
+import { getPlaybackSnapshot, play, setMasterVolume, stop, subscribePlayback, type PlaybackSnapshot } from './src/media/playbackEngine';
 import { addClipToBoard, loadBoards, type BoardCollection } from './src/data/boards';
 import { emptyBoardCollection } from './src/data/boardModel';
 import { deleteLocalClip, loadLocalClips, renameLocalClip, setLocalClipPresentation, type LocalClip } from './src/data/library';
@@ -17,7 +18,10 @@ import { BoardIcon, EditorIcon, Icon, LibraryIcon } from './src/ui/Icons';
 import { BoardScreen } from './src/ui/BoardScreen';
 import { EditorScreen } from './src/ui/EditorScreen';
 import { LibraryScreen } from './src/ui/LibraryScreen';
-import { themeNames, themes, useTheme, type ThemeName } from './src/ui/theme';
+import { BrandHeader } from './src/ui/BrandHeader';
+import { useTheme, type ThemeName } from './src/ui/theme';
+import { SettingsModal } from './src/ui/SettingsModal';
+import { ClipPlaybackOptionsModal } from './src/ui/ClipPlaybackOptionsModal';
 
 type Page = 'board' | 'editor' | 'library';
 
@@ -30,16 +34,22 @@ export default function App() {
   const [boards, setBoards] = useState<BoardCollection>(() => emptyBoardCollection());
   const [clips, setClips] = useState<LocalClip[]>([]);
   const [dataReady, setDataReady] = useState(false);
+  const [playback, setPlayback] = useState<PlaybackSnapshot>(() => getPlaybackSnapshot());
   const [flow, setFlow] = useState<{ target: AssignmentTarget; key: number; initialAction?: InitialAction } | null>(null);
   const [assignmentTarget, setAssignmentTarget] = useState<AssignmentTarget>(null);
   const [retry, setRetry] = useState<{ clip: LocalClip; target: AssignmentTarget } | null>(null);
   const [error, setError] = useState('');
-  const [appearanceMenu, setAppearanceMenu] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [playbackSoundId, setPlaybackSoundId] = useState<string | null>(null);
+  const [dataRevision, setDataRevision] = useState(0);
   const [appOptionsMenu, setAppOptionsMenu] = useState(false);
   const [appOptionsPosition, setAppOptionsPosition] = useState({ left: 0, top: 0 });
   const [newBoardRequest, setNewBoardRequest] = useState(0);
+  const [pendingNewBoard, setPendingNewBoard] = useState(false);
   const appOptionsButton = useRef<View>(null);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const closePlaybackOptions = useCallback(() => setPlaybackSoundId(null), []);
 
   const refresh = useCallback(() => {
     try { setBoards(loadBoards()); setClips(loadLocalClips()); setDataReady(true); }
@@ -47,6 +57,18 @@ export default function App() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!dataReady || page !== 'board' || !pendingNewBoard) return;
+    setNewBoardRequest((request) => request + 1);
+    setPendingNewBoard(false);
+  }, [dataReady, page, pendingNewBoard]);
+  useEffect(() => { try { setMasterVolume(loadPlayPreferences(isDeviceAudioCaptureSupported()).masterVolume); } catch { setMasterVolume(1); } }, []);
+  useEffect(() => subscribePlayback(setPlayback), []);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => { if (state !== 'active') stop(); });
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => () => stop(), []);
 
   const updateBoards = useCallback((next: BoardCollection) => {
     setBoards(next);
@@ -68,14 +90,26 @@ export default function App() {
 
   const startCreation = useCallback((target: AssignmentTarget, initialAction?: InitialAction) => {
     if (!dataReady) { setError('Load your Play data before creating a sound.'); return; }
+    stop();
     setFlow({ target, key: Date.now(), initialAction });
   }, [dataReady]);
   const cancelCreation = useCallback(() => { setFlow(null); refresh(); }, [refresh]);
 
-  const playClip = useCallback((clip: LocalClip, padId?: string) => {
+  const playClip = useCallback((clip: LocalClip, padId?: string, boardId?: string) => {
     if (clip.missing) { setError('This sound file is unavailable. Remove it from Library and import it again.'); return; }
-    void play(clip.uri, padId ?? clip.id).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not play this sound.'));
-  }, []);
+    try {
+      const preference = getClipPlaybackPreference(clip.id);
+      const board = boardId ? boards.boards.find((item) => item.id === boardId) : undefined;
+      void play(clip.uri, padId ?? clip.id, { soundId: clip.id, gain: preference.gain, repeat: preference.repeat, allowOverlap: board?.allowOverlap }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Could not play this sound.'));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not read playback options for this sound.'); }
+  }, [boards]);
+
+  const applyRestoredSettings = useCallback(() => {
+    refresh();
+    try { const preferences = loadPlayPreferences(isDeviceAudioCaptureSupported()); setAppearance(preferences.appearance); setMasterVolume(preferences.masterVolume); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not reload restored settings.'); }
+    setDataRevision((revision) => revision + 1);
+  }, [refresh]);
 
   const completeSave = useCallback(async (clip: LocalClip, target: AssignmentTarget, artwork?: DraftArtwork): Promise<boolean> => {
     let presentationSaved = true;
@@ -132,13 +166,10 @@ export default function App() {
   return <SafeAreaProvider><SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
     <StatusBar style={isDark ? 'light' : 'dark'} />
     <View style={styles.shell}>
-      {page === 'board' ? <View style={styles.topBar}>
-        <View><Text accessibilityLabel="Stimmyz" style={styles.brand}>{'Stimmyz'.split('').map((letter, index) => <Text key={index} style={{ color: ['#D12DF1', '#B743F5', '#9846F8', '#773FF7', '#4A54F8', '#087DFF', '#087DFF'][index] }}>{letter}</Text>)}<Text style={styles.brandSparkle}>{' ✦'}</Text></Text><Text style={{ color: theme.text, fontSize: 19, lineHeight: 23, fontWeight: '700', includeFontPadding: false, marginTop: 4, marginBottom: 0 }}>Soundboard</Text></View>
-        <Pressable ref={appOptionsButton} accessibilityRole="button" accessibilityLabel="App options" onPress={toggleAppOptions} style={styles.optionsButton}>
-          <Icon name="more" size={21} color={theme.text} />
-        </Pressable>
-      </View> : null}
+      <BrandHeader theme={theme} title={page === 'board' ? 'Soundboard' : undefined} optionsButtonRef={appOptionsButton} onOptions={toggleAppOptions} hidden={settingsVisible} />
 
+      <View style={{ flex: 1 }}>
+      <View style={[{ flex: 1 }, settingsVisible && { display: 'none' }]} collapsable={false} pointerEvents={settingsVisible ? 'none' : 'auto'} accessibilityElementsHidden={settingsVisible} importantForAccessibility={settingsVisible ? 'no-hide-descendants' : 'auto'}>
       {error ? <View style={[styles.notice, { borderColor: retry ? theme.danger : theme.border, backgroundColor: theme.surface }]}>
         <Text accessibilityLiveRegion="polite" style={{ color: theme.text, flex: 1 }}>{error}</Text>
         {retry ? <Pressable accessibilityRole="button" onPress={retryAssignment} style={[styles.retryButton, { backgroundColor: theme.danger }]}><Text style={{ color: '#fff', fontWeight: '800' }}>Retry</Text></Pressable> : null}
@@ -147,17 +178,17 @@ export default function App() {
 
       {!dataReady ? <View style={styles.loadError}><Text style={{ color: theme.text, fontSize: 17, fontWeight: '800' }}>Your local library could not be opened.</Text>
         <Text style={{ color: theme.muted }}>{error || 'Try loading your Play data again.'}</Text><ActionButton label="Retry loading" onPress={refresh} theme={theme} variant="primary" /></View>
-        : page === 'board' ? <BoardScreen theme={theme} collection={boards} clips={clips} onChange={updateBoards} newBoardRequest={newBoardRequest}
+        : page === 'board' ? <BoardScreen key={dataRevision} theme={theme} collection={boards} clips={clips} onChange={updateBoards} newBoardRequest={newBoardRequest}
         onPlay={playClip} onCreate={(boardId, padId, initialAction) => {
           const expectedClipId = padId === undefined ? undefined : boards.boards.find((board) => board.id === boardId)?.pads.find((pad) => pad.id === padId)?.clipId;
           startCreation({ boardId, padId, expectedClipId }, initialAction);
-        }} onAddClip={() => startCreation(null)} onAppearance={() => setAppearanceMenu(true)}
+        }} onAddClip={() => startCreation(null)} onAppearance={() => setSettingsVisible(true)} onPlaybackOptions={(soundId) => setPlaybackSoundId(soundId)}
           onOpenLibrary={(target) => {
             const expectedClipId = target?.padId === undefined ? undefined : boards.boards.find((board) => board.id === target.boardId)?.pads.find((pad) => pad.id === target.padId)?.clipId;
             setAssignmentTarget(target ? { ...target, expectedClipId } : null); setPage('library');
           }} /> :
         page === 'editor' ? <EditorScreen theme={theme} onCreate={(initialAction) => startCreation(null, initialAction)} /> :
-        <LibraryScreen theme={theme} clips={clips} boards={boards} assignmentTarget={assignmentTarget} onPlay={(clip) => playClip(clip)} onCreate={(initialAction) => startCreation(assignmentTarget, initialAction)}
+        <LibraryScreen theme={theme} clips={clips} boards={boards} assignmentTarget={assignmentTarget} onPlay={(clip) => playClip(clip)} onCreate={(initialAction) => startCreation(assignmentTarget, initialAction)} onPlaybackOptions={(clip) => setPlaybackSoundId(clip.id)}
           onImportSoundbites={async (signal) => { const result = await importSoundbites(signal); if (result) refresh(); return result; }}
           onChangeArtwork={(clip, artwork) => { try { commitDraftArtwork(clip.id, artwork, true); refresh(); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not update this artwork.'); } finally { disposeDraftArtwork(artwork); } }}
           onRename={(clip, title) => { try { renameLocalClip(clip.id, title.trim()); refresh(); } catch (cause) { Alert.alert('Could not rename sound', cause instanceof Error ? cause.message : 'Try again.'); } }}
@@ -168,67 +199,50 @@ export default function App() {
             if (target.padId !== undefined && target.expectedClipId !== undefined && current !== target.expectedClipId) throw new Error('The selected pad changed while you were browsing. Review the pad before trying again.');
             setBoards(addClipToBoard(clip.id, target.boardId, target.padId)); setPage('board'); setAssignmentTarget(null); setError('');
           } catch (cause) { setError(cause instanceof Error ? cause.message : target.padId ? 'Could not add this sound to the selected pad.' : 'Could not add this sound to the board.'); } }} />}
+      </View>
+      </View>
 
+      <SettingsModal visible={settingsVisible} theme={theme} appearance={appearance} bottomInset={78 + (playback.active ? 48 + 14 : 0)} onBusyChange={setSettingsBusy} onClose={() => setSettingsVisible(false)} onDataChanged={applyRestoredSettings}
+        onAppearanceChange={(option) => { setAppearance(option); try { savePlayPreferences({ appearance: option }, isDeviceAudioCaptureSupported()); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save appearance preference.'); } }} />
+
+      {playback.active ? <Pressable accessibilityRole="button" accessibilityLabel="Stop all sounds" onPress={stop} style={[styles.stopAll, { backgroundColor: theme.surface, borderColor: theme.danger }]}><Icon name="stop" size={17} color={theme.danger} /><Text style={{ color: theme.danger, fontWeight: '800', fontSize: 12 }}>Stop all</Text></Pressable> : null}
       {dataReady ? <View style={[styles.bottomBar, { backgroundColor: theme.navSurface, borderColor: theme.border }]}>
-        <NavButton label="Board" active={page === 'board'} theme={theme} onPress={() => { setAssignmentTarget(null); setPage('board'); }}><BoardIcon size={29} color={page === 'board' ? theme.accent : theme.muted} /></NavButton>
-        <NavButton label="Editor" active={page === 'editor'} theme={theme} onPress={() => { setAssignmentTarget(null); setPage('editor'); }}><EditorIcon size={29} color={page === 'editor' ? theme.accent : theme.muted} /></NavButton>
-        <NavButton label="Library" active={page === 'library'} theme={theme} onPress={() => { setAssignmentTarget(null); setPage('library'); }}><LibraryIcon size={29} color={page === 'library' ? theme.accent : theme.muted} /></NavButton>
+        <NavButton label="Board" active={page === 'board'} theme={theme} disabled={settingsVisible && settingsBusy} onPress={() => { if (settingsBusy) return; setSettingsVisible(false); setAssignmentTarget(null); setPage('board'); }}><BoardIcon size={29} color={page === 'board' ? theme.accent : theme.muted} /></NavButton>
+        <NavButton label="Editor" active={page === 'editor'} theme={theme} disabled={settingsVisible && settingsBusy} onPress={() => { if (settingsBusy) return; setSettingsVisible(false); setAssignmentTarget(null); setPage('editor'); }}><EditorIcon size={29} color={page === 'editor' ? theme.accent : theme.muted} /></NavButton>
+        <NavButton label="Library" active={page === 'library'} theme={theme} disabled={settingsVisible && settingsBusy} onPress={() => { if (settingsBusy) return; setSettingsVisible(false); setAssignmentTarget(null); setPage('library'); }}><LibraryIcon size={29} color={page === 'library' ? theme.accent : theme.muted} /></NavButton>
       </View> : null}
     </View>
     <Modal visible={appOptionsMenu} transparent animationType="none" statusBarTranslucent onRequestClose={() => setAppOptionsMenu(false)}>
       <View style={styles.appOptionsRoot}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => setAppOptionsMenu(false)} accessibilityRole="button" accessibilityLabel="Close app options" />
         <View style={[styles.optionsMenu, { left: appOptionsPosition.left, top: appOptionsPosition.top, backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Pressable accessibilityRole="button" onPress={() => { setAppOptionsMenu(false); setAppearanceMenu(true); }} style={styles.optionsRow}>
-            <Icon name="spark" size={17} color={theme.accent} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Choose theme</Text>
+          <Pressable accessibilityRole="button" onPress={() => { setAppOptionsMenu(false); setSettingsVisible(true); }} style={styles.optionsRow}>
+            <Icon name="spark" size={17} color={theme.accent} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Settings</Text>
           </Pressable>
           <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: theme.border }} />
-          <Pressable accessibilityRole="button" onPress={() => { setAppOptionsMenu(false); setNewBoardRequest((request) => request + 1); }} style={styles.optionsRow}>
+          <Pressable accessibilityRole="button" onPress={() => { setAppOptionsMenu(false); setAssignmentTarget(null); setPendingNewBoard(true); setPage('board'); }} style={styles.optionsRow}>
             <Icon name="plus" size={17} color={theme.accent} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>New board</Text>
           </Pressable>
         </View>
       </View>
     </Modal>
-    <ModalWrapper visible={appearanceMenu} onClose={() => setAppearanceMenu(false)} theme={theme}>
-      <ScrollView style={{ maxHeight: windowHeight * 0.67 }} contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
-        <Text style={{ color: theme.text, fontSize: 20, fontWeight: '800' }}>Choose your mood ✦</Text>
-        <Text style={{ color: theme.muted, lineHeight: 20 }}>Six approved Stimmyz themes. Your sound pad artwork and sizing stay the same.</Text>
-        <View style={styles.themeGrid}>{themeNames.map((option) => {
-          const swatch = themes[option];
-          return <Pressable key={option} accessibilityRole="button" accessibilityState={{ selected: appearance === option }} accessibilityLabel={`${option} theme${appearance === option ? ', current' : ''}`} onPress={() => {
-            setAppearance(option);
-            try { const current = loadPlayPreferences(isDeviceAudioCaptureSupported()); savePlayPreferences({ ...current, appearance: option }, isDeviceAudioCaptureSupported()); }
-            catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save appearance preference.'); }
-          }} style={[styles.themeChoice, { backgroundColor: theme.surfaceAlt, borderColor: appearance === option ? theme.accent : theme.border }]}>
-            <View style={[styles.swatch, { backgroundColor: swatch.background }]} /><Text style={{ color: theme.text, fontWeight: '700' }}>{option}</Text>
-          </Pressable>;
-        })}</View>
-      </ScrollView>
-      <ActionButton label="Done" onPress={() => setAppearanceMenu(false)} theme={theme} variant="secondary" />
-    </ModalWrapper>
+    <ClipPlaybackOptionsModal visible={playbackSoundId !== null} soundId={playbackSoundId} soundName={clips.find((clip) => clip.id === playbackSoundId)?.title} theme={theme} onClose={closePlaybackOptions} />
   </SafeAreaView></SafeAreaProvider>;
 }
 
-function NavButton({ label, active, theme, onPress, children }: { label: string; active: boolean; theme: ReturnType<typeof useTheme>['theme']; onPress: () => void; children: ReactNode }) {
-  return <Pressable onPress={onPress} accessibilityRole="button" accessibilityState={{ selected: active }} accessibilityLabel={label}
-    style={styles.navItem}>
+function NavButton({ label, active, theme, disabled = false, onPress, children }: { label: string; active: boolean; theme: ReturnType<typeof useTheme>['theme']; disabled?: boolean; onPress: () => void; children: ReactNode }) {
+  return <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityState={{ selected: active, disabled }} accessibilityLabel={label}
+    style={[styles.navItem, disabled && { opacity: 0.55 }]}>
     {children}
     <Text style={{ color: active ? theme.accent : theme.muted, fontSize: 12, fontWeight: '700' }}>{label.toUpperCase()}</Text>
     <View style={[styles.navIndicator, { backgroundColor: active ? theme.accent : 'transparent' }]} />
   </Pressable>;
 }
 
-function ModalWrapper({ visible, onClose, theme, children }: { visible: boolean; onClose: () => void; theme: ReturnType<typeof useTheme>['theme']; children: ReactNode }) {
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-    <View style={styles.scrim}><Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <View style={[styles.modal, { backgroundColor: theme.surface, borderColor: theme.border }]}>{children}</View></View>
-  </Modal>;
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1 }, shell: { flex: 1, paddingHorizontal: 23, paddingTop: 2, gap: 14 }, flow: { flex: 1, paddingHorizontal: 23, paddingTop: 8 },
-  topBar: { minHeight: 54, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', position: 'relative', zIndex: 5 }, brand: { fontSize: 39, lineHeight: 39, includeFontPadding: false, fontWeight: '900', fontStyle: 'italic', letterSpacing: -2.2 }, brandSparkle: { fontSize: 22, color: '#C72AF7', fontStyle: 'normal' }, optionsButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }, appOptionsRoot: { flex: 1 }, optionsMenu: { position: 'absolute', width: 190, borderWidth: 1, borderRadius: 14, paddingVertical: 4, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 12, elevation: 14 }, optionsRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 }, loadError: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14, padding: 24 },
+  appOptionsRoot: { flex: 1 }, optionsMenu: { position: 'absolute', width: 190, borderWidth: 1, borderRadius: 14, paddingVertical: 4, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 12, elevation: 14 }, optionsRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14 }, loadError: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 14, padding: 24 },
   notice: { minHeight: 50, borderRadius: 15, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7, alignItems: 'center', flexDirection: 'row', gap: 10 }, retryButton: { minHeight: 40, minWidth: 68, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   bottomBar: { height: 78, borderTopWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 8, marginHorizontal: -23 }, navItem: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', gap: 2, paddingBottom: 8, position: 'relative' }, navIndicator: { position: 'absolute', bottom: 5, height: 4, width: 70, borderRadius: 2 },
-  scrim: { ...StyleSheet.absoluteFill, justifyContent: 'flex-end', padding: 4, backgroundColor: 'rgba(0,0,0,0.62)' }, modal: { alignSelf: 'center', width: '100%', maxWidth: 460, borderRadius: 22, borderWidth: 1, padding: 18, paddingBottom: 26, gap: 12 }, themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, themeChoice: { width: '31.5%', minHeight: 74, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 7 }, swatch: { width: 50, height: 34, borderRadius: 9 },
+  stopAll: { minHeight: 48, alignSelf: 'flex-end', borderWidth: 1, borderRadius: 13, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
 });

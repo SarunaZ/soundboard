@@ -23,7 +23,7 @@ async function harness(t) {
   const fsUrl = pathToFileURL(fsPath).href;
   const fakeArtworkPath = join(temp, 'fake-artwork.mjs');
   await writeFile(fakeArtworkPath, `import{File,Directory,Paths}from'${fsUrl}';export function resolveArtworkUri(art){if(!art)return undefined;const f=new File(new Directory(Paths.document,'play-library'),'artwork',art.fileName);return f.exists&&f.size>0?f.uri:undefined}export function deleteOwnedArtwork(art,referenced){const f=new File(new Directory(Paths.document,'play-library'),'artwork',art.fileName);if(f.exists&&!referenced(art.fileName))f.delete()}`);
-  const files = ['snapshot.ts', 'protocol.ts', 'boardModel.ts', 'boards.ts', 'presentation.ts', 'preferences.ts', 'library.ts'];
+  const files = ['snapshot.ts', 'protocol.ts', 'boardModel.ts', 'boards.ts', 'presentation.ts', 'preferences.ts', 'clipPlayback.ts', 'library.ts'];
   const sources = {};
   for (const name of files) sources[name] = await readFile(join(appPlayRoot, 'src/data', name), 'utf8');
   const devCatalog = pathToFileURL(join(appClientRoot, 'src/editor/catalog.ts')).href;
@@ -35,7 +35,8 @@ async function harness(t) {
     'boards.ts': [["from 'expo-file-system'", `from '${fsUrl}'`], ["from './snapshot.ts'", `from '${pathToFileURL(join(temp, 'snapshot.ts')).href}'`], ["from './boardModel.ts'", `from '${pathToFileURL(join(temp, 'boardModel.ts')).href}'`]],
     'presentation.ts': [["from 'expo-file-system'", `from '${fsUrl}'`], ["from './snapshot.ts'", `from '${pathToFileURL(join(temp, 'snapshot.ts')).href}'`], ["from './protocol.ts'", `from '${pathToFileURL(join(temp, 'protocol.ts')).href}'`]],
     'preferences.ts': [["from 'expo-file-system'", `from '${fsUrl}'`], ["from './snapshot.ts'", `from '${pathToFileURL(join(temp, 'snapshot.ts')).href}'`]],
-    'library.ts': [["from 'expo-file-system'", `from '${fsUrl}'`], ["from '../../../app-client/src/limits.ts'", `from '${devLimits}'`], ["from './catalog'", `from '${devCatalog}'`], ["from './protocol'", `from '${pathToFileURL(join(temp, 'protocol.ts')).href}'`], ["from './snapshot.ts'", `from '${pathToFileURL(join(temp, 'snapshot.ts')).href}'`], ["from './boards.ts'", `from '${pathToFileURL(join(temp, 'boards.ts')).href}'`], ["from './presentation.ts'", `from '${pathToFileURL(join(temp, 'presentation.ts')).href}'`], ["from '../media/artwork.ts'", `from '${pathToFileURL(fakeArtworkPath).href}'`]],
+    'clipPlayback.ts': [["from 'expo-file-system'", `from '${fsUrl}'`], ["from './snapshot.ts'", `from '${pathToFileURL(join(temp, 'snapshot.ts')).href}'`], ["from './protocol.ts'", `from '${pathToFileURL(join(temp, 'protocol.ts')).href}'`]],
+    'library.ts': [["from 'expo-file-system'", `from '${fsUrl}'`], ["from '../../../app-client/src/limits.ts'", `from '${devLimits}'`], ["from './catalog'", `from '${devCatalog}'`], ["from './protocol'", `from '${pathToFileURL(join(temp, 'protocol.ts')).href}'`], ["from './snapshot.ts'", `from '${pathToFileURL(join(temp, 'snapshot.ts')).href}'`], ["from './boards.ts'", `from '${pathToFileURL(join(temp, 'boards.ts')).href}'`], ["from './presentation.ts'", `from '${pathToFileURL(join(temp, 'presentation.ts')).href}'`], ["from './clipPlayback.ts'", `from '${pathToFileURL(join(temp, 'clipPlayback.ts')).href}'`], ["from '../media/artwork.ts'", `from '${pathToFileURL(fakeArtworkPath).href}'`]],
   };
   for (const name of files) {
     let source = sources[name];
@@ -45,13 +46,14 @@ async function harness(t) {
   return {
     state: globalThis.__playStore,
     async load() {
-      const [library, boards, preferences] = await Promise.all([
+      const [library, boards, preferences, clipPlayback] = await Promise.all([
         import(pathToFileURL(join(temp, 'library.ts')).href),
         import(pathToFileURL(join(temp, 'boards.ts')).href),
         import(pathToFileURL(join(temp, 'preferences.ts')).href),
+        import(pathToFileURL(join(temp, 'clipPlayback.ts')).href),
       ]);
       const presentation = await import(pathToFileURL(join(temp, 'presentation.ts')).href);
-      return { library, boards, preferences, presentation };
+      return { library, boards, preferences, presentation, clipPlayback };
     },
   };
 }
@@ -72,6 +74,18 @@ test('catalog commits and renames are durable and use the Play-only directory', 
   library.setLocalClipPresentation(id, { icon: 'bolt', color: '#12abef' });
   assert.deepEqual({ icon: library.loadLocalClips()[0].icon, color: library.loadLocalClips()[0].color }, { icon: 'bolt', color: '#12abef' });
   assert.equal(h.state.files.has('file:///documents/local-clips/catalog.json'), false);
+});
+
+test('deleting a clip also removes its playback preferences', async (t) => {
+  const h = await harness(t);
+  const { library, clipPlayback } = await h.load();
+  h.state.files.set(`file:///documents/play-library/${id}.wav`, 'RIFF fixture');
+  library.commitImportedClip(clip(id));
+  clipPlayback.setClipPlaybackPreference(id, { gain: 1.5, repeat: 'loop' });
+  assert.deepEqual(clipPlayback.getClipPlaybackPreference(id), { gain: 1.5, repeat: 'loop' });
+  library.deleteLocalClip(id);
+  assert.deepEqual(clipPlayback.loadClipPlaybackPreferences(), {});
+  assert.deepEqual(clipPlayback.getClipPlaybackPreference(id), { gain: 1, repeat: 'once' });
 });
 
 test('folder batch appends in manifest order, skips UUID duplicates, and preserves existing clips', async (t) => {
@@ -182,18 +196,30 @@ test('board collection creation and active selection survive reload', async (t) 
 test('appearance and quick action preferences persist, recover from backup, and support repeated writes', async (t) => {
   const h = await harness(t);
   const { preferences: prefs } = await h.load();
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance: 'Vanilla', quickAction: 'file' });
-  assert.deepEqual(prefs.loadPlayPreferences(true), { version: 3, appearance: 'Vanilla', quickAction: 'device-audio' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 4, appearance: 'Vanilla', quickAction: 'file', masterVolume: 1 });
+  assert.deepEqual(prefs.loadPlayPreferences(true), { version: 4, appearance: 'Vanilla', quickAction: 'file', masterVolume: 1 });
   for (const appearance of ['Peach', 'Mint', 'Snow', 'Ice', 'Vanilla', 'Coffee']) {
     prefs.savePlayPreferences({ appearance, quickAction: 'record' });
-    assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance, quickAction: 'record' });
+    assert.deepEqual(prefs.loadPlayPreferences(), { version: 4, appearance, quickAction: 'record', masterVolume: 1 });
   }
   prefs.savePlayPreferences({ appearance: 'Mint', quickAction: 'file' });
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance: 'Mint', quickAction: 'file' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 4, appearance: 'Mint', quickAction: 'file', masterVolume: 1 });
   prefs.savePlayPreferences({ appearance: 'Ice', quickAction: 'device-audio' }, true);
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance: 'Ice', quickAction: 'device-audio' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 4, appearance: 'Ice', quickAction: 'device-audio', masterVolume: 1 });
+  prefs.savePlayPreferences({ masterVolume: 0.35 });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 4, appearance: 'Ice', quickAction: 'device-audio', masterVolume: 0.35 });
+  assert.throws(() => prefs.savePlayPreferences({ masterVolume: 1.01 }), /master volume/);
   h.state.files.set('file:///documents/play-library/preferences.json', '{broken');
-  assert.deepEqual(prefs.loadPlayPreferences(), { version: 3, appearance: 'Mint', quickAction: 'file' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 4, appearance: 'Ice', quickAction: 'device-audio', masterVolume: 1 });
+});
+
+test('first supported-device defaults persist across later partial preference saves', async (t) => {
+  const h = await harness(t);
+  const { preferences: prefs } = await h.load();
+  assert.deepEqual(prefs.loadPlayPreferences(true), { version: 4, appearance: 'Vanilla', quickAction: 'device-audio', masterVolume: 1 });
+  prefs.savePlayPreferences({ masterVolume: 0.4, appearance: 'Snow' });
+  assert.deepEqual(prefs.loadPlayPreferences(), { version: 4, appearance: 'Snow', quickAction: 'device-audio', masterVolume: 0.4 });
+  assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 4, appearance: 'Snow', quickAction: 'device-audio', masterVolume: 0.4 });
 });
 
 test('legacy preferences migrate appearance without replacing any saved Quick add choice', async (t) => {
@@ -201,12 +227,12 @@ test('legacy preferences migrate appearance without replacing any saved Quick ad
   const { preferences: prefs } = await h.load();
   for (const quickAction of ['file', 'record', 'library']) {
     h.state.files.set('file:///documents/play-library/preferences.json', JSON.stringify({ version: 2, appearance: 'Coffee', quickAction }));
-    assert.deepEqual(prefs.loadPlayPreferences(true), { version: 3, appearance: 'Coffee', quickAction });
-    assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 3, appearance: 'Coffee', quickAction });
+    assert.deepEqual(prefs.loadPlayPreferences(true), { version: 4, appearance: 'Coffee', quickAction, masterVolume: 1 });
+    assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 4, appearance: 'Coffee', quickAction, masterVolume: 1 });
   }
   h.state.files.set('file:///documents/play-library/preferences.json', JSON.stringify({ version: 1, appearance: 'dark', quickAction: 'library' }));
-  assert.deepEqual(prefs.loadPlayPreferences(true), { version: 3, appearance: 'Coffee', quickAction: 'library' });
-  assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 3, appearance: 'Coffee', quickAction: 'library' });
+  assert.deepEqual(prefs.loadPlayPreferences(true), { version: 4, appearance: 'Coffee', quickAction: 'library', masterVolume: 1 });
+  assert.deepEqual(JSON.parse(h.state.files.get('file:///documents/play-library/preferences.json')), { version: 4, appearance: 'Coffee', quickAction: 'library', masterVolume: 1 });
 });
 
 test('catalog reads a valid backup after primary corruption and never resets when both copies are corrupt', async (t) => {

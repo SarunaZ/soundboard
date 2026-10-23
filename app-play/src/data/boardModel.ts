@@ -17,6 +17,9 @@ export interface Board {
   id: string;
   name: string;
   pads: BoardPad[];
+  grid: '3x4' | '4x4';
+  navigation: 'pages' | 'scroll';
+  allowOverlap: boolean;
 }
 
 export interface BoardCollection {
@@ -33,7 +36,7 @@ function initialPads(count = 16): BoardPad[] {
 }
 
 export function emptyBoardCollection(): BoardCollection {
-  const board: Board = { id: EMPTY_BOARD_ID, name: 'Main', pads: initialPads() };
+  const board: Board = { id: EMPTY_BOARD_ID, name: 'Main', pads: initialPads(), grid: '4x4', navigation: 'pages', allowOverlap: false };
   return { version: 1, activeBoardId: board.id, boards: [board] };
 }
 
@@ -80,7 +83,13 @@ export function parseBoardCollection(value: unknown): BoardCollection {
     }
     const pads = board.pads.map((pad, padIndex) => parsePad(pad, boardIndex, padIndex));
     if (new Set(pads.map(({ id }) => id)).size !== pads.length) throw new Error(`Board ${boardIndex + 1} has duplicate pad IDs.`);
-    return { id: board.id, name: board.name, pads };
+    const grid = board.grid === undefined ? '4x4' : board.grid;
+    const navigation = board.navigation === undefined ? 'pages' : board.navigation;
+    const allowOverlap = board.allowOverlap === undefined ? false : board.allowOverlap;
+    if (grid !== '3x4' && grid !== '4x4') throw new Error(`Board ${boardIndex + 1} has an invalid grid size.`);
+    if (navigation !== 'pages' && navigation !== 'scroll') throw new Error(`Board ${boardIndex + 1} has an invalid navigation mode.`);
+    if (typeof allowOverlap !== 'boolean') throw new Error(`Board ${boardIndex + 1} has an invalid overlap preference.`);
+    return { id: board.id, name: board.name, pads, grid, navigation, allowOverlap };
   });
   if (new Set(boards.map(({ id }) => id)).size !== boards.length) throw new Error('The Play board collection has duplicate board IDs.');
   if (typeof row.activeBoardId !== 'string' || !boards.some(({ id }) => id === row.activeBoardId)) {
@@ -93,7 +102,7 @@ export function createBoardModel(collection: BoardCollection, name: string): Boa
   const state = parseBoardCollection(collection);
   if (state.boards.length >= MAX_PLAY_BOARDS) throw new Error(`You can create up to ${MAX_PLAY_BOARDS} boards.`);
   const cleanName = cleanBoardName(name);
-  const board = { id: generatedClipId(), name: cleanName, pads: initialPads() };
+  const board = { id: generatedClipId(), name: cleanName, pads: initialPads(), grid: '4x4' as const, navigation: 'pages' as const, allowOverlap: false };
   return parseBoardCollection({ ...state, activeBoardId: board.id, boards: [...state.boards, board] });
 }
 

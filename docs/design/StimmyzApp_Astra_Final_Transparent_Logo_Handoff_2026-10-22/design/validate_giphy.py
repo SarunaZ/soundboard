@@ -1,0 +1,80 @@
+from pathlib import Path
+import subprocess, time
+from playwright.sync_api import sync_playwright
+from PIL import Image, ImageOps, ImageDraw
+import json
+root=Path(__file__).resolve().parents[1]
+port=8878
+server=subprocess.Popen(['python','-m','http.server',str(port),'--directory',str(root/'prototype')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+time.sleep(.7)
+uri=f'http://127.0.0.1:{port}/standalone.html'
+out=root/'previews';out.mkdir(exist_ok=True)
+results=[]
+def verify(name,cond):
+ results.append({'name':name,'ok':bool(cond)})
+ if not cond:raise AssertionError(name)
+with sync_playwright() as p:
+ browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox','--disable-web-security'])
+ page=browser.new_page(viewport={'width':1300,'height':1030},device_scale_factor=1)
+ errs=[]; page.on('pageerror',lambda error:errs.append(str(error)))
+ page.set_content((root/'prototype/standalone.html').read_text(),wait_until='load')
+ verify('Board starts without GIPHY picker',page.locator('.giphy-picker').count()==0)
+ page.locator('[data-preview-page="details"]').click()
+ verify('Customize contains GIPHY action',page.locator('[data-action="artGiphy"]').count()==1)
+ verify('GIPHY is not a fourth navigation tab',page.locator('.nav-tab').count()==0)
+ page.locator('[data-action="artGiphy"]').click()
+ verify('GIPHY shows in artwork selection',page.locator('.giphy-picker').is_visible())
+ verify('Visible powered-by attribution',page.locator('.giphy-provider strong').is_visible())
+ verify('UI preview disclaimer',page.get_by_text('Demo samples · not live').is_visible())
+ verify('Stickers selected by default',page.locator('[data-action="giphyCategory"][data-value="stickers"]').get_attribute('aria-pressed')=='true')
+ verify('Six sticker demo results',page.locator('.giphy-result').count()==6)
+ phone=page.locator('.device')
+ phone.screenshot(path=str(out/'giphy-picker-vanilla.png'))
+ page.locator('[data-action="selectGiphy"][data-value="cat"]').click()
+ verify('Selected reaction reflected in preview',page.locator('.artwork-preview .giphy-poster').count()==1)
+ verify('Selected reaction persist highlight',page.locator('[data-action="selectGiphy"][data-value="cat"]').get_attribute('class').find('chosen')>=0)
+ phone.screenshot(path=str(out/'giphy-selection-vanilla.png'))
+ page.locator('#giphy-query').fill('laugh')
+ verify('Typing filters samples',page.locator('.giphy-result').count()==1)
+ verify('Input retains value',page.locator('#giphy-query').input_value()=='laugh')
+ page.locator('#giphy-query').fill('nonsense')
+ verify('Empty search state',page.locator('.giphy-empty').is_visible())
+ page.locator('#giphy-query').fill('')
+ page.locator('[data-action="giphyCategory"][data-value="gifs"]').click()
+ verify('GIF tab offers corresponding results',page.locator('.giphy-result').count()==6)
+ page.locator('[data-action="giphyCategory"][data-value="stickers"]').click()
+ page.locator('[data-action="selectGiphy"][data-value="cat"]').click()
+ page.locator('[data-action="saveSound"]').click()
+ verify('Saving demo returns to board',page.locator('.sound-pad').count()>=2)
+ verify('Sound retained linked artwork demo marker',page.evaluate('state.sounds.some(s => s.giphyRef==="cat")'))
+ verify('Quick Add stays first',page.locator('.grid-wrap .sound-pad').first.get_attribute('class').find('quick')>=0)
+ page.locator('[data-preview-page="details"]').click()
+ page.locator('[data-action="artGiphy"]').click()
+ page.locator('#theme-select').select_option('Coffee')
+ verify('Coffee theme retained',page.locator('.device').get_attribute('data-theme')=='Coffee')
+ page.evaluate("state.toast='';render()")
+ phone.screenshot(path=str(out/'giphy-picker-coffee.png'))
+ page.locator('[data-action="selectGiphy"][data-value="wow"]').click()
+ page.evaluate("state.toast='';render()")
+ phone.screenshot(path=str(out/'giphy-selection-coffee.png'))
+ page.locator('[data-action="artDefault"]').click()
+ verify('Default clears selected GIPHY mock artwork',page.locator('.artwork-preview .giphy-poster').count()==0)
+ verify('No browser errors',len(errs)==0)
+ for theme in ['Peach','Mint','Snow','Ice','Vanilla','Coffee']:
+  page.locator('#theme-select').select_option(theme)
+  verify(f'GIPHY artwork picker theme {theme}',page.locator('.device').get_attribute('data-theme')==theme)
+ browser.close()
+print(json.dumps({'passed':len(results),'errors':errs,'results':results},indent=2))
+(root/'design/giphy-validation.json').write_text(json.dumps(results,indent=2))
+imgs=[Image.open(out/name).convert('RGB') for name in ['giphy-picker-vanilla.png','giphy-selection-vanilla.png','giphy-picker-coffee.png']]
+scale=.75
+width=int(imgs[0].width*scale);height=int(imgs[0].height*scale)
+canvas=Image.new('RGB',(width*len(imgs)+40*(len(imgs)+1),height+115),(245,240,250))
+draw=ImageDraw.Draw(canvas)
+for i,(im,label) in enumerate(zip(imgs,['GIPHY / VANILLA','SELECTED / VANILLA','GIPHY / COFFEE'])):
+ im=im.resize((width,height),Image.Resampling.LANCZOS)
+ x=40+i*(width+40)
+ canvas.paste(im,(x,65))
+ draw.text((x+18,35),label,fill=(57,43,77))
+canvas.save(out/'00-giphy-picker-overview.png')
+server.terminate()

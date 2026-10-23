@@ -11,6 +11,7 @@ test('the Play stage accepts only declared profile inputs and explicit shared le
   assert.equal(isAllowedPath('app-play/assets/stimyz/icon.png'), true);
   assert.equal(isAllowedPath('app-play/assets/stimyz/android-icon-foreground.png'), true);
   assert.equal(isAllowedPath('app-play/assets/stimyz/android-icon-monochrome.png'), true);
+  assert.equal(isAllowedPath('app-play/assets/stimyz/stimmyz-logo-transparent.png'), true);
   assert.equal(isAllowedPath('app-play/assets/stimyz/extra.png'), false);
   assert.equal(isAllowedPath('app-client/src/audio/engine.ts'), true);
   assert.equal(isAllowedPath('app-client/src/transfer/folderTransfer.ts'), true);
@@ -26,6 +27,15 @@ test('the Play stage accepts only declared profile inputs and explicit shared le
   assert.equal(isAllowedPath('app-play/play-native-modules/foreign/android/build.gradle'), false);
   assert.equal(isAllowedPath('app-play/play-native-modules/soundboard-device-audio/android/src/main/AndroidManifest.xml'), false);
   assert.equal(isAllowedPath('app-play/.env.local'), false);
+  for (const relative of [
+    'app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/CMakeLists.txt',
+    'app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp.h',
+    'app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp.cpp',
+    'app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp_jni.cpp',
+    'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparation.kt',
+    'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/NativePlaybackDsp.kt',
+    'app-play/play-native-modules/soundboard-device-audio/android/src/test/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparationTest.kt',
+  ]) assert.ok(allowedDeviceAudioModuleFiles.has(relative), `missing Play native allowlist entry: ${relative}`);
 });
 
 test('extractor and YouTube source markers are rejected case-insensitively', () => {
@@ -120,15 +130,20 @@ test('stage verifier accepts the isolated Play profile and rejects extractor sou
     write('app-play/assets/stimyz/icon.png', 'test-icon');
     write('app-play/assets/stimyz/android-icon-foreground.png', 'test-foreground');
     write('app-play/assets/stimyz/android-icon-monochrome.png', 'test-monochrome');
+    write('app-play/assets/stimyz/stimmyz-logo-transparent.png', Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    write('app-play/src/ui/BrandHeader.tsx', "const logo = require('../../assets/stimyz/stimmyz-logo-transparent.png');\n");
     write('app-play/plugins/withDeviceAudioCapture.js', 'module.exports = () => {};\n');
     for (const relative of allowedDeviceAudioModuleFiles) {
       write(relative, relative.endsWith('.json') ? '{}' : '// device audio module test fixture\n');
     }
-    assert.deepEqual(verifyStage(root), { files: 23, sourceFiles: 5 });
+    assert.deepEqual(verifyStage(root), { files: 32, sourceFiles: 6 });
 
     fs.rmSync(path.join(root, 'app-play/assets/stimyz/icon.png'));
     assert.throws(() => verifyStage(root), /Play icon asset is missing from the stage/);
     write('app-play/assets/stimyz/icon.png', 'test-icon');
+    fs.rmSync(path.join(root, 'app-play/assets/stimyz/stimmyz-logo-transparent.png'));
+    assert.throws(() => verifyStage(root), /Play transparent Stimmyz logo asset is missing from the stage/);
+    write('app-play/assets/stimyz/stimmyz-logo-transparent.png', Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
 
     write('app-play/app.json', JSON.stringify({ expo: {
       version: '1.0.1',

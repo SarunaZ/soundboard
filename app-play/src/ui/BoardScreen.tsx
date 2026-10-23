@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Image, Keyboard, Modal, PanResponder, PixelRatio, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import { Alert, AppState, FlatList, Image, Keyboard, Modal, PanResponder, PixelRatio, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { stop } from '../../../app-client/src/audio/engine';
-import { clearPad, createBoard as persistBoard, loadBoards, movePad, renamePad, reorderPad, selectBoard, type Board, type BoardCollection, type BoardPad } from '../data/boards';
+import { stop, getPlaybackSnapshot, subscribePlayback, type PlaybackSnapshot } from '../media/playbackEngine';
+import { clearPad, createBoard as persistBoard, loadBoards, movePad, renamePad, reorderPad, selectBoard, setBoardPreferences, type Board, type BoardCollection, type BoardPad } from '../data/boards';
 import type { LocalClip } from '../data/library';
 import { loadPlayPreferences, savePlayPreferences, type QuickAction } from '../data/preferences';
 import { isDeviceAudioCaptureSupported } from '../media/deviceAudioCapture';
@@ -11,6 +11,7 @@ import { Icon } from './Icons';
 import { calculateBoardGrid, calculateBoardTileHeight } from './boardLayout';
 import { clampScrollOffset, edgeScrollStep, gridIndexAtPoint } from '../../../app-client/src/board/reorderGeometry';
 import { gridIndexToPadIndex, gridItemCountWithQuickAdd } from './quickAddGrid';
+import { boardDistanceFromEnd, boardPageCount, boardPageSlice, boardSoundsPerPage, nextBoardBatchCount, shouldAutoLoadBoardSounds } from './boardNavigation';
 import type { Theme } from './theme';
 import { contrastForeground, iconChoices } from './theme';
 
@@ -19,15 +20,17 @@ type Props = {
   collection: BoardCollection;
   clips: LocalClip[];
   onChange: (collection: BoardCollection) => void;
-  onPlay: (clip: LocalClip, padId: string) => void;
+  onPlay: (clip: LocalClip, padId: string, boardId: string) => void;
   onCreate: (boardId: string, padId?: string, initialAction?: 'file' | 'record' | 'device-audio') => void;
   onAddClip: () => void;
   onOpenLibrary: (target?: { boardId: string; padId?: string }) => void;
   onAppearance?: () => void;
+  onPlaybackOptions?: (soundId: string) => void;
   newBoardRequest?: number;
 };
 
 type PopupKind = 'boards' | 'quick' | 'pad' | 'replace' | 'move';
+type BoardGridItem = { kind: 'quick'; key: 'quick-add' } | { kind: 'pad'; key: string; pad: BoardPad };
 type PopupRect = { x: number; y: number; width: number; height: number };
 type PopupState = { kind: PopupKind; rect: PopupRect; pad?: { boardId: string; pad: BoardPad } };
 
@@ -37,7 +40,7 @@ function blendTowardWhite(hex: string, amount: number): string {
   return `#${channels.map((channel) => Math.round(channel + (255 - channel) * amount).toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCreate, onAddClip, onOpenLibrary, onAppearance, newBoardRequest }: Props) {
+export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCreate, onAddClip, onOpenLibrary, onAppearance, onPlaybackOptions, newBoardRequest }: Props) {
   const [editing, setEditing] = useState(false);
   const [newBoard, setNewBoard] = useState(false);
   const [boardName, setBoardName] = useState('');
@@ -50,46 +53,69 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const [drag, setDrag] = useState<{ sourcePadId: string; targetPadId: string } | null>(null);
   const [selectedMovePadId, setSelectedMovePadId] = useState<string | null>(null);
   const [failedArtworkUris, setFailedArtworkUris] = useState<Set<string>>(() => new Set());
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlatList<BoardGridItem>>(null);
   const viewportRef = useRef<View>(null);
   const selectorAnchor = useRef<View>(null);
   const quickAnchor = useRef<View>(null);
   const padAnchors = useRef(new Map<string, View>());
   const viewport = useRef({ x: 0, y: 0, width: 0, height: 0 });
-  const scroll = useRef({ offset: 0, contentHeight: 0 });
+  const scroll = useRef({ offset: 0, contentHeight: 0, viewportHeight: 0 });
   const activeDrag = useRef<{ sourcePadId: string; targetPadId: string } | null>(null);
   const armedPadId = useRef<string | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const moved = useRef(false);
   const lastNewBoardRequest = useRef(newBoardRequest ?? 0);
+  const userScrolled = useRef(false);
+  const lastAutoLoadedCount = useRef(-1);
+  const touchStartY = useRef<number | null>(null);
   const [quickAction, setQuickAction] = useState<QuickAction>(() => {
     try {
       const saved = loadPlayPreferences(isDeviceAudioCaptureSupported()).quickAction;
       return saved === 'device-audio' && !isDeviceAudioCaptureSupported() ? 'file' : saved;
     } catch { return 'file'; }
   });
+  const [playback, setPlayback] = useState<PlaybackSnapshot>(() => getPlaybackSnapshot());
+  const [page, setPage] = useState(0);
+  const [loadedCount, setLoadedCount] = useState(15);
   const { fontScale, width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const layout = calculateBoardGrid(availableWidth, fontScale, 8, PixelRatio.get());
+  const layout = calculateBoardGrid(availableWidth, fontScale, 8, PixelRatio.get(), collection.boards.find((board) => board.id === collection.activeBoardId)?.grid === '3x4' ? 3 : 4);
   const tileHeight = calculateBoardTileHeight(layout.tileWidth, fontScale);
   const basePopupWidth = popup?.kind === 'boards' ? Math.max(210, Math.min(238, popup.rect.width)) : popup?.kind === 'quick' ? 204 : 176;
   const popupScale = fontScale > 1.2 && (popup?.kind === 'quick' || popup?.kind === 'pad') ? Math.min(fontScale, 1.5) : 1;
   const popupWidth = Math.min(basePopupWidth * popupScale, Math.max(0, windowWidth - insets.left - insets.right - 20));
   const popupMaxHeight = Math.max(180, Math.min(420, windowHeight - insets.top - insets.bottom - 24));
-  const popupEstimatedHeight = popup?.kind === 'boards' ? Math.min(44 * (collection.boards.length + 3), popupMaxHeight)
-    : popup?.kind === 'pad' ? 44 * 4 : popup?.kind === 'move' ? Math.min(44 * Math.max(1, collection.boards.length - 1), popupMaxHeight)
-      : popup?.kind === 'replace' ? 44 * 2 : popup?.kind === 'quick' ? 44 * 4 : 44 * 3;
+  const popupEstimatedHeight = popup?.kind === 'boards' ? Math.min(48 * (collection.boards.length + 3), popupMaxHeight)
+    : popup?.kind === 'pad' ? 48 * 5 : popup?.kind === 'move' ? Math.min(48 * Math.max(1, collection.boards.length - 1), popupMaxHeight)
+      : popup?.kind === 'replace' ? 48 * 2 : popup?.kind === 'quick' ? 48 * 4 : 48 * 3;
   const popupLeft = popup ? Math.min(Math.max(insets.left + 10, popup.rect.x), windowWidth - insets.right - popupWidth - 10) : 0;
   const popupBelow = popup ? popup.rect.y + popup.rect.height + 6 : 0;
   const popupTop = popup ? (popupBelow + popupEstimatedHeight <= windowHeight - insets.bottom - 10 ? popupBelow : Math.max(insets.top + 10, popup.rect.y - popupEstimatedHeight - 6)) : 0;
   const active = collection.boards.find((board) => board.id === collection.activeBoardId) ?? collection.boards[0] ?? { id: '', name: '', pads: [] };
+  const viewScope = `${active.id}:${active.grid}:${active.navigation}:${search}`;
+  const viewScopeRef = useRef(viewScope);
+  viewScopeRef.current = viewScope;
   const clipById = useMemo(() => new Map(clips.map((clip) => [clip.id, clip])), [clips]);
-  const visiblePads = useMemo(() => active?.pads.filter((pad, index) => {
+  const matchingPads = useMemo(() => active?.pads.filter((pad, index) => {
     const clip = pad.clipId ? clipById.get(pad.clipId) : undefined;
     const label = pad.label || clip?.title || `Pad ${index + 1}`;
     const query = search.trim().toLocaleLowerCase();
     return label.toLocaleLowerCase().includes(query);
   }) ?? [], [active?.pads, clipById, search]);
+  const filteredPads = useMemo(() => matchingPads.filter((pad) => pad.clipId !== null), [matchingPads]);
+  const emptyPads = useMemo(() => search.trim() ? [] : matchingPads.filter((pad) => pad.clipId === null), [matchingPads, search]);
+  const columns = active.grid === '3x4' ? 3 : 4;
+  const pageCapacity = columns * 4;
+  const ordinaryPerPage = boardSoundsPerPage(columns);
+  const pageCount = boardPageCount(filteredPads.length, columns);
+  const pageSounds = useMemo(() => active.navigation === 'pages'
+    ? boardPageSlice(filteredPads, columns, page)
+    : filteredPads.slice(0, Math.min(filteredPads.length, Math.max(ordinaryPerPage, loadedCount))),
+  [active.navigation, filteredPads, columns, page, ordinaryPerPage, loadedCount]);
+  const visiblePads = useMemo(() => pageSounds.length < ordinaryPerPage && (active.navigation === 'pages' ? page + 1 >= pageCount : filteredPads.length <= ordinaryPerPage)
+    ? [...pageSounds, ...emptyPads.slice(0, ordinaryPerPage - pageSounds.length)] : pageSounds,
+  [pageSounds, ordinaryPerPage, active.navigation, page, pageCount, filteredPads.length, emptyPads]);
+  const gridItems = useMemo<BoardGridItem[]>(() => [{ kind: 'quick', key: 'quick-add' }, ...visiblePads.map((pad) => ({ kind: 'pad' as const, key: pad.id, pad }))], [visiblePads]);
   const cancelDrag = useCallback(() => {
     pointer.current = null;
     activeDrag.current = null;
@@ -101,6 +127,18 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     cancelDrag();
     setSelectedMovePadId(null);
   }, [cancelDrag]);
+
+  useEffect(() => subscribePlayback(setPlayback), []);
+  useEffect(() => {
+    setPage(0);
+    setLoadedCount((active.grid === '3x4' ? 3 : 4) * 4 - 1);
+    userScrolled.current = false;
+    lastAutoLoadedCount.current = -1;
+    scroll.current.offset = 0;
+    scroll.current.contentHeight = 0;
+    scrollRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [viewScope]);
+  useEffect(() => { if (page >= pageCount) setPage(Math.max(0, pageCount - 1)); }, [page, pageCount]);
 
   function openPopupFromRef(kind: PopupKind, anchor: View | null, pad?: { boardId: string; pad: BoardPad }) {
     if (!anchor) return;
@@ -213,6 +251,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
 
   const measureViewport = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
+    scroll.current.viewportHeight = height;
     setAvailableWidth((current) => Math.abs(current - width) > 0.5 ? width : current);
     viewportRef.current?.measureInWindow((x, y) => { viewport.current = { x, y, width, height }; });
   };
@@ -228,7 +267,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
       const next = clampScrollOffset(scroll.current.offset + step, scroll.current.contentHeight, box.height);
       if (next === scroll.current.offset) return;
       scroll.current.offset = next;
-      scrollRef.current?.scrollTo({ y: next, animated: false });
+      scrollRef.current?.scrollToOffset({ offset: next, animated: false });
       const latest = activeDrag.current;
       if (latest) updateDrag(latest.sourcePadId, currentPointer.x, currentPointer.y);
     }, 50);
@@ -262,6 +301,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     cancelDrag();
     setSelectedMovePadId(null);
     setEditing(false);
+    if (board.id !== active.id) stop();
     onChange(selectBoard(board.id));
     setPopup(null);
   }
@@ -319,9 +359,28 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     setRenameOpen(false);
   };
 
+  function maybeLoadMoreSounds(distanceFromEnd: number, nearEndDistance: number) {
+    if (viewScopeRef.current !== viewScope || active.navigation !== 'scroll') return;
+    if (!shouldAutoLoadBoardSounds({
+      userScrolled: userScrolled.current,
+      distanceFromEnd,
+      nearEndDistance,
+      loadedSoundCount: pageSounds.length,
+      totalSoundCount: filteredPads.length,
+      lastRequestedSoundCount: lastAutoLoadedCount.current,
+    })) return;
+    requestNextSoundBatch();
+  }
+
+  function requestNextSoundBatch() {
+    if (viewScopeRef.current !== viewScope || active.navigation !== 'scroll' || pageSounds.length >= filteredPads.length) return;
+    lastAutoLoadedCount.current = pageSounds.length;
+    setLoadedCount(nextBoardBatchCount(pageSounds.length, filteredPads.length, columns));
+  }
+
   function openPad(pad: BoardPad) {
     const clip = pad.clipId ? clipById.get(pad.clipId) : undefined;
-    if (clip && !clip.missing) onPlay(clip, pad.id);
+    if (clip && !clip.missing) onPlay(clip, pad.id, active.id);
     else onCreate(active.id, pad.id);
   }
 
@@ -342,7 +401,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
       </Pressable>
       <Pressable onPress={() => { if (editing) { cancelDrag(); setSelectedMovePadId(null); } else { Keyboard.dismiss(); setSearch(''); setPopup(null); } setEditing((value) => !value); }} accessibilityRole="button" accessibilityState={{ selected: editing }} accessibilityLabel={editing ? 'Done editing board' : 'Edit board'} style={[styles.editButton, { backgroundColor: 'transparent', borderColor: theme.accent }]}>
         <Icon name="pencil" size={17} color={theme.accent} />
-        <Text accessible={false} style={[styles.editButtonLabel, { color: theme.accent }]}>{editing ? 'Done editing' : 'Edit board'}</Text>
+        <Text accessible={false} numberOfLines={2} style={[styles.editButtonLabel, { color: theme.accent }]}>{editing ? 'Done editing' : 'Edit board'}</Text>
       </Pressable>
     </View>
     <View style={[styles.search, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -350,11 +409,45 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
       <TextInput value={search} onChangeText={setSearch} editable={!editing} placeholder="Search soundbites…" placeholderTextColor={theme.muted} accessibilityLabel="Search pads" returnKeyType="search" selectionColor={theme.focus}
         style={[styles.searchInput, { color: theme.text }]} />
     </View>
+    {editing ? <View style={[styles.editPanel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      <ScrollView style={styles.editPanelScroll} contentContainerStyle={styles.editPanelContent} nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <Text numberOfLines={2} style={[styles.editPanelEyebrow, { color: theme.accent }]}>Edit board · {active.name}</Text>
+        <View style={styles.preferenceRow}><Text style={[styles.preferenceLabel, { color: theme.text }]}>Grid size</Text>
+          <View style={styles.preferenceChoices}>{(['3x4', '4x4'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: active.grid === value }} onPress={() => onChange(setBoardPreferences(active.id, { grid: value }))} style={[styles.preferenceButton, { backgroundColor: active.grid === value ? theme.accent : theme.surfaceAlt }]}><Text style={{ color: active.grid === value ? '#fff' : theme.text, fontSize: 12, fontWeight: '800' }}>{value === '3x4' ? '3 × 4' : '4 × 4'}</Text></Pressable>)}</View>
+        </View>
+        <View style={styles.preferenceRow}><Text style={[styles.preferenceLabel, { color: theme.text }]}>More sounds</Text>
+          <View style={styles.preferenceChoices}>{(['pages', 'scroll'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: active.navigation === value }} onPress={() => onChange(setBoardPreferences(active.id, { navigation: value }))} style={[styles.preferenceButton, { backgroundColor: active.navigation === value ? theme.accent : theme.surfaceAlt }]}><Text style={{ color: active.navigation === value ? '#fff' : theme.text, fontSize: 12, fontWeight: '800' }}>{value === 'pages' ? 'Pages' : 'Scroll'}</Text></Pressable>)}</View>
+        </View>
+        <Pressable accessibilityRole="switch" accessibilityState={{ checked: active.allowOverlap }} onPress={() => { const allowOverlap = !active.allowOverlap; if (!allowOverlap) stop(); onChange(setBoardPreferences(active.id, { allowOverlap })); }} style={styles.overlapRow}><Text style={[styles.preferenceLabel, styles.overlapLabel, { color: theme.text }]}>Allow overlapping sounds</Text><View style={[styles.switchTrack, { backgroundColor: active.allowOverlap ? theme.accent : theme.border }]}><View style={[styles.switchThumb, { alignSelf: active.allowOverlap ? 'flex-end' : 'flex-start', backgroundColor: '#fff' }]} /></View></Pressable>
+        <Text style={[styles.preferenceNote, { color: theme.muted }]}>{active.navigation === 'pages' ? 'Browse one page at a time. Quick add stays first on each page. Applies only to this board.' : 'Keep scrolling to load more sounds automatically. Quick add stays first at the top. Applies only to this board.'}</Text>
+      </ScrollView>
+    </View> : null}
     <View ref={viewportRef} collapsable={false} onLayout={measureViewport} {...pan.panHandlers} style={{ flex: 1 }}>
-    <ScrollView ref={scrollRef} style={{ flex: 1 }} scrollEnabled={!drag} onScroll={(event) => { scroll.current.offset = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}
+    <FlatList ref={scrollRef} style={{ flex: 1 }} data={gridItems} numColumns={columns} key={`${active.id}:${columns}:${active.navigation}`} keyExtractor={(item) => item.key}
+      windowSize={5} initialNumToRender={pageCapacity} maxToRenderPerBatch={pageCapacity} updateCellsBatchingPeriod={50}
+      columnWrapperStyle={styles.gridRow} ItemSeparatorComponent={() => <View style={{ height: layout.gap }} />} scrollEnabled={!drag} onScrollBeginDrag={() => { userScrolled.current = true; }} onScroll={(event) => {
+        const metrics = event.nativeEvent;
+        scroll.current.offset = metrics.contentOffset.y;
+        scroll.current.contentHeight = metrics.contentSize.height;
+        scroll.current.viewportHeight = metrics.layoutMeasurement.height;
+        const distanceFromEnd = boardDistanceFromEnd(metrics.contentSize.height, metrics.layoutMeasurement.height, metrics.contentOffset.y);
+        maybeLoadMoreSounds(distanceFromEnd, Math.max(120, metrics.layoutMeasurement.height * 0.6));
+      }} onTouchStart={(event) => { touchStartY.current = event.nativeEvent.pageY; }} onTouchMove={(event) => {
+        const startY = touchStartY.current;
+        const pageY = event.nativeEvent.pageY;
+        if (startY !== null && startY - pageY > 24 && scroll.current.contentHeight <= viewport.current.height + 1) {
+          userScrolled.current = true;
+          maybeLoadMoreSounds(0, Number.POSITIVE_INFINITY);
+          touchStartY.current = pageY;
+        }
+      }} onTouchEnd={() => { touchStartY.current = null; }} scrollEventThrottle={16}
       onContentSizeChange={(_width, height) => { scroll.current.contentHeight = height; }}
-      contentContainerStyle={[styles.grid, { gap: layout.gap }]} keyboardShouldPersistTaps="handled">
-      <View ref={quickAnchor} style={[styles.tileWrap, { width: layout.tileWidth, height: tileHeight }]}>
+      contentContainerStyle={[styles.grid, { paddingBottom: 12 }]} keyboardShouldPersistTaps="handled" extraData={{ editing, selectedMovePadId, drag, playback, theme }}
+      onEndReached={() => maybeLoadMoreSounds(boardDistanceFromEnd(scroll.current.contentHeight, scroll.current.viewportHeight, scroll.current.offset), Math.max(120, scroll.current.viewportHeight * 0.6))}
+      onEndReachedThreshold={0.6}
+      ListFooterComponent={active.navigation === 'scroll' && filteredPads.length > pageSounds.length ? <Pressable accessibilityRole="button" onPress={() => { userScrolled.current = true; requestNextSoundBatch(); }} style={[styles.loadMore, { borderColor: theme.border, backgroundColor: theme.surface }]}><Text style={{ color: theme.accent, fontWeight: '800' }}>Load more sounds</Text></Pressable> : active.navigation === 'scroll' && filteredPads.length ? <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, textAlign: 'center', paddingVertical: 14 }}>All sounds loaded</Text> : null}
+      renderItem={({ item }) => {
+      if (item.kind === 'quick') return <View ref={quickAnchor} style={[styles.tileWrap, { width: layout.tileWidth, height: tileHeight }]}>
         <Pressable onPress={runQuickAction} accessibilityRole="button"
           accessibilityLabel={`Quick add to ${active.name}, using ${quickAction === 'device-audio' ? 'device audio recording' : quickAction === 'record' ? 'microphone recording' : quickAction === 'file' ? 'audio file' : 'Library'}`}
           style={({ pressed }) => [styles.tile, styles.quickTile, { backgroundColor: theme.surface, borderColor: theme.accent, opacity: pressed ? 0.8 : 1 }]}>
@@ -362,11 +455,12 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
           <Text numberOfLines={2} style={[styles.tileLabel, { color: theme.text }]}>Quick add</Text>
           <Text numberOfLines={2} style={[styles.padIdentity, { color: theme.muted, fontSize: 9.5, lineHeight: 11.5 }]}>{quickAction === 'device-audio' ? 'Record device audio' : quickAction === 'record' ? 'Record microphone' : quickAction === 'file' ? 'Import audio or video' : 'Open library'}</Text>
         </Pressable>
-        {editing ? <Pressable onPress={() => openPopupFromRef('quick', quickAnchor.current)} accessibilityRole="button" accessibilityLabel="Choose Quick add action" style={[styles.quickMenuButton, { backgroundColor: theme.accent }]}>
-          <Icon name="chevron" size={16} color="#fff" />
+        {editing ? <Pressable onPress={() => openPopupFromRef('quick', quickAnchor.current)} accessibilityRole="button" accessibilityLabel="Choose Quick add action" style={styles.quickMenuButton}>
+          <View style={styles.quickMenuGlyph}><Icon name="chevron" size={16} color="#fff" /></View>
         </Pressable> : null}
-      </View>
-      {visiblePads.map((pad) => {
+      </View>;
+      const pad = item.pad;
+      {
         const index = active.pads.findIndex((item) => item.id === pad.id);
         const clip = pad.clipId ? clipById.get(pad.clipId) : undefined;
         const padLabel = pad.label || clip?.title || `Pad ${index + 1}`;
@@ -378,10 +472,11 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
         const isSelected = selectedMovePadId === pad.id;
         const isSource = drag?.sourcePadId === pad.id;
         const isTarget = drag?.targetPadId === pad.id;
+        const voice = playback.voices.find((row) => row.padId === pad.id);
         return <View key={pad.id} ref={(node) => { if (node) padAnchors.current.set(pad.id, node); else padAnchors.current.delete(pad.id); }} style={[styles.tileWrap, { width: layout.tileWidth, height: tileHeight }]}>
           <Pressable onPressIn={!editing && usableClip ? () => openPad(pad) : undefined}
-            onPress={editing ? () => selectOrMove(pad.id) : usableClip ? undefined : () => openPad(pad)}
-            accessibilityRole="button" accessibilityState={{ selected: isSelected }} accessibilityLabel={editing ? `${padLabel}${isSelected ? ', selected to move' : ''}. Tap to choose a move destination.` : clip ? `Play ${padLabel}` : `Add sound to ${padLabel}`}
+            onPress={editing ? selectedMovePadId ? () => selectOrMove(pad.id) : usableClip ? () => openPad(pad) : () => openPad(pad) : usableClip ? undefined : () => openPad(pad)}
+            accessibilityRole="button" accessibilityState={{ selected: isSelected }} accessibilityLabel={editing ? selectedMovePadId ? `Move to ${padLabel}` : clip ? `Play ${padLabel}. Use its grip to move.` : `Add sound to ${padLabel}` : clip ? `Play ${padLabel}` : `Add sound to ${padLabel}`}
             style={({ pressed }) => [styles.tile, {
               backgroundColor: pad.clipId !== null ? color : theme.surface,
               borderColor: pad.clipId !== null ? 'transparent' : theme.border,
@@ -391,22 +486,29 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
             }, pad.clipId === null && styles.emptyTile, isSource && { opacity: 0.62 }]}>
             {artworkUri ? <Image source={{ uri: artworkUri }} onError={() => setFailedArtworkUris((current) => new Set(current).add(artworkUri))} resizeMode="contain" style={styles.padArtwork} />
               : <View style={styles.padIconArea}><Text allowFontScaling={false} style={[styles.tileIcon, { color: foreground }, !clip && { color: theme.muted }]}>{icon}</Text></View>}
-            <View style={styles.padFooter}><Text numberOfLines={2} style={[styles.tileLabel, { color: foreground }, !clip && { color: theme.muted }]}>{padLabel}</Text></View>
+            <View style={[styles.padFooter, editing && styles.padFooterEditing]}><Text numberOfLines={2} ellipsizeMode="tail" style={[styles.tileLabel, { color: foreground }, !clip && { color: theme.muted }]}>{padLabel}</Text>
+              {voice ? <View accessibilityLabel={`Playback progress ${Math.round(voice.progress * 100)} percent`} style={[styles.progressTrack, { backgroundColor: `${foreground}44` }]}><View style={[styles.progressFill, { width: `${Math.round(Math.max(0, Math.min(1, voice.progress)) * 100)}%`, backgroundColor: foreground }]} /></View> : null}
+            </View>
             {editing && (isSelected || isTarget) ? <View pointerEvents="none" style={[styles.tileHighlight, { borderColor: theme.focus }]} /> : null}
           </Pressable>
-          {pad.clipId ? <Pressable onPress={() => {
+          {editing && pad.clipId ? <Pressable onPress={() => {
             setRename(pad.label ?? clip?.title ?? ''); setRenameOpen(false);
             openPopupFromRef('pad', padAnchors.current.get(pad.id) ?? null, { boardId: active.id, pad });
           }} accessibilityRole="button" accessibilityLabel={`Options for ${padLabel}`} style={styles.menuButton}>
             <View pointerEvents="none" style={styles.moreGlyphPosition}><Icon name="more" size={19} color={foreground} /></View>
           </Pressable> : null}
-          {editing ? <View accessibilityRole="button" accessibilityLabel={`Drag grip for ${padLabel}. Tap the pad and a destination to move without dragging.`}
-            accessibilityState={{ selected: isSelected }} onAccessibilityTap={() => setSelectedMovePadId(pad.id)} style={styles.dragGrip}>
+          {editing ? <Pressable accessibilityRole="button" accessibilityLabel={`Move ${padLabel}. Tap to select a source, then tap a destination.`}
+            accessibilityState={{ selected: isSelected }} onPress={() => selectedMovePadId && selectedMovePadId !== pad.id ? selectOrMove(pad.id) : setSelectedMovePadId((current) => current === pad.id ? null : pad.id)} style={styles.dragGrip}>
             <Text allowFontScaling={false} style={[styles.dragGripGlyph, { color: clip ? foreground : theme.muted }]}>⠿</Text>
-          </View> : null}
+          </Pressable> : null}
         </View>;
-      })}
-    </ScrollView>
+      }
+    }} />
+    {active.navigation === 'pages' && pageCount > 1 ? <View style={styles.pageNav}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Previous page" disabled={page === 0} onPress={() => { setPage((current) => Math.max(0, current - 1)); scrollRef.current?.scrollToOffset({ offset: 0, animated: false }); }} style={[styles.pageButton, { backgroundColor: theme.surfaceAlt, opacity: page === 0 ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontWeight: '800' }}>‹ Prev</Text></Pressable>
+      <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, fontSize: 12 }}>{`Page ${page + 1} of ${pageCount}`}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Next page" disabled={page + 1 >= pageCount} onPress={() => { setPage((current) => Math.min(pageCount - 1, current + 1)); scrollRef.current?.scrollToOffset({ offset: 0, animated: false }); }} style={[styles.pageButton, { backgroundColor: theme.surfaceAlt, opacity: page + 1 >= pageCount ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontWeight: '800' }}>Next ›</Text></Pressable>
+    </View> : active.navigation === 'scroll' ? <Text style={{ color: theme.muted, textAlign: 'center', fontSize: 11, paddingVertical: 2 }}>{`${pageSounds.length} of ${filteredPads.length} sounds`}</Text> : null}
     </View>
 
     <Modal visible={Boolean(popup)} transparent animationType="none" statusBarTranslucent onRequestClose={() => { setPopup(null); setSelectedPad(null); }}>
@@ -419,7 +521,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
               <View style={[styles.popupDivider, { backgroundColor: theme.border }]} />
               {popupRow('Create new board', 'plus', () => { setPopup(null); setNewBoard(true); setBoardName(''); })}
               {onAppearance ? popupRow('Appearance', 'spark', () => { setPopup(null); onAppearance(); }) : null}
-              {popupRow('Stop playback', 'stop', () => { stop(); setPopup(null); })}
+              {playback.active ? popupRow('Stop playback', 'stop', () => { stop(); setPopup(null); }) : null}
             </> : null}
             {popup.kind === 'quick' ? <>
               {popupRow('Record device audio', 'music', () => chooseQuickAction('device-audio'), false, quickAction === 'device-audio')}
@@ -435,6 +537,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
                 setSelectedPad(popup.pad); setRename(popup.pad.pad.label ?? clip?.title ?? ''); setRenameOpen(true); setPopup(null);
               })}
               {popupRow('Move to board', 'controller', () => setPopup({ ...popup, kind: 'move' }), !popup.pad?.pad.clipId || collection.boards.length < 2)}
+              {popup.pad?.pad.clipId && onPlaybackOptions ? popupRow('Playback options', 'music', () => { const id = popup.pad?.pad.clipId; setPopup(null); if (id) onPlaybackOptions(id); }) : null}
               {popupRow('Clear pad', 'close', () => {
                 const target = popup.pad;
                 if (!target?.pad.clipId) return;
@@ -479,18 +582,19 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
 const styles = StyleSheet.create({
   root: { flex: 1, gap: 12 }, boardControls: { flexDirection: 'row', alignItems: 'center', gap: 10 }, actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
   boardButton: { flex: 1, minWidth: 0, height: 49, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, flexDirection: 'row', gap: 9, alignItems: 'center' },
-  boardName: { flex: 1, fontSize: 14, fontWeight: '700' }, editButton: { width: 138, height: 49, paddingHorizontal: 8, borderRadius: 14, borderWidth: 1.5, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
-  editButtonLabel: { fontSize: 13, fontWeight: '700' },
-  search: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }, searchInput: { flex: 1, minWidth: 0, padding: 0, fontSize: 16 }, grid: { flexDirection: 'row', flexWrap: 'wrap', alignContent: 'flex-start', paddingBottom: 24 },
+  boardName: { flex: 1, fontSize: 14, fontWeight: '700' }, editButton: { width: 138, minHeight: 49, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 14, borderWidth: 1.5, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
+  editButtonLabel: { flexShrink: 1, textAlign: 'center', fontSize: 13, fontWeight: '700' },
+  search: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }, searchInput: { flex: 1, minWidth: 0, padding: 0, fontSize: 16 }, grid: { alignContent: 'flex-start' }, gridRow: { gap: 8 },
+  editPanel: { borderWidth: 1, borderRadius: 15, paddingHorizontal: 10, paddingVertical: 7 }, editPanelScroll: { maxHeight: 250 }, editPanelContent: { gap: 5 }, editPanelEyebrow: { fontSize: 13, lineHeight: 18, fontWeight: '800', paddingHorizontal: 1, paddingBottom: 2 }, preferenceRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 }, preferenceLabel: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 16, fontWeight: '800' }, preferenceChoices: { flexDirection: 'row', flexShrink: 0, gap: 4 }, preferenceButton: { minWidth: 60, minHeight: 48, paddingHorizontal: 8, borderRadius: 11, alignItems: 'center', justifyContent: 'center' }, preferenceNote: { fontSize: 11, lineHeight: 15, paddingHorizontal: 1, paddingVertical: 1 }, overlapRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 9 }, overlapLabel: { fontWeight: '700' }, switchTrack: { width: 42, height: 24, borderRadius: 12, padding: 3, justifyContent: 'center' }, switchThumb: { width: 18, height: 18, borderRadius: 9 }, loadMore: { minHeight: 48, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 10 }, pageNav: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10 }, pageButton: { minHeight: 48, minWidth: 86, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   tileWrap: { position: 'relative' }, tile: { flex: 1, position: 'relative', borderRadius: 14, borderWidth: 0, padding: 4, alignItems: 'center', overflow: 'hidden' }, quickTile: { justifyContent: 'center', gap: 2, borderWidth: 1.5, borderStyle: 'dashed' }, emptyTile: { borderStyle: 'dashed' },
-  padArtwork: { flex: 1, width: '100%', marginTop: 2 }, padIconArea: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }, padFooter: { width: '100%', minHeight: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
-  tileIcon: { fontSize: 28, color: '#ffffff', fontWeight: '800' }, tileLabel: { color: '#ffffff', fontSize: 11.5, fontWeight: '800', lineHeight: 14, textAlign: 'center' }, padIdentity: { fontSize: 10.5, lineHeight: 13, textAlign: 'center' },
+  padArtwork: { flex: 1, width: '100%', marginTop: 2 }, padIconArea: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }, padFooter: { width: '100%', minHeight: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 }, padFooterEditing: { paddingRight: 26 },
+  tileIcon: { fontSize: 28, color: '#ffffff', fontWeight: '800' }, tileLabel: { color: '#ffffff', fontSize: 11.5, fontWeight: '800', lineHeight: 14, textAlign: 'center' }, padIdentity: { fontSize: 10.5, lineHeight: 13, textAlign: 'center' }, progressTrack: { width: '92%', height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 3 }, progressFill: { height: '100%', borderRadius: 2 },
   menuButton: { position: 'absolute', top: 0, right: 0, width: 48, height: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' }, moreGlyphPosition: { position: 'absolute', top: 3, right: 5 },
-  quickMenuButton: { position: 'absolute', right: 4, bottom: 4, width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  quickMenuButton: { position: 'absolute', right: 0, bottom: 0, width: 48, height: 48, alignItems: 'flex-end', justifyContent: 'flex-end' }, quickMenuGlyph: { width: 26, height: 26, marginRight: 4, marginBottom: 4, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   dragGrip: { position: 'absolute', right: 0, bottom: 0, width: 48, height: 48 }, dragGripGlyph: { position: 'absolute', right: 2, bottom: 2, width: 20, height: 20, textAlign: 'center', textAlignVertical: 'center', fontWeight: '900', fontSize: 18, lineHeight: 20 },
   tileHighlight: { ...StyleSheet.absoluteFill, borderWidth: 3, borderRadius: 14 },
   popupRoot: { flex: 1 }, popup: { position: 'absolute', borderWidth: 1, borderRadius: 14, paddingVertical: 4, overflow: 'hidden', elevation: 14, shadowColor: '#000000', shadowOpacity: 0.22, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
-  popupRow: { minHeight: 44, height: 44, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, popupLabel: { flex: 1, fontSize: 12, fontWeight: '600' }, popupDivider: { height: StyleSheet.hairlineWidth, marginVertical: 3, marginHorizontal: 10 },
+  popupRow: { minHeight: 48, height: 48, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, popupLabel: { flex: 1, fontSize: 12, fontWeight: '600' }, popupDivider: { height: StyleSheet.hairlineWidth, marginVertical: 3, marginHorizontal: 10 },
   dialogScrim: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.58)' }, dialog: { width: '100%', maxWidth: 400, alignSelf: 'center', gap: 16 },
   nameInput: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontSize: 16 },
 });

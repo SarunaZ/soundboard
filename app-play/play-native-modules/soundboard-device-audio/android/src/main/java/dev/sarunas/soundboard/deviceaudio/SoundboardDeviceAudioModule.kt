@@ -4,11 +4,29 @@ import android.content.Intent
 import android.os.Build
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.typedarray.Float32Array
 
 class SoundboardDeviceAudioModule : Module() {
+  private val playbackPreparation = PlaybackPreparation()
+
   override fun definition() = ModuleDefinition {
     Name("SoundboardDeviceAudio")
     Constants("isSupported" to (Build.VERSION.SDK_INT >= 29))
+
+    Function("startPlaybackPreparation") { channels: List<Float32Array>, gain: Double, sampleRate: Double ->
+      playbackPreparation.start(channels, gain, sampleRate)
+    }
+
+    Function("pollPlaybackPreparation") { jobId: String ->
+      playbackPreparation.poll(jobId)
+    }
+
+    Function("cancelPlaybackPreparation") { jobId: String ->
+      playbackPreparation.cancel(jobId)
+      Unit
+    }
+
+    OnDestroy { playbackPreparation.close() }
 
     AsyncFunction("getStatus") {
       val context = appContext.reactContext ?: error("React context is unavailable")

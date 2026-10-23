@@ -71,13 +71,32 @@ authoritative; remaining physical OEM and read-error checks are tracked there.
 The spike's testing build is 1.0.16/code 17, with ARM64 and x86_64 artifacts.
 
 The current visual authority for Play is the
-[October 20 device-first design](docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/DESIGN_SOURCE_OF_TRUTH.md),
-with its [implementation guide](docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/ASTRA_IMPLEMENTATION.md),
-prototype and captured previews. It preserves the six approved themes and Board
-interactions while making device recording primary, refining the Library icon
-and adding player-synchronized Trim progress. Earlier handoffs remain historical
-records. See the [October 20 implementation and QA record](docs/play-device-first-design-2026-10-20.md)
-and the [previous clean-rebuild QA](docs/play-clean-rebuild-2026-10-18.md).
+[October 22 transparent-logo handoff](docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/BRANDING_WORDMARK_HANDOFF.md),
+with its [implementation guide](docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/ASTRA_IMPLEMENTATION.md),
+prototype and captured previews. It applies the same offline mint PNG to Board,
+Editor and Library, preserving the S launcher icon. The owner's later update
+removes the GIPHY demo: Details defaults to Gallery and selects artwork from
+the phone's photo picker. See the [gallery update](docs/play-gallery-picker-2026-10-22.md) and the
+[implementation and verification record](docs/play-transparent-branding-2026-10-22.md).
+The interaction contract retains per-board grid, Pages/Scroll and overlap,
+clip playback options, master volume and ZIP backup/restore while retaining
+the six themes and device-first creation. The local testing build now supports
+protected per-sound gain up to 200%, now reaching +12 dB; 100% remains unity.
+The 1.0.20/code 21 build passes 145 Play tests, strict TypeScript, 23 native QA
+cases and 24/24 FFmpeg fixtures; emulator and phone installs passed. Phone
+playback was not tested while it was locked. See the [amplification QA record](docs/play-amplification-2026-10-21.md) and the
+[October 21 implementation and QA record](docs/play-board-navigation-2026-10-21.md).
+The [October 22 playback check](docs/play-playback-fix-2026-10-22.md) records the
+native filter-tail fix and Android background C++ PCM preparation, which
+matches the TypeScript algorithm within `2e-6` in all checked cases. The signed
+1.0.19/code 20 dual-ABI build passed audits and was installed on the phone with
+existing data preserved. All 20 emulator playback checks pass; cold clips from
+10 to 60 seconds reached `source.start()` in 71.6–653.6 ms across the tested
+gains. The 1.0.19 phone retest now shows active RedSun progress within roughly
+0.64–1.16 seconds of the tap, compared with about five seconds on 1.0.18;
+this is UI progress timing, not measured acoustic latency. Broader physical
+playback QA remains open.
+Earlier handoffs remain historical records.
 
 Build Play independently with `.\scripts\build-play-android.ps1` (or use
 `-StageOnly` to verify the source boundary without Docker). The build creates
@@ -97,13 +116,12 @@ See the [launcher-icon verification record](docs/play-launcher-icon-2026-10-18.m
 Choose file uses the Android document picker and preserves provider filenames;
 native MP3 import, cancellation and invalid-file handling passed simulator checks.
 See the [file-picker verification record](docs/play-file-picker-2026-10-18.md).
-The Board wordmark uses the reviewed design's 32 sp size with a smaller sparkle;
-normal and compact large-text simulator checks passed.
-Customize's artwork buttons read **Choose image** and **Change image**.
-Customize offers Imgflip's free popular-template picker with local name filtering
-and optional artwork saved as a private thumbnail for offline use. The trim,
-image-selection, save and offline-restart checks passed in the simulator; see
-the [artwork verification record](docs/play-imgflip-artwork-2026-10-18.md).
+The October 22 transparent PNG replaces the earlier text wordmark and sparkle.
+Details offers Default and Gallery, with Gallery selected initially. Saved clips
+retain Library artwork replacement from the gallery or Imgflip's free popular
+list, including private thumbnails for offline use. Earlier Imgflip selection,
+save and offline-restart checks are retained in the
+[artwork verification record](docs/play-imgflip-artwork-2026-10-18.md).
 Edit controls overlay the board without moving tiles or changing scroll position;
 see the [native layout checks](docs/play-edit-geometry-2026-10-18.md).
 In Play's Edit board mode, drag a grip or tap a pad then its destination to

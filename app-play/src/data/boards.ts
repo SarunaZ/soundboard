@@ -70,3 +70,11 @@ export function movePad(fromBoardId: string, fromPadId: string, toBoardId: strin
 export function removeClipAssignments(clipId: string, collection = readBoards()): BoardCollection {
   return removeClipAssignmentsModel(collection, clipId);
 }
+
+export type BoardPreferencePatch = Partial<Pick<Board, 'grid' | 'navigation' | 'allowOverlap'>>;
+
+export function setBoardPreferences(boardId: string, patch: BoardPreferencePatch): BoardCollection {
+  const current = readBoards();
+  if (!current.boards.some((board) => board.id === boardId)) throw new Error('The selected board no longer exists.');
+  return saveBoards({ ...current, boards: current.boards.map((board) => board.id === boardId ? { ...board, ...patch } : board) });
+}

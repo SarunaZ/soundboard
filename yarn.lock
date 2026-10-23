@@ -2646,6 +2646,7 @@ __metadata:
     expo-document-picker: "npm:~57.0.1"
     expo-file-system: "npm:~57.0.4"
     expo-image-manipulator: "npm:~57.0.10"
+    expo-image-picker: "npm:~57.0.10"
     expo-status-bar: "npm:~57.0.1"
     react: "npm:19.2.3"
     react-dom: "npm:19.2.3"
@@ -3760,6 +3761,17 @@ __metadata:
   peerDependencies:
     expo: "*"
   checksum: 10c0/a0790bc19bf0e5d151c864ca5026a505d110b918bec590a67036b85afdd37f2a9ad864c7dbd0501b460730d814e5703300000db9ee4c62c5084d6bc301220a1d
+  languageName: node
+  linkType: hard
+
+"expo-image-picker@npm:~57.0.10":
+  version: 57.0.20
+  resolution: "expo-image-picker@npm:57.0.20"
+  dependencies:
+    expo-image-loader: "npm:~57.0.1"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/8469929213426125ad1568205dd787a7a9576a9708e0d0e2fb2ba4060881fc25e4cfa94f1d21465748552db0a8f5e2c367f03ca182ff07076ca0a9d8a6c0a17b
   languageName: node
   linkType: hard
 

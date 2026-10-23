@@ -10,6 +10,7 @@ const allowedAppPlayFiles = new Set([
   'assets/stimyz/icon.png',
   'assets/stimyz/android-icon-foreground.png',
   'assets/stimyz/android-icon-monochrome.png',
+  'assets/stimyz/stimmyz-logo-transparent.png',
 ]);
 const allowedAppPlayTrees = new Set(['src/ui', 'src/types', 'src/data', 'src/media', 'plugins', 'modules-empty']);
 const allowedDevLeaves = new Set([
@@ -32,8 +33,15 @@ export const allowedDeviceAudioModuleFiles = new Set([
   'app-play/play-native-modules/soundboard-device-audio/index.d.ts',
   'app-play/play-native-modules/soundboard-device-audio/expo-module.config.json',
   'app-play/play-native-modules/soundboard-device-audio/android/build.gradle',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/CMakeLists.txt',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp.h',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp.cpp',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp_jni.cpp',
   'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/CaptureStatus.kt',
   'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/PcmWavWriter.kt',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparation.kt',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/NativePlaybackDsp.kt',
+  'app-play/play-native-modules/soundboard-device-audio/android/src/test/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparationTest.kt',
   'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioCaptureService.kt',
   'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioConsentActivity.kt',
   'app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/SoundboardDeviceAudioModule.kt',
@@ -154,6 +162,10 @@ export function verifyStage(root) {
       throw new Error(`Play ${label} asset is missing from the stage: ${reference}`);
     }
   }
+  const logoPath = path.join(root, 'app-play/assets/stimyz/stimmyz-logo-transparent.png');
+  if (!fs.existsSync(logoPath) || !fs.statSync(logoPath).isFile()) throw new Error('Play transparent Stimmyz logo asset is missing from the stage.');
+  const logoSignature = fs.readFileSync(logoPath).subarray(0, 8);
+  if (!logoSignature.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('Play transparent Stimmyz logo asset must be a PNG.');
   validateRecordingPermissionPolicy(appConfig);
   if (!fs.existsSync(path.join(root, 'app-play/plugins/withDeviceAudioCapture.js'))) throw new Error('Play device-audio config plugin is missing from the stage.');
   if (appConfig.android?.allowBackup !== false) throw new Error('Play must disable Android backup.');

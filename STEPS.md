@@ -342,6 +342,36 @@ pending until implementation and the stated acceptance check are confirmed.
 ## Design refresh (D-series, implementation started 2026-10-17)
 
 Source: [Stimmyz design implementation plan](docs/stimmyz-design-plan.md).
+The [October 22 transparent-logo handoff](docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/ASTRA_IMPLEMENTATION.md)
+is the current visual and interaction authority. It retains the October 21
+interaction contracts and applies the approved transparent mint PNG across
+Board, Editor and Library. The owner's subsequent request removes the GIPHY
+demo and defaults Details to Gallery with the phone's photo picker; see the
+[gallery update](docs/play-gallery-picker-2026-10-22.md). Original implementation and
+validation are in the [October 22 branding record](docs/play-transparent-branding-2026-10-22.md).
+Per-board grids/navigation/overlap,
+Play-only playback, simplified Settings and versioned ZIP backups are tracked
+in the [October 21 QA record](docs/play-board-navigation-2026-10-21.md).
+Protected per-sound amplification is enabled up to 200% (+12 dB) in the local
+testing build. Version 1.0.20/code 21 passes 145 Play tests and strict
+TypeScript, 23 native QA cases and 24/24 FFmpeg fixtures. It installed on the
+emulator and locked Galaxy S23; no phone playback was tested. See the
+[amplification QA record](docs/play-amplification-2026-10-21.md).
+Physical listening and output behavior remain release acceptance checks.
+The [October 22 pad playback record](docs/play-playback-fix-2026-10-22.md)
+tracks the retained-filter-tail fix and native background C++ PCM preparation.
+The native implementation matches the TypeScript algorithm within `2e-6` for
+all checked differential cases. The follow-up passed 145 Play tests, strict
+TypeScript, and 11 staging/release-plugin tests. Signed version 1.0.19/code 20
+passed ARM64/x86_64 build audits and was installed on the phone with existing
+data preserved. Version 1.0.18 reproduced the roughly five-second RedSun
+progress delay on the phone. The 1.0.19 physical retest now shows active RedSun
+progress within about 0.64–1.16 seconds of the tap; this measures UI progress,
+not acoustic latency. All 20 emulator playback checks now pass. Cold 10–60 second clips
+reached `source.start()` in 71.6–653.6 ms across the tested gains, including
+decode and preparation but not speaker output. Broader physical playback QA
+remains open. Native core timings measure processing only; ADB timings include staging,
+transfer and file I/O rather than Expo bridge or full-engine overhead.
 The [October 20 device-first handoff](docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/DESIGN_SOURCE_OF_TRUTH.md)
 supersedes earlier screen hierarchy and Library icon specifications. Its source,
 previews and Trim playback contract are preserved in `docs/design/`. Current
@@ -493,12 +523,20 @@ SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-20
   Customize selection are implemented. 58 Play tests, TypeScript and 9 build
   checks pass; simulator selection, save, offline restart and stable edit bounds
   passed. See the [artwork record](docs/play-imgflip-artwork-2026-10-18.md).
+  The October 22 handoff initially replaced creation Search with a GIPHY sample
+  concept. The owner subsequently requested its removal; Details now defaults
+  to Gallery and uses the phone's photo picker. Library Imgflip replacement
+  remains available. See the [gallery update](docs/play-gallery-picker-2026-10-22.md).
   Full-catalog search and manual crop/reposition remain open. No API key is used;
   no unreviewed Dev sounds or prototype media are
   Play defaults. Public packs/sharing also require rights and moderation decisions.
 - [ ] **D9 — Play backup/export/import (P1).** Add bounded, validated archives
   for Play boards, metadata and owned media; handle conflicts, duplicates,
   corruption, cancellation and interrupted writes without touching Dev data.
+  The October 21 implementation adds versioned ZIP backups of boards, clips,
+  artwork and playback/app preferences, with validated merge and rollback.
+  See the [current QA record](docs/play-board-navigation-2026-10-21.md) for
+  implementation evidence and remaining process-death/device checks.
   A user-requested saved-clip transfer slice now adds old-app Library export
   and Play Library import through a shared Android folder. It preserves audio
   bytes/names, skips existing IDs and leaves source clips and boards intact.

@@ -22,9 +22,24 @@ test('Play begins with one stable empty Main board and explicitly empty pads', (
   assert.equal(initial.boards.length, 1);
   assert.equal(initial.activeBoardId, initial.boards[0].id);
   assert.equal(initial.boards[0].name, 'Main');
+  assert.deepEqual({ grid: initial.boards[0].grid, navigation: initial.boards[0].navigation, allowOverlap: initial.boards[0].allowOverlap }, { grid: '4x4', navigation: 'pages', allowOverlap: false });
   assert.equal(initial.boards[0].pads.length, 16);
   assert.ok(initial.boards[0].pads.every((pad) => pad.clipId === null));
   assert.deepEqual(emptyBoardCollection(), initial);
+});
+
+test('legacy board snapshots migrate to safe layout defaults and preferences survive model operations', () => {
+  const current = emptyBoardCollection();
+  const legacy = structuredClone(current);
+  delete legacy.boards[0].grid;
+  delete legacy.boards[0].navigation;
+  delete legacy.boards[0].allowOverlap;
+  const migrated = parseBoardCollection(legacy);
+  assert.deepEqual({ grid: migrated.boards[0].grid, navigation: migrated.boards[0].navigation, allowOverlap: migrated.boards[0].allowOverlap }, { grid: '4x4', navigation: 'pages', allowOverlap: false });
+  const customized = parseBoardCollection({ ...migrated, boards: [{ ...migrated.boards[0], grid: '3x4', navigation: 'scroll', allowOverlap: true }] });
+  const changed = addClipToBoardModel(customized, clipA);
+  assert.deepEqual({ grid: changed.boards[0].grid, navigation: changed.boards[0].navigation, allowOverlap: changed.boards[0].allowOverlap }, { grid: '3x4', navigation: 'scroll', allowOverlap: true });
+  assert.throws(() => parseBoardCollection({ ...customized, boards: [{ ...customized.boards[0], grid: '5x5' }] }), /grid size/);
 });
 
 test('board create/select and clip assignment preserve the collection and explicit empties', () => {

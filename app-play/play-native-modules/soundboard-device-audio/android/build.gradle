@@ -5,12 +5,27 @@ group = 'dev.sarunas.soundboard.deviceaudio'
 version = '1.0.0'
 
 android {
+  if (rootProject.hasProperty("ndkPath")) ndkPath rootProject.ext.ndkPath
+  if (rootProject.hasProperty("ndkVersion")) ndkVersion rootProject.ext.ndkVersion
   namespace "dev.sarunas.soundboard.deviceaudio"
   defaultConfig {
     minSdkVersion 24
     versionCode 1
     versionName '1.0.0'
     testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    externalNativeBuild {
+      cmake {
+        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        def architectures = project.findProperty("reactNativeArchitectures")
+        abiFilters(*(architectures ? architectures.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]))
+      }
+    }
+  }
+  externalNativeBuild {
+    cmake {
+      path "src/main/cpp/CMakeLists.txt"
+      version "3.22.1"
+    }
   }
   testOptions { unitTests.includeAndroidResources = true }
 }

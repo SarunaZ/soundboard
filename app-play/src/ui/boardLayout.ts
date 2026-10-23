@@ -15,11 +15,12 @@ export function calculateBoardGrid(
   fontScale: number,
   gap = 8,
   pixelRatio = 1,
+  requestedColumns = 4,
 ): BoardGridLayout {
   const safeWidth = Number.isFinite(availableWidth) ? Math.max(0, availableWidth) : 0;
   const safePixelRatio = Number.isFinite(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1;
   void fontScale;
-  const columns = 4;
+  const columns = requestedColumns === 3 ? 3 : 4;
   const safeGap = Number.isFinite(gap) ? Math.max(0, gap) : 0;
   // Yoga rounds child edges to physical pixels. Fit the grid in that same
   // coordinate space so four individually rounded tile widths cannot wrap.

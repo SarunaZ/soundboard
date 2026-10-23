@@ -33,7 +33,8 @@ $appPlayFiles = @('index.ts', 'App.tsx', 'app.json', 'package.json', 'tsconfig.j
 $appPlayAssetFiles = @(
   'assets/stimyz/icon.png',
   'assets/stimyz/android-icon-foreground.png',
-  'assets/stimyz/android-icon-monochrome.png'
+  'assets/stimyz/android-icon-monochrome.png',
+  'assets/stimyz/stimmyz-logo-transparent.png'
 )
 $appPlayTrees = @('src/ui', 'src/data', 'src/media')
 $optionalAppPlayTrees = @('src/types', 'plugins')
@@ -43,8 +44,15 @@ $deviceAudioNativeFiles = @(
   'index.d.ts',
   'expo-module.config.json',
   'android/build.gradle',
+  'android/src/main/cpp/CMakeLists.txt',
+  'android/src/main/cpp/playback_dsp.h',
+  'android/src/main/cpp/playback_dsp.cpp',
+  'android/src/main/cpp/playback_dsp_jni.cpp',
   'android/src/main/java/dev/sarunas/soundboard/deviceaudio/CaptureStatus.kt',
   'android/src/main/java/dev/sarunas/soundboard/deviceaudio/PcmWavWriter.kt',
+  'android/src/main/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparation.kt',
+  'android/src/main/java/dev/sarunas/soundboard/deviceaudio/NativePlaybackDsp.kt',
+  'android/src/test/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparationTest.kt',
   'android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioCaptureService.kt',
   'android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioConsentActivity.kt',
   'android/src/main/java/dev/sarunas/soundboard/deviceaudio/SoundboardDeviceAudioModule.kt'

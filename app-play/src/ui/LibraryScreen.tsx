@@ -27,13 +27,14 @@ function mixHex(foreground: string, background: string, foregroundWeight: number
   return `#${channels.join('')}`;
 }
 
-export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, onPlay, onCreate, onRename, onDelete, onChangeArtwork, onAddToBoard, onAssignToTarget, onImportSoundbites }: {
+export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, onPlay, onCreate, onRename, onDelete, onChangeArtwork, onAddToBoard, onAssignToTarget, onImportSoundbites, onPlaybackOptions }: {
   theme: Theme; clips: LocalClip[]; boards: BoardCollection; onPlay: (clip: LocalClip) => void;
   onCreate: (initialAction?: 'file' | 'record' | 'device-audio') => void; onAppearance?: () => void; onRename: (clip: LocalClip, title: string) => void; onDelete: (clip: LocalClip) => void;
   onChangeArtwork?: (clip: LocalClip, artwork: DraftArtwork) => void;
   onAddToBoard: (clip: LocalClip, boardId: string, padId?: string) => void;
   assignmentTarget?: { boardId: string; padId?: string; expectedClipId?: string | null } | null; onAssignToTarget?: (clip: LocalClip, target: { boardId: string; padId?: string; expectedClipId?: string | null }) => void;
   onImportSoundbites?: (signal: AbortSignal) => Promise<SoundbiteImportResult | null>;
+  onPlaybackOptions?: (clip: LocalClip) => void;
 }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<LocalClip | null>(null);
@@ -65,7 +66,7 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
     if (!button) return;
     button.measureInWindow((x, y, width, height) => {
       const menuWidth = Math.max(1, Math.min(176 * Math.min(fontScale, 1.5), windowWidth - 24));
-      const menuRows = 4 + Number(Boolean(onChangeArtwork)) + Number(Boolean(assignmentTarget && onAssignToTarget));
+      const menuRows = 5 + Number(Boolean(onChangeArtwork)) + Number(Boolean(assignmentTarget && onAssignToTarget));
       const menuHeight = menuRows * 40 + 8;
       const left = Math.max(12, Math.min(x + width - menuWidth, windowWidth - menuWidth - 12));
       const below = y + height + 4;
@@ -120,6 +121,7 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
   }
 
   return <View style={styles.root}>
+    <ScrollView style={styles.libraryScroll} contentContainerStyle={styles.libraryContent} keyboardShouldPersistTaps="handled">
     <View style={styles.libraryHeader}>
       <LibraryIcon size={39} color={theme.accent} />
       <View style={styles.headerCopy}><Text style={[styles.headerTitle, { color: theme.text, lineHeight: 37 * fontScale }]}>Your library <Text style={{ color: '#BC42FA' }}>✦</Text></Text>
@@ -143,7 +145,7 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
       </Pressable>
     </View>
     <Text style={[styles.count, { color: theme.muted, lineHeight: 16 * fontScale }]}>{filtered.length} / 1000 soundbites</Text>
-    <ScrollView style={styles.results} contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
+    <View style={styles.list}>
       {filtered.length ? filtered.map((clip) => <Panel key={clip.id} theme={theme} style={styles.row}>
         <View style={[styles.preview, { backgroundColor: clip.color || theme.primary }]}>
           {clip.artworkUri && !failedArtworkUris.has(clip.artworkUri) ? <Image source={{ uri: clip.artworkUri }} onError={() => setFailedArtworkUris((current) => new Set(current).add(clip.artworkUri!))} resizeMode="cover" style={StyleSheet.absoluteFill} /> : <Text style={{ color: contrastForeground(clip.color || theme.primary), fontSize: 20, fontWeight: '800' }}>{clip.missing ? '!' : iconChoices.find((item) => item.id === clip.icon)?.glyph ?? '▶'}</Text>}
@@ -158,6 +160,7 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
       <Pressable onPress={() => onCreate()} accessibilityRole="button" style={[styles.makeAnother, { borderColor: theme.accent, backgroundColor: theme.surface }]}>
         <View style={[styles.plusCircle, { backgroundColor: theme.accent }]}><Icon name="plus" size={24} color="#FFFFFF" /></View><Text style={{ color: theme.text, fontWeight: '800', fontSize: 14, textAlign: 'center' }}>More ways to add a sound</Text>
       </Pressable>
+    </View>
     </ScrollView>
 
     <Modal visible={sortMenu} transparent animationType="fade" onRequestClose={() => setSortMenu(false)}>
@@ -172,6 +175,7 @@ export function LibraryScreen({ theme, clips, boards, assignmentTarget = null, o
         <Pressable style={StyleSheet.absoluteFill} onPress={dismissClipMenu} accessibilityRole="button" accessibilityLabel="Close sound options" />
         {clipMenu ? <View style={[styles.clipMenu, { left: clipMenu.left, top: clipMenu.top, width: clipMenu.width, backgroundColor: theme.surface, borderColor: theme.border }]}>
           <MenuItem label="Play" icon="play" theme={theme} disabled={clipMenu.clip.missing} onPress={() => chooseMenuAction('play')} />
+          {onPlaybackOptions ? <MenuItem label="Playback options" icon="play" theme={theme} disabled={clipMenu.clip.missing} onPress={() => { const clip = clipMenu.clip; dismissClipMenu(); onPlaybackOptions(clip); }} /> : null}
           {assignmentTarget && onAssignToTarget ? <MenuItem label={assignmentTarget.padId ? 'Use for selected pad' : 'Add to this board'} icon="board" theme={theme} onPress={() => chooseMenuAction('target')} /> : null}
           <MenuItem label="Rename" icon="pencil" theme={theme} onPress={() => chooseMenuAction('rename')} />
           {onChangeArtwork ? <MenuItem label="Change artwork" icon="image" theme={theme} onPress={() => chooseMenuAction('artwork')} /> : null}
@@ -237,7 +241,7 @@ function MenuItem({ label, icon, theme, onPress, disabled = false, destructive =
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, gap: 0 }, libraryHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 15, marginTop: 21, marginBottom: 25 }, headerCopy: { flex: 1, gap: 9, minWidth: 0 }, headerTitle: { fontSize: 28, lineHeight: 37, fontWeight: '800', letterSpacing: -0.8, includeFontPadding: false }, fullWidthButton: { alignSelf: 'stretch', marginBottom: 15 }, searchRow: { flexDirection: 'row', gap: 8, marginBottom: 13 }, searchWrap: { flex: 1, minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }, search: { flex: 1, minHeight: 44, paddingHorizontal: 0, fontSize: 14 }, sortButton: { minHeight: 48, minWidth: 49, width: 49, height: 48, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }, count: { textAlign: 'right', fontSize: 12, lineHeight: 16, marginTop: -4, marginBottom: 16 }, results: { flex: 1 }, list: { gap: 8, paddingBottom: 16 }, row: { minHeight: 79, flexDirection: 'row', alignItems: 'center', padding: 10, gap: 11, borderRadius: 16 }, preview: { width: 61, height: 61, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, details: { flex: 1, minWidth: 0 }, playButton: { width: 43, height: 43, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }, menu: { width: 32, height: 48, alignItems: 'center', justifyContent: 'center' },
+  root: { flex: 1, gap: 0 }, libraryScroll: { flex: 1 }, libraryContent: { paddingBottom: 16 }, libraryHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 15, marginTop: 21, marginBottom: 25 }, headerCopy: { flex: 1, gap: 9, minWidth: 0 }, headerTitle: { fontSize: 28, lineHeight: 37, fontWeight: '800', letterSpacing: -0.8, includeFontPadding: false }, fullWidthButton: { alignSelf: 'stretch', marginBottom: 15 }, searchRow: { flexDirection: 'row', gap: 8, marginBottom: 13 }, searchWrap: { flex: 1, minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9 }, search: { flex: 1, minHeight: 44, paddingHorizontal: 0, fontSize: 14 }, sortButton: { minHeight: 48, minWidth: 49, width: 49, height: 48, borderWidth: 1, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }, count: { textAlign: 'right', fontSize: 12, lineHeight: 16, marginTop: -4, marginBottom: 16 }, list: { gap: 8, paddingBottom: 16 }, row: { minHeight: 79, flexDirection: 'row', alignItems: 'center', padding: 10, gap: 11, borderRadius: 16 }, preview: { width: 61, height: 61, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, details: { flex: 1, minWidth: 0 }, playButton: { width: 43, height: 43, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }, menu: { width: 32, height: 48, alignItems: 'center', justifyContent: 'center' },
   makeAnother: { minHeight: 118, alignSelf: 'stretch', marginTop: 18, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 17, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 8 }, plusCircle: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' }, empty: { alignItems: 'flex-start', gap: 12 }, scrim: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.62)' }, sheet: { width: '100%', maxWidth: 480, maxHeight: '90%', alignSelf: 'center', gap: 16 }, dialog: { width: '100%', maxWidth: 380, maxHeight: '90%', alignSelf: 'center', gap: 16 }, modalHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 }, nameInput: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontSize: 16 }, optionStack: { gap: 10 }, menuModal: { flex: 1 }, clipMenu: { position: 'absolute', paddingVertical: 4, borderWidth: 1, borderRadius: 14, elevation: 14, shadowColor: '#000', shadowOpacity: 0.32, shadowRadius: 10, shadowOffset: { width: 0, height: 5 } }, menuItem: { minHeight: 40, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, attribution: { minHeight: 40, alignItems: 'center', justifyContent: 'center' },
   importPanel: { width: '100%', maxWidth: 360, alignSelf: 'center', alignItems: 'center', gap: 16 }, importCancel: { minHeight: 46, minWidth: 150, paddingHorizontal: 18, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 });

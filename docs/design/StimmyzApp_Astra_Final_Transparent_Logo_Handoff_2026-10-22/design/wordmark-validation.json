@@ -1,0 +1,662 @@
+{
+  "total": 164,
+  "passed": 164,
+  "results": [
+    {
+      "check": "Original exact source SHA256",
+      "pass": true
+    },
+    {
+      "check": "Original 2172x724 RGBA",
+      "pass": true
+    },
+    {
+      "check": "Actual source alpha transparency",
+      "pass": true
+    },
+    {
+      "check": "Derived actual alpha transparency",
+      "pass": true
+    },
+    {
+      "check": "Source sparkle not cropped",
+      "pass": true
+    },
+    {
+      "check": "S icon untouched",
+      "pass": true
+    },
+    {
+      "check": "Retired dark logo removed from active assets",
+      "pass": true
+    },
+    {
+      "check": "Retired SVG is not an active resource",
+      "pass": true
+    },
+    {
+      "check": "Peach / board: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Peach / board: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Peach / board: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Peach / board: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Peach / board: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Peach / board: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Peach / board: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Peach / editor: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Peach / editor: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Peach / editor: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Peach / editor: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Peach / editor: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Peach / editor: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Peach / editor: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Peach / library: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Peach / library: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Peach / library: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Peach / library: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Peach / library: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Peach / library: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Peach / library: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Peach no pad menus in play mode",
+      "pass": true
+    },
+    {
+      "check": "Mint / board: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Mint / board: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Mint / board: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Mint / board: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Mint / board: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Mint / board: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Mint / board: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Mint / editor: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Mint / editor: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Mint / editor: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Mint / editor: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Mint / editor: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Mint / editor: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Mint / editor: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Mint / library: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Mint / library: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Mint / library: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Mint / library: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Mint / library: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Mint / library: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Mint / library: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Mint no pad menus in play mode",
+      "pass": true
+    },
+    {
+      "check": "Snow / board: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Snow / board: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Snow / board: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Snow / board: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Snow / board: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Snow / board: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Snow / board: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Snow / editor: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Snow / editor: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Snow / editor: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Snow / editor: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Snow / editor: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Snow / editor: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Snow / editor: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Snow / library: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Snow / library: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Snow / library: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Snow / library: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Snow / library: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Snow / library: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Snow / library: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Snow no pad menus in play mode",
+      "pass": true
+    },
+    {
+      "check": "Ice / board: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Ice / board: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Ice / board: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Ice / board: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Ice / board: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Ice / board: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Ice / board: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Ice / editor: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Ice / editor: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Ice / editor: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Ice / editor: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Ice / editor: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Ice / editor: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Ice / editor: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Ice / library: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Ice / library: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Ice / library: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Ice / library: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Ice / library: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Ice / library: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Ice / library: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Ice no pad menus in play mode",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / board: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / board: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / board: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / board: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / board: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / board: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / board: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / editor: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / editor: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / editor: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / editor: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / editor: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / editor: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / editor: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / library: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / library: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / library: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / library: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / library: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / library: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Vanilla / library: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Vanilla no pad menus in play mode",
+      "pass": true
+    },
+    {
+      "check": "Coffee / board: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Coffee / board: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Coffee / board: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Coffee / board: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Coffee / board: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Coffee / board: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Coffee / board: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Coffee / editor: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Coffee / editor: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Coffee / editor: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Coffee / editor: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Coffee / editor: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Coffee / editor: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Coffee / editor: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Coffee / library: logo visible",
+      "pass": true
+    },
+    {
+      "check": "Coffee / library: true transparent asset embedded",
+      "pass": true
+    },
+    {
+      "check": "Coffee / library: not stretched",
+      "pass": true
+    },
+    {
+      "check": "Coffee / library: accessible name",
+      "pass": true
+    },
+    {
+      "check": "Coffee / library: no plaque",
+      "pass": true
+    },
+    {
+      "check": "Coffee / library: overflow not overlapping",
+      "pass": true
+    },
+    {
+      "check": "Coffee / library: no duplicate sparkle",
+      "pass": true
+    },
+    {
+      "check": "Coffee no pad menus in play mode",
+      "pass": true
+    },
+    {
+      "check": "Settings menu opens",
+      "pass": true
+    },
+    {
+      "check": "Master volume still present",
+      "pass": true
+    },
+    {
+      "check": "Device recording remains primary",
+      "pass": true
+    },
+    {
+      "check": "GIPHY picker unchanged",
+      "pass": true
+    },
+    {
+      "check": "Edit-only pad menu appears",
+      "pass": true
+    },
+    {
+      "check": "Board grid modes retained",
+      "pass": true
+    },
+    {
+      "check": "Board navigation modes retained",
+      "pass": true
+    },
+    {
+      "check": "320px board header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "320px editor header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "320px library header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "320px no outer horizontal overflow",
+      "pass": true
+    },
+    {
+      "check": "360px board header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "360px editor header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "360px library header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "360px no outer horizontal overflow",
+      "pass": true
+    },
+    {
+      "check": "375px board header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "375px editor header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "375px library header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "375px no outer horizontal overflow",
+      "pass": true
+    },
+    {
+      "check": "412px board header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "412px editor header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "412px library header has no overlap",
+      "pass": true
+    },
+    {
+      "check": "412px no outer horizontal overflow",
+      "pass": true
+    },
+    {
+      "check": "No browser JS errors",
+      "pass": true
+    }
+  ]
+}

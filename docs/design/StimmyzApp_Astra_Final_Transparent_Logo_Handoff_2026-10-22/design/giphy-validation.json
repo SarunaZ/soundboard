@@ -1,0 +1,106 @@
+[
+  {
+    "name": "Board starts without GIPHY picker",
+    "ok": true
+  },
+  {
+    "name": "Customize contains GIPHY action",
+    "ok": true
+  },
+  {
+    "name": "GIPHY is not a fourth navigation tab",
+    "ok": true
+  },
+  {
+    "name": "GIPHY shows in artwork selection",
+    "ok": true
+  },
+  {
+    "name": "Visible powered-by attribution",
+    "ok": true
+  },
+  {
+    "name": "UI preview disclaimer",
+    "ok": true
+  },
+  {
+    "name": "Stickers selected by default",
+    "ok": true
+  },
+  {
+    "name": "Six sticker demo results",
+    "ok": true
+  },
+  {
+    "name": "Selected reaction reflected in preview",
+    "ok": true
+  },
+  {
+    "name": "Selected reaction persist highlight",
+    "ok": true
+  },
+  {
+    "name": "Typing filters samples",
+    "ok": true
+  },
+  {
+    "name": "Input retains value",
+    "ok": true
+  },
+  {
+    "name": "Empty search state",
+    "ok": true
+  },
+  {
+    "name": "GIF tab offers corresponding results",
+    "ok": true
+  },
+  {
+    "name": "Saving demo returns to board",
+    "ok": true
+  },
+  {
+    "name": "Sound retained linked artwork demo marker",
+    "ok": true
+  },
+  {
+    "name": "Quick Add stays first",
+    "ok": true
+  },
+  {
+    "name": "Coffee theme retained",
+    "ok": true
+  },
+  {
+    "name": "Default clears selected GIPHY mock artwork",
+    "ok": true
+  },
+  {
+    "name": "No browser errors",
+    "ok": true
+  },
+  {
+    "name": "GIPHY artwork picker theme Peach",
+    "ok": true
+  },
+  {
+    "name": "GIPHY artwork picker theme Mint",
+    "ok": true
+  },
+  {
+    "name": "GIPHY artwork picker theme Snow",
+    "ok": true
+  },
+  {
+    "name": "GIPHY artwork picker theme Ice",
+    "ok": true
+  },
+  {
+    "name": "GIPHY artwork picker theme Vanilla",
+    "ok": true
+  },
+  {
+    "name": "GIPHY artwork picker theme Coffee",
+    "ok": true
+  }
+]

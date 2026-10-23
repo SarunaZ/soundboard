@@ -53,12 +53,12 @@ board/pad captured when creation began. Imported and recorded source audio is
 limited to five minutes and 32 MiB. Recording requests microphone permission
 only after the user chooses microphone recording and uses the foreground UI; leaving
 the foreground interrupts and cancels capture. The Details stage has a live pad
-preview and fixed Save action. Details offers a **Choose image** action for Imgflip's free
-popular-template picker, with local name filtering, optional image removal and
-a source link; selected artwork can be changed with **Change image**. Selected artwork is saved
-as a private JPEG thumbnail up to 512 px for offline Board and Library display.
-Saved Library clips can select replacement art from Imgflip or the device gallery.
-The picker uses the free popular list, not Imgflip's paid full-catalog search.
+preview and fixed Save action. Details offers Default and Gallery, with Gallery
+selected initially. Tapping Gallery opens the phone's photo picker. Gallery artwork is
+saved as a private JPEG thumbnail up to 512 px for offline Board and Library
+display. Saved Library clips retain replacement artwork from Imgflip or the
+device gallery. The Imgflip picker uses its free popular list with local name
+filtering, not paid full-catalog search.
 The [artwork verification record](../docs/play-imgflip-artwork-2026-10-18.md)
 documents simulator selection, saved previews and offline restart checks.
 In Edit board mode, drag a pad by its grip to reorder it, or tap a pad and then
@@ -77,7 +77,8 @@ validation and current native-check status.
 
 Dependencies use `app-client`'s Expo 57 base, plus Play-only
 `expo-image-manipulator` for bounded artwork thumbnails and
-`expo-document-picker` for system file selection. The picker copies the
+`expo-image-picker` for Gallery artwork, plus `expo-document-picker` for
+audio/video file selection. The file picker copies the
 selection into its app cache; Play stages a private editor copy, then removes
 only that returned DocumentPicker cache file. The user's provider source stays
 untouched.
@@ -98,8 +99,12 @@ Build an unsigned Android artifact with `.\scripts\build-play-android.ps1` from
 the repository root. This directory is not nested under `app-client/src` so its source
 root, app identity, and package configuration remain distinct from Dev.
 
-The Board header uses a 32sp Stimmyz wordmark with a smaller 20sp sparkle and a
-19sp bold Soundboard subtitle.
+Board, Editor and Library share the approved transparent mint Stimmyz PNG,
+packaged locally for offline use. It scales proportionally beside the 48 dp
+app-options button. The Board retains its Soundboard subtitle; the S launcher
+icon is unchanged. Details offers Default and Gallery, with Gallery selected
+initially. The GIPHY demo was removed at the owner's request; see the
+[gallery update](../docs/play-gallery-picker-2026-10-22.md).
 
 The clean-rebuild baseline test build is 1.0.15/code 16 for ARM64 and x86_64.
 The final APK passed build audits and native clean-rebuild, density, Editor and
@@ -126,12 +131,41 @@ Run the data/media tests and TypeScript check with the repository's Docker tools
 docker compose --profile tools run --rm --no-deps --entrypoint /bin/sh deps -lc 'corepack enable && yarn workspace app-play test && yarn workspace app-play check'
 ```
 
-The current visual authority is the [October 20 device-first design](../docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/DESIGN_SOURCE_OF_TRUTH.md),
-with its [implementation guide](../docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/ASTRA_IMPLEMENTATION.md),
+The current visual authority is the [October 22 transparent-logo handoff](../docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/BRANDING_WORDMARK_HANDOFF.md),
+with its [implementation guide](../docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/ASTRA_IMPLEMENTATION.md),
 prototype and captured previews. Read the [Trim playback contract](../docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/TRIM_PLAYBACK_PROGRESS_REQUIREMENTS.md)
 for actual-player progress, pause/resume and lifecycle behavior. Earlier design
 handoffs and research audits remain historical references. The current changes
-and verification are tracked in the [October 20 QA record](../docs/play-device-first-design-2026-10-20.md).
+and verification are tracked in the [October 22 branding QA record](../docs/play-transparent-branding-2026-10-22.md),
+alongside the [October 21 interaction QA record](../docs/play-board-navigation-2026-10-21.md).
+
+Edit Board now saves 3×4/4×4 grids, Pages/Scroll navigation and overlap per board.
+Pages reserve their first tile for Quick add; Scroll loads bounded batches with
+Quick add only at the top. Pad menus appear only while editing. Playback options
+are shared by all assignments of a Library sound and offer volume and repeat.
+The local testing build supports protected 0–200% per-sound gain, now reaching
++12 dB at 200%; 100% remains unity. Boosted PCM uses linked-channel limiting
+and reconstructed-peak margin; overlap uses protected clip peak bounds. Quiet
+clips retain the requested amplification. The 1.0.20/code 21 build passes 145
+Play tests, strict TypeScript, 23 native QA cases and 24/24 FFmpeg fixtures.
+The build installed on the emulator and the locked Galaxy S23; phone playback
+was not tested. See the [amplification QA record](../docs/play-amplification-2026-10-21.md)
+for measured results and artifact details.
+Android PCM analysis and limiting now run in a native background C++ worker;
+the implementation matches the TypeScript algorithm within `2e-6` across the
+checked differential cases. Version 1.0.19/code 20 passed dual-ABI build audits
+and was installed on the phone with its data preserved. The physical RedSun
+retest shows active UI progress within about 0.64–1.16 seconds of the tap,
+compared with about five seconds on 1.0.18; this is not acoustic latency.
+Broader physical playback QA remains unverified. All 20 emulator playback
+checks pass; cold 10–60 second clips reached `source.start()` in 71.6–653.6 ms
+across the tested gains. These include engine decode and preparation but do not
+measure speaker output. See the [October 22 playback record](../docs/play-playback-fix-2026-10-22.md).
+Settings provides master volume, themes and explicit ZIP backup/restore.
+Playback progress follows the native audio clock, and contextual Stop all is
+available across tabs. Background playback is omitted and stops on leaving the
+foreground. Restoring a backup merges owned media and boards and restores app
+preferences; existing sound IDs are preserved.
 The [first-slice verification record](../docs/play-verification-2026-10-17.md)
 contains the passing unsigned APK/AAB build results and artifact checksums.
 Local recording/video and reliable creation take priority over further visual

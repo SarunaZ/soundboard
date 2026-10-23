@@ -7,6 +7,7 @@ import { emptyOrRecoveredSnapshot, PLAY_LIBRARY_DIRECTORY, writeSnapshot } from 
 import { loadBoards, removeClipAssignments, saveBoards } from './boards.ts';
 import { loadClipPresentations, presentationReferencesArtwork, removeClipPresentation, setClipPresentation, type ClipArtwork, type ClipPresentation } from './presentation.ts';
 import { deleteOwnedArtwork, resolveArtworkUri } from '../media/artwork.ts';
+import { getClipPlaybackPreference, removeClipPlaybackPreference, setClipPlaybackPreference } from './clipPlayback.ts';
 
 const CATALOG_FILE = new File(PLAY_LIBRARY_DIRECTORY, 'catalog.json');
 const BACKUP_FILE = new File(PLAY_LIBRARY_DIRECTORY, 'catalog.backup.json');
@@ -146,10 +147,12 @@ export function deleteLocalClip(id: string): void {
   const nextCatalog = removeClip(catalog, id);
   const oldBoards = loadBoards();
   const oldPresentation = loadClipPresentations()[id];
+  const oldPlayback = getClipPlaybackPreference(id);
   const nextBoards = removeClipAssignments(id, oldBoards);
   saveBoards(nextBoards);
   try {
     removeClipPresentation(id);
+    removeClipPlaybackPreference(id);
     persistCatalog(nextCatalog);
   } catch (error) {
     const rollbackErrors: string[] = [];
@@ -162,6 +165,11 @@ export function deleteLocalClip(id: string): void {
       saveBoards(oldBoards);
     } catch (rollbackError) {
       rollbackErrors.push(`board assignment rollback also failed: ${String(rollbackError)}`);
+    }
+    try {
+      setClipPlaybackPreference(id, oldPlayback);
+    } catch (rollbackError) {
+      rollbackErrors.push(`clip playback rollback also failed: ${String(rollbackError)}`);
     }
     if (rollbackErrors.length > 0) throw new Error(`Could not update the clip catalog: ${String(error)}. ${rollbackErrors.join('. ')}.`);
     throw error;

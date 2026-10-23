@@ -12,7 +12,7 @@ import { ActionButton, GradientFill, Panel, TextField } from './controls';
 import type { Theme } from './theme';
 import { iconChoices, padColors } from './theme';
 import { formatTime, Waveform } from './Waveform';
-import { ArtworkPicker, pickGalleryArtwork } from './ArtworkPicker';
+import { pickGalleryArtwork } from './ArtworkPicker';
 import { Icon } from './Icons';
 import { TrimPreviewController, type TrimPreviewState } from '../media/trimPreview';
 
@@ -71,10 +71,9 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const [deviceStatus, setDeviceStatus] = useState<DeviceAudioStatus | null>(null);
   const [message, setMessage] = useState('');
   const [artwork, setArtwork] = useState<DraftArtwork | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [imagePreparing, setImagePreparing] = useState(false);
   const [artworkImageFailed, setArtworkImageFailed] = useState(false);
-  const [artMode, setArtMode] = useState<'default' | 'gallery' | 'search'>('default');
+  const [artMode, setArtMode] = useState<'default' | 'gallery'>('gallery');
   const { fontScale, width: viewportWidth } = useWindowDimensions();
   const stackFineTuneControls = fontScale > 1.2 || viewportWidth < 340;
   const controller = useRef<AbortController | null>(null);
@@ -111,13 +110,12 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (Keyboard.isVisible()) { Keyboard.dismiss(); return true; }
-      if (pickerOpen) { setPickerOpen(false); setImagePreparing(false); return true; }
       if (recorderRef.current) { confirmDiscardRecording(); return true; }
       goBack();
       return true;
     });
     return () => subscription.remove();
-  }, [step, busy, source, pickerOpen]);
+  }, [step, busy, source]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -662,6 +660,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   }
 
   async function chooseGalleryArtwork() {
+    if (busy || imagePreparing) return;
     setArtMode('gallery');
     setImagePreparing(true);
     try {
@@ -775,26 +774,23 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
             {artwork && !artworkImageFailed ? <Image source={{ uri: artwork.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setArtworkImageFailed(true)} /> : <><GradientFill colors={theme.primaryGradient} vertical /><Icon name="music" size={37} color="#fff" /></>}
           </View>
           <View style={styles.artworkSummary}>
-            <Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Optional artwork</Text>
-            <Text style={{ color: theme.muted, lineHeight: 18 }}>Choose a picture for your pad or keep the default icon.</Text>
+            <Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>{artwork ? 'Gallery picture selected' : artMode === 'default' ? 'Default icon' : 'Optional artwork'}</Text>
+            <Text style={{ color: theme.muted, lineHeight: 18 }}>{artwork ? 'This Gallery picture will be saved on this device with your sound.' : artMode === 'default' ? 'Your pad will use the default music icon.' : 'Choose a Gallery picture for your pad, or select Default to use the music icon.'}</Text>
           </View>
         </Panel>
         <Text style={[styles.fieldLabel, { color: theme.muted }]}>SOUNDBITE NAME</Text>
         <TextField inputRef={nameInputRef} onFocus={() => { if (nameInputRef.current) keyboardReveal.onFocus(nameInputRef.current); }} onBlur={() => { if (nameInputRef.current) keyboardReveal.onBlur(nameInputRef.current); }} value={name} onChangeText={(value) => setName(value.slice(0, 100))} placeholder="Name this sound" theme={theme} maxLength={100} />
         <View style={styles.artOptions}>
-          <Pressable onPress={() => { setArtMode('default'); clearArtwork(); }} accessibilityRole="button" accessibilityState={{ selected: artMode === 'default' }} style={[styles.artOption, { backgroundColor: artMode === 'default' ? theme.raised : theme.surface, borderColor: artMode === 'default' ? theme.focus : theme.border, borderWidth: artMode === 'default' ? 2 : 1 }]}><Icon name="music" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Default</Text></Pressable>
-          <Pressable onPress={() => void chooseGalleryArtwork()} disabled={busy || imagePreparing} accessibilityRole="button" accessibilityState={{ selected: artMode === 'gallery' }} style={[styles.artOption, { backgroundColor: artMode === 'gallery' ? theme.raised : theme.surface, borderColor: artMode === 'gallery' ? theme.focus : theme.border, borderWidth: artMode === 'gallery' ? 2 : 1, opacity: imagePreparing ? 0.6 : 1 }]}><Icon name="image" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Gallery</Text></Pressable>
-          <Pressable onPress={() => setArtMode('search')} accessibilityRole="button" accessibilityState={{ selected: artMode === 'search' }} style={[styles.artOption, { backgroundColor: artMode === 'search' ? theme.raised : theme.surface, borderColor: artMode === 'search' ? theme.focus : theme.border, borderWidth: artMode === 'search' ? 2 : 1 }]}><Icon name="search" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Search</Text></Pressable>
+          <Pressable onPress={() => { if (busy || imagePreparing) return; setArtMode('default'); clearArtwork(); }} disabled={busy || imagePreparing} accessibilityRole="button" accessibilityState={{ selected: artMode === 'default', disabled: busy || imagePreparing }} style={[styles.artOption, { backgroundColor: artMode === 'default' ? theme.raised : theme.surface, borderColor: artMode === 'default' ? theme.focus : theme.border, borderWidth: artMode === 'default' ? 2 : 1, opacity: busy || imagePreparing ? 0.6 : 1 }]}><Icon name="music" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Default</Text></Pressable>
+          <Pressable onPress={() => void chooseGalleryArtwork()} disabled={busy || imagePreparing} accessibilityRole="button" accessibilityState={{ selected: artMode === 'gallery', disabled: busy || imagePreparing }} style={[styles.artOption, { backgroundColor: artMode === 'gallery' ? theme.raised : theme.surface, borderColor: artMode === 'gallery' ? theme.focus : theme.border, borderWidth: artMode === 'gallery' ? 2 : 1, opacity: busy || imagePreparing ? 0.6 : 1 }]}><Icon name="image" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Gallery</Text></Pressable>
         </View>
-        {artMode === 'search' ? <View style={styles.searchInfo}><Text style={{ color: theme.muted, lineHeight: 20 }}>Search online artwork is available through Imgflip’s popular template list.</Text><ActionButton label="Browse popular templates" icon="⌕" onPress={() => setPickerOpen(true)} theme={theme} variant="secondary" disabled={busy || imagePreparing} /></View> : null}
-        <Text style={{ color: theme.muted, lineHeight: 20 }}>Your clip and optional artwork will be stored on this device. You can skip artwork.</Text>
+        <Text style={{ color: theme.muted, lineHeight: 20 }}>{artwork ? 'Your sound and Gallery picture will be stored on this device.' : artMode === 'default' ? 'Your sound will be stored on this device with the default music icon.' : 'Choose a Gallery picture to add artwork, or select Default to keep the music icon.'}</Text>
       </> : null}
       {message ? <Text accessibilityLiveRegion="polite" style={{ color: /could not|failed|microphone access is off|denied|recording is empty|too short|stopped when the app/i.test(message.toLowerCase()) ? theme.danger : theme.muted }}>{message}</Text> : null}
     </ScrollView>
     {step === 'source' && !recording && !recordingStopped ? <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}><ActionButton label="Cancel" onPress={requestCancel} theme={theme} variant="secondary" disabled={busy && Boolean(source)} /></View> : null}
     {step === 'trim' ? <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}><ActionButton label={busy ? 'Working…' : 'Next'} onPress={() => void renderRange()} theme={theme} variant="primary" disabled={busy} /></View> : null}
     {step === 'customize' ? <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}><ActionButton label={busy ? 'Saving…' : imagePreparing ? 'Preparing image…' : 'Save soundbite'} onPress={() => void save()} theme={theme} variant="primary" disabled={busy || imagePreparing || !name.trim()} /></View> : null}
-    <ArtworkPicker visible={pickerOpen} theme={theme} onClose={() => setPickerOpen(false)} onSelect={adoptArtwork} onPreparingChange={setImagePreparing} />
   </View>;
 }
 
@@ -802,5 +798,5 @@ const styles = StyleSheet.create({
   root: { flex: 1 }, header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 12 }, back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   progress: { flexDirection: 'row', alignItems: 'flex-start', position: 'relative', paddingBottom: 16 }, progressItem: { flex: 1, alignItems: 'center', gap: 5 }, progressDot: { width: 28, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1 }, connectorLayer: { position: 'absolute', top: 13, left: '16.666%', right: '16.666%', height: 2, flexDirection: 'row' }, connector: { height: 2, flex: 1 },
   scroll: { flex: 1 }, content: { gap: 12, paddingBottom: 20 }, card: { gap: 14 }, sourceScreen: { gap: 10, paddingTop: 4 }, sourceCard: { minHeight: 82, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 14 }, sourceIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, sourceCardCopy: { flex: 1, gap: 4 }, currentDraft: { gap: 10 }, recordingPanel: { minHeight: 230, justifyContent: 'center', alignItems: 'center', gap: 16, borderColor: '#ff526b' }, recordingHeadline: { flexDirection: 'row', alignItems: 'center', gap: 10 }, recordingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#ff304f' }, compactSource: { minHeight: 80, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 16, borderWidth: 1 }, compactSourceIcon: { width: 55, height: 55, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, compactSourceText: { flex: 1, gap: 2, minWidth: 0 }, waveCard: { borderRadius: 18, borderWidth: 1, padding: 15, gap: 0 }, previewTransport: { flexDirection: 'column', alignItems: 'stretch', gap: 10, marginTop: 4 }, previewButton: { minHeight: 48, width: '100%', paddingHorizontal: 12, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }, previewProgress: { width: '100%', minWidth: 0, gap: 7 }, previewTrack: { height: 6, borderRadius: 3, overflow: 'hidden' }, previewFill: { height: '100%', borderRadius: 3 }, previewTimes: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 }, finePanel: { paddingHorizontal: 12, paddingVertical: 10, gap: 0, borderRadius: 17 }, fineDisclosure: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, fineRight: { flexDirection: 'row', alignItems: 'center', gap: 8 }, fineControls: { gap: 10, paddingBottom: 12 }, tuneSection: { flexDirection: 'row', alignItems: 'center', gap: 8 }, tuneSectionStacked: { flexDirection: 'column', alignItems: 'stretch', gap: 6 }, tuneLabels: { flexDirection: 'row', alignItems: 'center', gap: 2 }, tuneLabelsStacked: { justifyContent: 'space-between' }, tuneButtons: { flex: 1, flexDirection: 'row', flexWrap: 'nowrap', gap: 4 }, tuneButtonsGrid: { flex: 0, width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, tuneButton: { minHeight: 44, minWidth: 0, flex: 1, borderRadius: 12, borderWidth: 1, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' }, tuneButtonGrid: { minHeight: 48, flex: 0, width: '47%' },
-  artworkPreviewCard: { minHeight: 112, flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12 }, artworkPreview: { width: 86, height: 86, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, artworkSummary: { flex: 1, gap: 7 }, fieldLabel: { color: '#baa8ad', fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginTop: 8, marginBottom: -5 }, artOptions: { flexDirection: 'row', gap: 8 }, artOption: { flex: 1, minHeight: 82, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }, searchInfo: { gap: 8 }, footer: { paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  artworkPreviewCard: { minHeight: 112, flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12 }, artworkPreview: { width: 86, height: 86, borderRadius: 14, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, artworkSummary: { flex: 1, gap: 7 }, fieldLabel: { color: '#baa8ad', fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginTop: 8, marginBottom: -5 }, artOptions: { flexDirection: 'row', gap: 8 }, artOption: { flex: 1, minHeight: 82, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }, footer: { paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth },
 });
