@@ -78,6 +78,7 @@ export function ClipPlaybackOptionsModal({ visible, soundId, soundName, theme, o
         {percent > maximum ? <Text style={{ color: theme.muted, fontSize: 12 }}>This saved boost value is retained. Editing volume will use the verified range.</Text> : null}
         {!PLAYBACK_BOOST_AVAILABLE ? <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 17 }}>Boost above 100% is disabled until device audio checks are complete. Saved boost values are kept.</Text> : null}
         {PLAYBACK_BOOST_AVAILABLE ? <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 17 }}>Quiet audio is amplified, peaks are protected, and your phone’s hardware volume stays independent.</Text> : null}
+        {PLAYBACK_BOOST_AVAILABLE && gain > 1 ? <Text accessibilityRole="alert" style={{ color: theme.danger, fontSize: 12, lineHeight: 17, fontWeight: '700' }}>Boost can make playback uncomfortably loud or sound distorted. Lower your phone volume before listening.</Text> : null}
         <View style={[styles.sectionDivider, { backgroundColor: theme.border }]} />
         <Text style={{ color: theme.text, fontSize: 15, fontWeight: '900' }}>Repeat</Text>
         <Text style={{ color: theme.muted, fontSize: 12, lineHeight: 17, marginTop: -7 }}>Choose what happens when this sound ends.</Text>

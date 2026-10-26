@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { allowedDeviceAudioModuleFiles, isAllowedPath, forbiddenMarker, resolveLocalImport, validateRecordingPermissionPolicy, validateReleaseMetadata, verifyStage } from './verify-play-stage.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 test('the Play stage accepts only declared profile inputs and explicit shared leaves', () => {
   assert.equal(isAllowedPath('app-play/App.tsx'), true);
@@ -20,6 +23,16 @@ test('the Play stage accepts only declared profile inputs and explicit shared le
   assert.equal(isAllowedPath('app-client/src/board/Board.tsx'), false);
   assert.equal(isAllowedPath('app-client/package.json'), true);
   assert.equal(isAllowedPath('service/package.json'), true);
+  assert.equal(isAllowedPath('.yarn/patches/metro-npm-0.84.4-security.patch'), true);
+  assert.equal(isAllowedPath('.yarn/patches/node-forge-npm-1.4.0-security.patch'), true);
+  assert.equal(isAllowedPath('.yarn/patches/unreviewed.patch'), false);
+  assert.equal(isAllowedPath('.yarn/cache/unreviewed.zip'), false);
+  assert.equal(isAllowedPath('scripts/native-ffmpeg/build-android.sh'), true);
+  assert.equal(isAllowedPath('scripts/native-ffmpeg/README.md'), true);
+  assert.equal(isAllowedPath('scripts/native-ffmpeg/LICENSE'), true);
+  assert.equal(isAllowedPath('scripts/native-tests/ffmpeg_decode_probe.c'), true);
+  assert.equal(isAllowedPath('scripts/assert-play-gradle-security-versions.cjs'), true);
+  assert.equal(isAllowedPath('scripts/native-ffmpeg/unreviewed.sh'), false);
   assert.equal(isAllowedPath('app-client/src/editor/EditorScreen.tsx'), false);
   assert.equal(isAllowedPath('app-client/modules/soundboard-youtube/index.js'), false);
   assert.equal(isAllowedPath('app-play/android/app/build.gradle'), false);
@@ -70,28 +83,33 @@ test('release metadata rejects unsafe versions and non-positive or fractional co
   }
 });
 
-test('Play recording policy requires foreground recording permission and the iOS usage message', () => {
+test('Play recording policy requires foreground mic permission and keeps capture out of static app.json', () => {
   const config = {
-    android: { blockedPermissions: ['android.permission.READ_MEDIA_AUDIO'] },
-    plugins: ['./plugins/withDeviceAudioCapture', ['expo-audio', {
+    android: { blockedPermissions: ['android.permission.READ_MEDIA_AUDIO'], minSdkVersion: 24, targetSdkVersion: 36, compileSdkVersion: 36 },
+    plugins: [['expo-audio', {
       microphonePermission: 'Stimmyz uses microphone access to record sounds you choose to save.',
       recordAudioAndroid: true,
       enableBackgroundRecording: false,
       enableBackgroundPlayback: false,
-    }]],
+    }], ['react-native-audio-api', { androidPermissions: [], androidForegroundService: false, iosBackgroundMode: false }]],
   };
   assert.doesNotThrow(() => validateRecordingPermissionPolicy(config));
   assert.throws(() => validateRecordingPermissionPolicy({ ...config, android: { blockedPermissions: ['android.permission.RECORD_AUDIO'] } }), /allow RECORD_AUDIO/);
-  const replaceAudio = (options) => ({ ...config, plugins: [config.plugins[0], ['expo-audio', options]] });
-  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[1][1], recordAudioAndroid: false })), /enable Android recording/);
-  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[1][1], microphonePermission: false })), /iOS microphone/);
-  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[1][1], enableBackgroundRecording: true })), /background recording/);
+  const replaceAudio = (options) => ({ ...config, plugins: [['expo-audio', options], config.plugins[1]] });
+  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[0][1], recordAudioAndroid: false })), /enable Android recording/);
+  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[0][1], microphonePermission: false })), /iOS microphone/);
+  assert.throws(() => validateRecordingPermissionPolicy(replaceAudio({ ...config.plugins[0][1], enableBackgroundRecording: true })), /background recording/);
   assert.throws(() => validateRecordingPermissionPolicy({ ...config, android: { blockedPermissions: ['android.permission.POST_NOTIFICATIONS'] } }), /allow notifications/);
-  assert.throws(() => validateRecordingPermissionPolicy({ ...config, plugins: [['expo-audio', config.plugins[1][1]]] }), /config plugin/);
+  assert.throws(() => validateRecordingPermissionPolicy({ ...config, plugins: [] }), /expo-audio/);
+  assert.throws(() => validateRecordingPermissionPolicy({ ...config, plugins: [config.plugins[0], ['react-native-audio-api', { ...config.plugins[1][1], androidForegroundService: true }]] }), /disable its optional background services/);
 });
 
 test('stage verifier accepts the isolated Play profile and rejects extractor source', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'soundboard-play-stage-'));
+  const reviewedPatches = new Map([
+    ['.yarn/patches/metro-npm-0.84.4-security.patch', '.yarn/patches/metro-npm-0.84.4-security.patch'],
+    ['.yarn/patches/node-forge-npm-1.4.0-security.patch', '.yarn/patches/node-forge-npm-1.4.0-security.patch'],
+  ]);
   const write = (relative, value) => {
     const target = path.join(root, relative);
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -99,6 +117,9 @@ test('stage verifier accepts the isolated Play profile and rejects extractor sou
   };
   try {
     write('package.json', JSON.stringify({ workspaces: ['app-play'] }));
+    for (const [relative, source] of reviewedPatches) {
+      write(relative, fs.readFileSync(path.resolve(__dirname, '..', source)));
+    }
     for (const [relative, name] of [
       ['shared/package.json', '@soundboard/shared'],
       ['service/package.json', '@soundboard/service'],
@@ -110,13 +131,15 @@ test('stage verifier accepts the isolated Play profile and rejects extractor sou
       icon: './assets/stimyz/icon.png',
       android: {
         package: 'dev.sarunas.soundboard.play', versionCode: 6, allowBackup: false, usesCleartextTraffic: false,
+        minSdkVersion: 24, targetSdkVersion: 36, compileSdkVersion: 36,
         adaptiveIcon: {
           foregroundImage: './assets/stimyz/android-icon-foreground.png',
           monochromeImage: './assets/stimyz/android-icon-monochrome.png',
         },
       },
-      plugins: ['./plugins/withDeviceAudioCapture', ['expo-audio', { microphonePermission: 'Record local sounds.', recordAudioAndroid: true, enableBackgroundRecording: false, enableBackgroundPlayback: false }]],
+      plugins: [['expo-audio', { microphonePermission: 'Record local sounds.', recordAudioAndroid: true, enableBackgroundRecording: false, enableBackgroundPlayback: false }], ['react-native-audio-api', { androidPermissions: [], androidForegroundService: false, iosBackgroundMode: false }]],
     } }));
+    write('app-play/app.config.js', "const enabled = process.env.EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED !== 'false';\nmodule.exports = ({ config }) => ({ ...config, plugins: [...(config.plugins ?? []), ...(enabled ? ['./plugins/withDeviceAudioCapture'] : [])] });\n");
     write('app-play/package.json', JSON.stringify({
       dependencies: { expo: '~57.0.13' },
       expo: { autolinking: {
@@ -136,7 +159,11 @@ test('stage verifier accepts the isolated Play profile and rejects extractor sou
     for (const relative of allowedDeviceAudioModuleFiles) {
       write(relative, relative.endsWith('.json') ? '{}' : '// device audio module test fixture\n');
     }
-    assert.deepEqual(verifyStage(root), { files: 32, sourceFiles: 6 });
+    assert.deepEqual(verifyStage(root), { files: 35, sourceFiles: 7 });
+
+    write('.yarn/patches/metro-npm-0.84.4-security.patch', 'changed patch');
+    assert.throws(() => verifyStage(root), /Reviewed Yarn patch hash changed/);
+    write('.yarn/patches/metro-npm-0.84.4-security.patch', fs.readFileSync(path.resolve(__dirname, '..', '.yarn/patches/metro-npm-0.84.4-security.patch')));
 
     fs.rmSync(path.join(root, 'app-play/assets/stimyz/icon.png'));
     assert.throws(() => verifyStage(root), /Play icon asset is missing from the stage/);

@@ -1,0 +1,5 @@
+FFmpeg is licensed under the GNU Lesser General Public License version 2.1 or
+(at your option) any later version. This build disables GPL components and uses
+no external codec libraries. The complete license text is distributed with
+the source archive as COPYING.LGPLv2.1 and copied to each build output root.
+See https://ffmpeg.org/legal.html for FFmpeg's licensing overview.

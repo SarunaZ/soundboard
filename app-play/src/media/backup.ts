@@ -3,13 +3,15 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Paths } from 'expo-file-system';
 import { StorageAccessFramework } from 'expo-file-system/legacy';
 
-import { loadBoards, saveBoards } from '../data/boards.ts';
-import { loadClipPresentations, removeClipPresentation, setClipPresentation } from '../data/presentation.ts';
-import { loadClipPlaybackPreferences, removeClipPlaybackPreference, setClipPlaybackPreference } from '../data/clipPlayback.ts';
-import { loadPlayPreferences, savePlayPreferences } from '../data/preferences.ts';
-import { loadLocalClips, prepareImportedClips, commitImportedClips } from '../data/library.ts';
+import { loadBoards } from '../data/boards.ts';
+import { parseBoardCollection } from '../data/boardModel.ts';
+import { loadClipPresentations, parsePresentations } from '../data/presentation.ts';
+import { loadClipPlaybackPreferences, parseClipPlaybackPreferences } from '../data/clipPlayback.ts';
+import { loadPlayPreferences, parsePlayPreferences } from '../data/preferences.ts';
+import { loadLocalClips, prepareImportedClips } from '../data/library.ts';
+import { padGradientForClipId } from '../data/padColors.ts';
 import { parseClipCatalog } from '../data/catalog.ts';
-import { PLAY_LIBRARY_DIRECTORY } from '../data/snapshot.ts';
+import { hasPendingSnapshotTransaction, PLAY_LIBRARY_DIRECTORY, writeSnapshotTransaction } from '../data/snapshot.ts';
 import { mergePlayBackup, parsePlayBackupManifest, MAX_BACKUP_MANIFEST_BYTES, MAX_BACKUP_FILE_BYTES, MAX_BACKUP_ARTWORK_BYTES, MAX_BACKUP_BYTES, MAX_BACKUP_FILES, type BackupFileEntry, type PlayBackupManifest } from './backupValidation.ts';
 
 const BACKUP_MANIFEST_NAME = 'play-backup.json';
@@ -258,7 +260,14 @@ function sourceFile(name: string): File {
 function makeManifest(files: BackupFileEntry[]): PlayBackupManifest {
   const clips = loadLocalClips();
   if (clips.some((clip) => clip.missing)) throw new Error('A saved clip is missing from this phone and cannot be backed up.');
-  const presentations = loadClipPresentations();
+  const presentations = { ...loadClipPresentations() };
+  // Older clips may not have saved colors. Export their UUID-based fallback so a
+  // restore preserves the same visible gradient instead of allocating a new one.
+  for (const clip of clips) {
+    if (presentations[clip.id]?.color) continue;
+    const fallback = padGradientForClipId(clip.id);
+    presentations[clip.id] = { ...presentations[clip.id], ...fallback };
+  }
   const manifest = {
     format: 'stimmyz-play-backup', version: 1,
     clips: parseClipCatalog({ version: 1, clips }).clips,
@@ -275,8 +284,10 @@ export async function exportPlayBackup(signal?: AbortSignal): Promise<PlayBackup
   if (clips.some((clip) => clip.missing)) throw new Error('A saved clip is missing from this phone and cannot be backed up.');
   const expectedFiles: Array<{ name: string; file: File }> = clips.map((clip) => ({ name: `${clip.id}.${clip.extension}`, file: new File(clip.uri) }));
   const presentations = loadClipPresentations();
+  const artworkNames = new Set<string>();
   for (const presentation of Object.values(presentations)) {
-    if (!presentation.artwork) continue;
+    if (!presentation.artwork || artworkNames.has(presentation.artwork.fileName)) continue;
+    artworkNames.add(presentation.artwork.fileName);
     expectedFiles.push({ name: presentation.artwork.fileName, file: sourceFile(presentation.artwork.fileName) });
   }
   if (expectedFiles.length > 2_001) throw new Error('This Play backup contains too many files.');
@@ -487,9 +498,21 @@ async function unpackZip(file: File, signal?: AbortSignal): Promise<{ manifest: 
 
 function removeDocumentPickerCacheFile(uri: string): void {
   const prefix = `${Paths.cache.uri.replace(/\/+$/, '')}/DocumentPicker/`;
-  if (!uri.startsWith(prefix) || uri.slice(prefix.length).includes('/')) return;
-  const file = new File(uri);
-  if (file.exists) file.delete();
+  if (typeof uri !== 'string' || !uri.startsWith(prefix)) return;
+  const relativePath = uri.slice(prefix.length);
+  if (!relativePath || relativePath.includes('?') || relativePath.includes('#') || relativePath.includes('/') || relativePath.includes('\\')) return;
+  try {
+    const parsed = new URL(uri);
+    if (parsed.protocol !== 'file:' || parsed.hostname || parsed.search || parsed.hash || parsed.href !== uri) return;
+    const decoded = decodeURIComponent(relativePath);
+    if (!decoded || decoded === '.' || decoded === '..' || decoded.includes('/') || decoded.includes('\\') || /[\u0000-\u001f\u007f]/.test(decoded)) return;
+    if (decodeURIComponent(decoded) !== decoded) return;
+    const file = new File(uri);
+    if (file.uri !== uri) return;
+    if (file.exists) file.delete();
+  } catch {
+    // Only a canonical, single-name DocumentPicker cache URI is owned here.
+  }
 }
 
 /** Pick, validate, and merge a complete Play ZIP backup without replacing existing clips or boards. */
@@ -500,8 +523,7 @@ export async function importPlayBackup(signal?: AbortSignal): Promise<PlayBackup
   let stagedDirectory: Directory | undefined;
   try {
     const picked = await DocumentPicker.getDocumentAsync({ type: ['application/zip', 'application/x-zip-compressed'], multiple: false, copyToCacheDirectory: true });
-    abort(signal);
-    if (picked.canceled || !picked.assets?.[0]) return null;
+    if (picked.canceled || !picked.assets?.[0]) { abort(signal); return null; }
     cacheUri = picked.assets[0].uri;
     archive = new File(cacheUri);
     abort(signal);
@@ -521,11 +543,6 @@ export async function importPlayBackup(signal?: AbortSignal): Promise<PlayBackup
   const existingArtworkNames = new Set(Object.values(currentPresentations).map((entry) => entry.artwork?.fileName).filter((name): name is string => Boolean(name)));
   const copied: File[] = [];
   const copiedArtwork: File[] = [];
-  let catalogCommitted = false;
-  let boardsCommitted = false;
-  const changedPresentations: string[] = [];
-  const changedPlayback: string[] = [];
-  let preferencesCommitted = false;
   try {
     PLAY_LIBRARY_DIRECTORY.create({ intermediates: true, idempotent: true });
     ARTWORK_DIRECTORY.create({ intermediates: true, idempotent: true });
@@ -547,31 +564,24 @@ export async function importPlayBackup(signal?: AbortSignal): Promise<PlayBackup
       if (entry.kind === 'audio') copied.push(target); else copiedArtwork.push(target);
     }
     abort(signal);
-    saveBoards(merged.boards);
-    boardsCommitted = true;
-    for (const [id, presentation] of Object.entries(merged.presentations)) {
-      if (!currentPresentations[id] && merged.clips.some((clip) => clip.id === id)) { setClipPresentation(id, presentation); changedPresentations.push(id); }
-    }
-    for (const [id, preference] of Object.entries(merged.playback)) {
-      if (!currentPlayback[id]) { setClipPlaybackPreference(id, preference); changedPlayback.push(id); }
-    }
-    savePlayPreferences({ appearance: merged.preferences.appearance, quickAction: merged.preferences.quickAction, masterVolume: merged.preferences.masterVolume });
-    preferencesCommitted = true;
-    commitImportedClips(prepared);
-    catalogCommitted = true;
+    const nextCatalog = parseClipCatalog({ version: 1, clips: [...existing.clips, ...prepared.entries] });
+    writeSnapshotTransaction([
+      { name: 'boards.json', value: merged.boards, parse: parseBoardCollection },
+      { name: 'presentation.json', value: { version: 1, clips: merged.presentations }, parse: parsePresentations },
+      { name: 'clip-playback.json', value: { version: 1, clips: merged.playback }, parse: (value) => ({ version: 1, clips: parseClipPlaybackPreferences(value) }) },
+      { name: 'preferences.json', value: merged.preferences, parse: parsePlayPreferences },
+      { name: 'catalog.json', value: nextCatalog, parse: parseClipCatalog },
+    ]);
     try { stage.delete(); } catch { /* cache cleanup does not affect a committed restore */ }
     return { imported: prepared.entries.length, skipped: manifest.clips.length - prepared.entries.length, boardsAdded: merged.boards.boards.length - currentBoards.boards.length };
   } catch (error) {
-    const rollbackErrors: string[] = [];
-    if (preferencesCommitted) { try { savePlayPreferences({ appearance: existing.preferences.appearance, quickAction: existing.preferences.quickAction, masterVolume: existing.preferences.masterVolume }); } catch (e) { rollbackErrors.push(String(e)); } }
-    for (const id of changedPlayback) { try { removeClipPlaybackPreference(id); } catch (e) { rollbackErrors.push(String(e)); } }
-    for (const id of changedPresentations) { try { removeClipPresentation(id); } catch (e) { rollbackErrors.push(String(e)); } }
-    if (boardsCommitted) { try { saveBoards(currentBoards); } catch (e) { rollbackErrors.push(String(e)); } }
-    for (const file of [...copied, ...copiedArtwork]) {
-      try { if (file.exists) file.delete(); } catch { /* preserve the primary import error */ }
+    // Once the transaction journal is durable, recovery owns these copied files
+    // and will roll all metadata forward before any store can be read.
+    if (!hasPendingSnapshotTransaction()) {
+      for (const file of [...copied, ...copiedArtwork]) {
+        try { if (file.exists) file.delete(); } catch { /* preserve the primary import error */ }
+      }
     }
-    if (!catalogCommitted) { try { stage.delete(); } catch { /* preserve the primary import error */ } }
-    if (rollbackErrors.length) throw new Error(`The backup import failed: ${String(error)}. Rollback also failed: ${rollbackErrors.join('; ')}`);
     throw error;
   }
   } catch (error) {

@@ -15,7 +15,7 @@ async function loadValidator(t) {
   await writeFile(stubPath, `
 export function parseClipPlaybackPreferences(v){if(v.version!==1||!v.clips||typeof v.clips!=='object')throw Error('invalid playback');return v.clips}
 export function parsePresentations(v){if(v.version!==1||!v.clips||typeof v.clips!=='object')throw Error('invalid presentations');return{version:1,clips:v.clips}}
-export function parsePlayPreferences(v){if(!v||v.version!==4||!['Peach','Mint','Snow','Ice','Vanilla','Coffee'].includes(v.appearance)||typeof v.quickAction!=='string'||typeof v.masterVolume!=='number')throw Error('invalid settings');return v}
+export function parsePlayPreferences(v){if(!v||v.version!==5||!['Peach','Mint','Snow','Ice','Vanilla','Chocolate','Grape','Nut','Blackberry'].includes(v.appearance)||typeof v.quickAction!=='string'||typeof v.masterVolume!=='number'||typeof v.nextPadColorIndex!=='number')throw Error('invalid settings');return v}
 `);
   const stubUrl = pathToFileURL(stubPath).href;
   const sourcePath = join(temp, 'backupValidation.ts');
@@ -36,7 +36,7 @@ function validManifest() {
     format: 'stimmyz-play-backup', version: 1,
     clips: [{ id: clipId, title: 'Fixture', durationMs: 1200, createdAt: '2026-10-17T00:00:00.000Z', extension: 'wav' }],
     boards: { version: 1, activeBoardId: '00000000-0000-4000-8000-000000000001', boards: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Main', pads: [{ id: '00000000-0000-4000-8000-000000000001', clipId: null }], grid: '4x4', navigation: 'pages', allowOverlap: false }] },
-    presentations: {}, playback: {}, preferences: { version: 4, appearance: 'Mint', quickAction: 'file', masterVolume: 1 },
+    presentations: {}, playback: {}, preferences: { version: 5, appearance: 'Mint', quickAction: 'file', masterVolume: 1, nextPadColorIndex: 15 },
     files: [{ name: `${clipId}.wav`, sizeBytes: 10, crc32: 1234, kind: 'audio' }],
   };
 }

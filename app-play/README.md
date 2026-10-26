@@ -1,5 +1,43 @@
 # Stimmyz Play app
 
+## Production readiness
+
+The owner-approved final Play scope includes local file import, foreground
+microphone recording, and device playback capture. All three sources are enabled
+by default; capture may be omitted only by an explicit diagnostic-disable option.
+The previously verified r3 artifact was capture-off; the all-source r4
+candidate is now built unsigned. Bounded capture and restore flows passed on
+one Samsung phone; broader device coverage and policy review remain pending. Current
+launch blockers and evidence are tracked in the [Android readiness tracker](../docs/production/ANDROID_PRODUCTION_READINESS.md).
+Builds remain unsigned and unpublished until the owner completes Play Console,
+privacy, rights and release checks. Earlier notes below that describe capture as
+test-only are historical and do not describe the approved final scope.
+
+The current design authority is the [October 24 handoff](../docs/design/StimmyzApp_Astra_Board_Modal_Protected_Hold_2026-10-24/DESIGN_SOURCE_OF_TRUTH.md),
+with the owner's later interaction changes recorded in the [implementation record](../docs/play-board-modal-protected-2026-10-24.md).
+Edit board opens a settings dialog; closing it keeps editing active. Board names
+can be changed there. Pads start sound immediately on touch, and a one-second hold
+protects the current sound from other taps. Protected pads use a disabled style
+instead of a padlock. Each protected sound has a separate
+Stop target. A visible scroll rail provides a dedicated gesture area beside the
+grid, with a brief animated cue that respects Reduce Motion. Board settings also
+let each board place its rail on the left or right. See the
+[gesture feedback regression record](../docs/play-gesture-feedback-2026-10-24.md).
+Stop all floats above navigation without changing the board viewport or covering
+either rail edge. The rail uses arrows and a grip without a visible text label.
+Its visible body is 24dp wide, with a 48dp dedicated drag area for comfortable use.
+Prev/Next page controls have a 12dp gap above them, separating them from the pads.
+The one-second hold perimeter remains visible with system animations disabled;
+there is no numeric hold badge. Reduce Motion suppresses optional bounce effects.
+
+Appearance is available only in Settings, with Vanilla, Peach, Mint, Snow, Ice,
+Chocolate, Grape, Nut and Blackberry. Saved Coffee preferences migrate to Chocolate.
+Artwork selection uses only the system gallery picker; previously saved private
+artwork remains readable offline. New clips receive persisted individual gradients.
+The Editor starts with its device-audio hero, and Library starts with search and
+sort. Earlier descriptions of six themes, online image selection and Library
+creation buttons below are historical.
+
 This is the separate Play distribution root for Stimmyz. It has its own Android
 application ID (`dev.sarunas.soundboard.play`) and private data sandbox. Its
 entrypoint is `index.ts`; it does not mount the Dev app or import the Dev
@@ -131,7 +169,7 @@ Run the data/media tests and TypeScript check with the repository's Docker tools
 docker compose --profile tools run --rm --no-deps --entrypoint /bin/sh deps -lc 'corepack enable && yarn workspace app-play test && yarn workspace app-play check'
 ```
 
-The current visual authority is the [October 22 transparent-logo handoff](../docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/BRANDING_WORDMARK_HANDOFF.md),
+The retained transparent-branding baseline is the [October 22 transparent-logo handoff](../docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/BRANDING_WORDMARK_HANDOFF.md),
 with its [implementation guide](../docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/ASTRA_IMPLEMENTATION.md),
 prototype and captured previews. Read the [Trim playback contract](../docs/design/StimmyzApp_Astra_Design_Refined_CTA_Library_2026-10-20/TRIM_PLAYBACK_PROGRESS_REQUIREMENTS.md)
 for actual-player progress, pause/resume and lifecycle behavior. Earlier design

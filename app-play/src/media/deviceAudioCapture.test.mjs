@@ -27,6 +27,14 @@ export async function disposeLocalAudioSource(source) { state.disposed.push(sour
 async function harness(t, overrides = {}) {
   const directory = await mkdtemp(join(process.env.TEMP ?? process.env.TMP ?? '.', 'soundboard-device-audio-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
+  const previousCaptureFlag = process.env.EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED;
+  if (overrides.captureEnabled === false) process.env.EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED = 'false';
+  else if (overrides.captureEnabled === true) process.env.EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED = 'true';
+  else delete process.env.EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED;
+  t.after(() => {
+    if (previousCaptureFlag === undefined) delete process.env.EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED;
+    else process.env.EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED = previousCaptureFlag;
+  });
   let releaseOpen;
   let enterRelease;
   const openGate = overrides.openPending ? new Promise((resolve) => { releaseOpen = resolve; }) : null;
@@ -58,13 +66,19 @@ async function writeModule(directory, name, content) {
   return pathToFileURL(path).href;
 }
 
-test('capability is limited to Android 10+ with the Expo module present', async (t) => {
+test('capture is enabled by default and limited to Android 10+ with the Expo module present', async (t) => {
   const h = await harness(t);
   const { isDeviceAudioCaptureSupported } = await h.load();
   assert.equal(isDeviceAudioCaptureSupported(), true);
   h.state.platform.OS = 'ios';
   assert.equal(isDeviceAudioCaptureSupported(), false);
   h.state.platform.OS = 'android'; h.state.platform.Version = 28;
+  assert.equal(isDeviceAudioCaptureSupported(), false);
+});
+
+test('explicit false diagnostic build flag disables device audio when the native module is present', async (t) => {
+  const h = await harness(t, { captureEnabled: false });
+  const { isDeviceAudioCaptureSupported } = await h.load();
   assert.equal(isDeviceAudioCaptureSupported(), false);
 });
 

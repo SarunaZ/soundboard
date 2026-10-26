@@ -30,6 +30,8 @@ COPY service/package.json service/
 COPY worker/package.json worker/
 COPY app-client/package.json app-client/
 COPY app-play/package.json app-play/
+# Yarn patch protocol dependencies must be present when resolutions are applied.
+COPY .yarn/patches/ .yarn/patches/
 
 # `workspaces focus` installs only these two workspaces — no Expo, no RN.
 RUN --mount=type=cache,target=/root/.yarn/berry/cache,sharing=locked \

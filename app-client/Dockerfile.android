@@ -53,6 +53,13 @@ RUN yes | sdkmanager --licenses > /dev/null \
       "ndk;${NDK_VERSION}" \
       "cmake;3.22.1" > /dev/null
 
+# Local FFmpeg source builds need a host compiler, make, xz, and GPG for the
+# pinned source archive/signature verification. Keep this after SDK setup so
+# adding these build-only tools does not invalidate the Android SDK layers.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends clang make xz-utils gnupg \
+ && rm -rf /var/lib/apt/lists/*
+
 # Gradle's cache lives in a named volume, not in the image or the bind mount.
 ENV GRADLE_USER_HOME=/gradle
 

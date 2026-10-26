@@ -17,8 +17,10 @@ export interface Board {
   id: string;
   name: string;
   pads: BoardPad[];
+  pageIndex: number;
   grid: '3x4' | '4x4';
   navigation: 'pages' | 'scroll';
+  scrollbarSide: 'left' | 'right';
   allowOverlap: boolean;
 }
 
@@ -28,6 +30,8 @@ export interface BoardCollection {
   boards: Board[];
 }
 
+export type BoardPreferencePatch = Partial<Pick<Board, 'grid' | 'navigation' | 'scrollbarSide' | 'allowOverlap' | 'pageIndex'>>;
+
 function initialPads(count = 16): BoardPad[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
@@ -36,7 +40,7 @@ function initialPads(count = 16): BoardPad[] {
 }
 
 export function emptyBoardCollection(): BoardCollection {
-  const board: Board = { id: EMPTY_BOARD_ID, name: 'Main', pads: initialPads(), grid: '4x4', navigation: 'pages', allowOverlap: false };
+  const board: Board = { id: EMPTY_BOARD_ID, name: 'Main', pads: initialPads(), pageIndex: 0, grid: '4x4', navigation: 'pages', scrollbarSide: 'right', allowOverlap: false };
   return { version: 1, activeBoardId: board.id, boards: [board] };
 }
 
@@ -85,11 +89,15 @@ export function parseBoardCollection(value: unknown): BoardCollection {
     if (new Set(pads.map(({ id }) => id)).size !== pads.length) throw new Error(`Board ${boardIndex + 1} has duplicate pad IDs.`);
     const grid = board.grid === undefined ? '4x4' : board.grid;
     const navigation = board.navigation === undefined ? 'pages' : board.navigation;
+    const scrollbarSide = board.scrollbarSide === undefined ? 'right' : board.scrollbarSide;
     const allowOverlap = board.allowOverlap === undefined ? false : board.allowOverlap;
+    const pageIndex: unknown = board.pageIndex === undefined ? 0 : board.pageIndex;
     if (grid !== '3x4' && grid !== '4x4') throw new Error(`Board ${boardIndex + 1} has an invalid grid size.`);
     if (navigation !== 'pages' && navigation !== 'scroll') throw new Error(`Board ${boardIndex + 1} has an invalid navigation mode.`);
+    if (scrollbarSide !== 'left' && scrollbarSide !== 'right') throw new Error(`Board ${boardIndex + 1} has an invalid scrollbar side.`);
     if (typeof allowOverlap !== 'boolean') throw new Error(`Board ${boardIndex + 1} has an invalid overlap preference.`);
-    return { id: board.id, name: board.name, pads, grid, navigation, allowOverlap };
+    if (typeof pageIndex !== 'number' || !Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex > MAX_SOUNDBITES) throw new Error(`Board ${boardIndex + 1} has an invalid page index.`);
+    return { id: board.id, name: board.name, pads, pageIndex, grid, navigation, scrollbarSide, allowOverlap };
   });
   if (new Set(boards.map(({ id }) => id)).size !== boards.length) throw new Error('The Play board collection has duplicate board IDs.');
   if (typeof row.activeBoardId !== 'string' || !boards.some(({ id }) => id === row.activeBoardId)) {
@@ -102,14 +110,58 @@ export function createBoardModel(collection: BoardCollection, name: string): Boa
   const state = parseBoardCollection(collection);
   if (state.boards.length >= MAX_PLAY_BOARDS) throw new Error(`You can create up to ${MAX_PLAY_BOARDS} boards.`);
   const cleanName = cleanBoardName(name);
-  const board = { id: generatedClipId(), name: cleanName, pads: initialPads(), grid: '4x4' as const, navigation: 'pages' as const, allowOverlap: false };
+  const board = { id: generatedClipId(), name: cleanName, pads: initialPads(), pageIndex: 0, grid: '4x4' as const, navigation: 'pages' as const, scrollbarSide: 'right' as const, allowOverlap: false };
   return parseBoardCollection({ ...state, activeBoardId: board.id, boards: [...state.boards, board] });
+}
+
+export function renameBoardModel(collection: BoardCollection, boardId: string, name: string): BoardCollection {
+  const state = parseBoardCollection(collection);
+  const board = state.boards.find(({ id }) => id === boardId);
+  if (!board) throw new Error('The selected board no longer exists.');
+  const cleanName = cleanBoardName(name);
+  return parseBoardCollection({
+    ...state,
+    boards: state.boards.map((candidate) => candidate.id === boardId ? { ...candidate, name: cleanName } : candidate),
+  });
+}
+
+/** Delete board metadata and assignments only; library clips remain owned by the library. */
+export function deleteBoardModel(collection: BoardCollection, boardId: string): BoardCollection {
+  const state = parseBoardCollection(collection);
+  const boardIndex = state.boards.findIndex(({ id }) => id === boardId);
+  if (boardIndex < 0) throw new Error('The selected board no longer exists.');
+  if (state.boards.length === 1) throw new Error('Keep at least one board.');
+  const boards = state.boards.filter(({ id }) => id !== boardId);
+  const activeBoardId = state.activeBoardId === boardId
+    ? boards[Math.min(boardIndex, boards.length - 1)]!.id
+    : state.activeBoardId;
+  return parseBoardCollection({ ...state, activeBoardId, boards });
+}
+
+/** Move a board to the destination board's current position, preserving the active selection. */
+export function reorderBoardModel(collection: BoardCollection, boardId: string, targetBoardId: string): BoardCollection {
+  const state = parseBoardCollection(collection);
+  const sourceIndex = state.boards.findIndex(({ id }) => id === boardId);
+  if (sourceIndex < 0) throw new Error('The selected board no longer exists.');
+  const targetIndex = state.boards.findIndex(({ id }) => id === targetBoardId);
+  if (targetIndex < 0) throw new Error('The destination board no longer exists.');
+  if (sourceIndex === targetIndex) return state;
+  const boards = [...state.boards];
+  const [source] = boards.splice(sourceIndex, 1);
+  boards.splice(targetIndex, 0, source!);
+  return parseBoardCollection({ ...state, boards });
 }
 
 export function selectBoardModel(collection: BoardCollection, boardId: string): BoardCollection {
   const state = parseBoardCollection(collection);
   if (!state.boards.some(({ id }) => id === boardId)) throw new Error('The selected board no longer exists.');
   return { ...state, activeBoardId: boardId };
+}
+
+export function setBoardPreferencesModel(collection: BoardCollection, boardId: string, patch: BoardPreferencePatch): BoardCollection {
+  const state = parseBoardCollection(collection);
+  if (!state.boards.some((board) => board.id === boardId)) throw new Error('The selected board no longer exists.');
+  return parseBoardCollection({ ...state, boards: state.boards.map((board) => board.id === boardId ? { ...board, ...patch } : board) });
 }
 
 function getBoard(state: BoardCollection, boardId: string): Board {

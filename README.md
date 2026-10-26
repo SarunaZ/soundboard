@@ -1,5 +1,18 @@
 # Soundboard
 
+The latest Play design work follows the [October 24 board-modal and protected-playback handoff](docs/design/StimmyzApp_Astra_Board_Modal_Protected_Hold_2026-10-24/BOARD_MODAL_AND_PROTECTED_PLAYBACK_HANDOFF.md)
+and the owner's later requirements for immediate touch playback, a visible animated
+scroll rail, and board renaming. See the [implementation and verification record](docs/play-board-modal-protected-2026-10-24.md)
+for current behavior and verification limits. This supersedes older UI descriptions
+below: Play now has nine themes, gallery-only artwork, minimal Editor/Library pages,
+and persistent individual pad gradients.
+The latest owner refinement uses a one-second charging perimeter, disabled pad
+styling, and a per-board left/right scroll rail setting. See the
+[gesture feedback record](docs/play-gesture-feedback-2026-10-24.md).
+The [October 25 follow-up](docs/play-stop-overlay-2026-10-24.md) keeps hold progress
+visible with reduced motion, removes its numeric badge, and stabilizes both rails
+when Stop all appears.
+
 A grid of pads on an Android phone that fire short meme sounds instantly. The
 current YouTube authoring flow and device-file Editor flow let you trim a
 moment and save it in the phone's private library for offline playback.
@@ -25,8 +38,10 @@ Choose an MP3, M4A, WAV, or AAC file from the Editor's device picker (up to
 shows its waveform and range selection, and previews the rendered PCM16 WAV.
 Name the result, save it to the private Library, then use **Add to board**. The
 original file stays untouched; local editing does not call the YouTube service
-or upload audio. The flow has been emulator-verified with MP3; M4A/WAV/AAC and
-physical-phone checks remain pending. Search is case-insensitive and preserves
+or upload audio. The flow has been emulator-verified with MP3. Synthetic WAV
+and M4A/AAC import plus trim/save were also checked on one physical Samsung
+phone; other formats, devices and broader physical coverage remain pending.
+Search is case-insensitive and preserves
 current sound order in both the Library and board.
 
 The real objective is **learning asset management** — masters and derivatives,
@@ -46,6 +61,13 @@ remains the Dev/personal app with its existing data, UI and YouTube workflow.
 Play uses its own entrypoint, Android identity and private storage. Its first
 slice includes named boards, themes, a private Library, and local audio import
 or foreground microphone recording through Source → Trim → Details → Save.
+Production readiness is tracked in [the per-item Android checklist](docs/production/ANDROID_PRODUCTION_READINESS.md).
+The owner-approved final Play scope includes file import, foreground microphone
+recording, and device playback capture. All three sources are enabled by default;
+capture may be omitted only by an explicit diagnostic-disable option. The
+previously verified r3 artifact was capture-off. The all-source r4 candidate
+is now built unsigned; bounded physical capture and restore flows passed on one
+Samsung phone. Broader device coverage and conditional policy checks remain open.
 Audio sources are limited to five minutes and 32 MiB, and trim selections to 60
 seconds. Microphone permission is requested contextually in Play. Emulator checks
 passed first-use permission, recording through save and relaunch, and foreground
@@ -70,7 +92,7 @@ expected error and stopped service/projection. The detailed evidence report is
 authoritative; remaining physical OEM and read-error checks are tracked there.
 The spike's testing build is 1.0.16/code 17, with ARM64 and x86_64 artifacts.
 
-The current visual authority for Play is the
+The retained transparent-branding baseline for Play is the
 [October 22 transparent-logo handoff](docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/BRANDING_WORDMARK_HANDOFF.md),
 with its [implementation guide](docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/ASTRA_IMPLEMENTATION.md),
 prototype and captured previews. It applies the same offline mint PNG to Board,

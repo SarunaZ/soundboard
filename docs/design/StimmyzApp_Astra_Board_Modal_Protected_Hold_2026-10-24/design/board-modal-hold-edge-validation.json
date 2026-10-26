@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Modal fits narrow phone",
+    "passed": true
+  },
+  {
+    "name": "Modal grid controls in view",
+    "passed": true
+  },
+  {
+    "name": "Charging during subthreshold hold",
+    "passed": true
+  },
+  {
+    "name": "Subthreshold hold plays normal",
+    "passed": true
+  },
+  {
+    "name": "Movement cancels hold ring",
+    "passed": true
+  },
+  {
+    "name": "Canceled drag produces no new session",
+    "passed": true
+  },
+  {
+    "name": "Keyboard alternative locks clip",
+    "passed": true
+  },
+  {
+    "name": "Lock icon symbol available",
+    "passed": true
+  },
+  {
+    "name": "Stop all unlocks",
+    "passed": true
+  },
+  {
+    "name": "Nine themes still available",
+    "passed": true
+  },
+  {
+    "name": "Blackberry theme can be selected",
+    "passed": true
+  },
+  {
+    "name": "No JavaScript errors",
+    "passed": true
+  }
+]

@@ -1,1 +1,4 @@
 /deploy/shared-imli/test/fake-yt-dlp.sh text eol=lf
+/.yarn/patches/*.patch text eol=lf
+/scripts/native-ffmpeg/* text eol=lf
+/scripts/native-tests/ffmpeg_decode_probe.c text eol=lf

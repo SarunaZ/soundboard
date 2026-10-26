@@ -1,11 +1,13 @@
 import { File } from 'expo-file-system';
 
-import { PLAY_LIBRARY_DIRECTORY, emptyOrRecoveredSnapshot, writeSnapshot } from './snapshot.ts';
+import { PLAY_LIBRARY_DIRECTORY, emptyOrRecoveredSnapshot, registerSnapshotParser, writeSnapshot } from './snapshot.ts';
 import { isUuid } from './protocol.ts';
 
 export interface ClipPresentation {
   icon?: string;
   color?: string;
+  colorEnd?: string;
+  colorIndex?: number;
   artwork?: ClipArtwork;
 }
 
@@ -24,6 +26,7 @@ interface PresentationCatalog {
 
 const PRESENTATION_FILE = new File(PLAY_LIBRARY_DIRECTORY, 'presentation.json');
 const BACKUP_FILE = new File(PLAY_LIBRARY_DIRECTORY, 'presentation.backup.json');
+registerSnapshotParser('presentation.json', parsePresentations);
 function nextPresentationFile(): File {
   return new File(PLAY_LIBRARY_DIRECTORY, 'presentation.next.json');
 }
@@ -69,10 +72,14 @@ export function parsePresentations(value: unknown): PresentationCatalog {
       throw new Error('The Play clip presentation data contains an invalid color.');
     }
     const artwork = entry.artwork === undefined ? undefined : parseArtwork(entry.artwork);
-    if (entry.icon === undefined && entry.color === undefined && artwork === undefined) throw new Error('The Play clip presentation data contains an empty entry.');
+    if (entry.colorEnd !== undefined && (typeof entry.colorEnd !== 'string' || !/^#[0-9a-f]{6}$/i.test(entry.colorEnd))) throw new Error('The Play clip presentation data contains an invalid gradient color.');
+    if (entry.colorIndex !== undefined && (typeof entry.colorIndex !== 'number' || !Number.isSafeInteger(entry.colorIndex) || entry.colorIndex < 0 || entry.colorIndex > 1_000_000)) throw new Error('The Play clip presentation data contains an invalid color identity.');
+    if (entry.icon === undefined && entry.color === undefined && entry.colorEnd === undefined && entry.colorIndex === undefined && artwork === undefined) throw new Error('The Play clip presentation data contains an empty entry.');
     clips[id] = {
       ...(entry.icon === undefined ? {} : { icon: entry.icon as string }),
       ...(entry.color === undefined ? {} : { color: entry.color as string }),
+      ...(entry.colorEnd === undefined ? {} : { colorEnd: entry.colorEnd as string }),
+      ...(entry.colorIndex === undefined ? {} : { colorIndex: entry.colorIndex as number }),
       ...(artwork === undefined ? {} : { artwork }),
     };
   }
@@ -80,7 +87,13 @@ export function parsePresentations(value: unknown): PresentationCatalog {
 }
 
 function readPresentations(): PresentationCatalog {
-  return emptyOrRecoveredSnapshot(PRESENTATION_FILE, BACKUP_FILE, emptyPresentations, parsePresentations);
+  return emptyOrRecoveredSnapshot(PRESENTATION_FILE, BACKUP_FILE, emptyPresentations, parsePresentations, nextPresentationFile());
+}
+
+function presentationRecoveryFiles(): File[] {
+  return PRESENTATION_FILE.exists
+    ? [PRESENTATION_FILE, BACKUP_FILE]
+    : [BACKUP_FILE, nextPresentationFile()];
 }
 
 export function loadClipPresentations(): Record<string, ClipPresentation> {
@@ -93,13 +106,19 @@ export function setClipPresentation(id: string, presentation: ClipPresentation):
   const clips = { ...current.clips };
   const icon = presentation.icon?.trim();
   const color = presentation.color?.trim();
+  const colorEnd = presentation.colorEnd?.trim();
+  const colorIndex = presentation.colorIndex;
   const artwork = presentation.artwork === undefined ? current.clips[id]?.artwork : parseArtwork(presentation.artwork);
   if (icon !== undefined && icon !== '' && !/^[a-z0-9-]{1,40}$/i.test(icon)) throw new Error('Choose a valid icon.');
   if (color !== undefined && color !== '' && !/^#[0-9a-f]{6}$/i.test(color)) throw new Error('Choose a valid color.');
+  if (colorEnd !== undefined && colorEnd !== '' && !/^#[0-9a-f]{6}$/i.test(colorEnd)) throw new Error('Choose a valid gradient color.');
+  if (colorIndex !== undefined && (!Number.isSafeInteger(colorIndex) || colorIndex < 0 || colorIndex > 1_000_000)) throw new Error('Choose a valid color identity.');
   const next: ClipPresentation = {
     ...current.clips[id],
     ...(icon ? { icon } : {}),
     ...(color ? { color } : {}),
+    ...(colorEnd ? { colorEnd } : {}),
+    ...(colorIndex === undefined ? {} : { colorIndex }),
     ...(artwork ? { artwork } : {}),
   };
   if (Object.keys(next).length === 0) delete clips[id];
@@ -114,9 +133,23 @@ export function setClipArtwork(id: string, artwork: ClipArtwork): void {
   writeSnapshot({ version: 1, clips: { ...current.clips, [id]: { ...current.clips[id], artwork: validated } } }, parsePresentations, PRESENTATION_FILE, BACKUP_FILE, nextPresentationFile());
 }
 
+/** Remove the artwork field while preserving the clip's icon and pad colors. */
+export function clearClipArtwork(id: string): ClipArtwork | undefined {
+  if (!isUuid(id)) throw new Error('Invalid local clip ID.');
+  const current = readPresentations();
+  const entry = current.clips[id];
+  if (!entry?.artwork) return undefined;
+  const { artwork, ...remaining } = entry;
+  const clips = { ...current.clips };
+  if (Object.keys(remaining).length === 0) delete clips[id];
+  else clips[id] = remaining;
+  writeSnapshot({ version: 1, clips }, parsePresentations, PRESENTATION_FILE, BACKUP_FILE, nextPresentationFile());
+  return artwork;
+}
+
 /** Recovery snapshots can still point at a file, so artwork is retained while either copy references it. */
 export function presentationReferencesArtwork(fileName: string): boolean {
-  for (const file of [PRESENTATION_FILE, BACKUP_FILE]) {
+  for (const file of presentationRecoveryFiles()) {
     if (!file.exists) continue;
     try {
       const catalog = parsePresentations(JSON.parse(file.textSync()) as unknown);
@@ -127,6 +160,25 @@ export function presentationReferencesArtwork(fileName: string): boolean {
     }
   }
   return false;
+}
+
+/** Read committed and first-write recovery snapshots once for a cleanup pass. */
+export function createArtworkReferenceChecker(): (fileName: string) => boolean {
+  const referenced = new Set<string>();
+  let retainAll = false;
+  for (const file of presentationRecoveryFiles()) {
+    if (!file.exists) continue;
+    try {
+      const catalog = parsePresentations(JSON.parse(file.textSync()) as unknown);
+      for (const entry of Object.values(catalog.clips)) {
+        if (entry.artwork) referenced.add(entry.artwork.fileName);
+      }
+    } catch {
+      // A damaged snapshot may contain a reference that cannot be inspected.
+      retainAll = true;
+    }
+  }
+  return (fileName) => retainAll || referenced.has(fileName);
 }
 
 export function removeClipPresentation(id: string): void {

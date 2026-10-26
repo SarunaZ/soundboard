@@ -1,0 +1,18 @@
+diff --git a/lib/rsa.js b/lib/rsa.js
+index a426482..99c0cea 100644
+--- a/lib/rsa.js
++++ b/lib/rsa.js
+@@ -1172,7 +1172,12 @@
+           var capture = {};
+           var errors = [];
+           if(!asn1.validate(obj, digestInfoValidator, capture, errors) ||
+-            obj.value.length !== 2) {
++            obj.value.length !== 2 ||
++            obj.value[0].value.length !==
++              (('parameters' in capture) ? 2 : 1)) {
++            // Reject unconsumed DigestAlgorithm elements (GHSA-86w9-cpqp-85rv).
++            // Otherwise a verifier may accept a valid DigestInfo prefix while
++            // ignoring attacker-controlled trailing ASN.1 values.
+             var error = new Error(
+               'ASN.1 object does not contain a valid RSASSA-PKCS1-v1_5 ' +
+               'DigestInfo value.');

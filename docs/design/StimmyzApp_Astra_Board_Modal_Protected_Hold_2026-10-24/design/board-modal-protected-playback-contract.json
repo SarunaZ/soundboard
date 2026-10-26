@@ -1,0 +1,50 @@
+{
+  "revision": "2026-10-24",
+  "board_edit": {
+    "presentation": "modal",
+    "opens_edit_mode": true,
+    "closes_into_edit_mode": true,
+    "close_edit_button": "Done editing",
+    "grid_sizes": [
+      "3x4",
+      "4x4"
+    ],
+    "navigation": [
+      "pages",
+      "scroll"
+    ],
+    "overlap_scope": "per_board"
+  },
+  "pad": {
+    "press_feedback": "compress_rebound_flash",
+    "hold_ms": 2000,
+    "charging_ui": "360-degree perimeter ring",
+    "held_audio_start": "after_hold_completed",
+    "protection_behavior": "immune_to_other_pad_taps_even_if_board_overlap_off",
+    "tap_protected": "disabled",
+    "stop": [
+      "per_pad",
+      "stop_all"
+    ],
+    "unlock": [
+      "natural_last_repeat",
+      "stop_pad",
+      "stop_all",
+      "resource_cleanup"
+    ],
+    "repeat_modes": [
+      "once",
+      "three",
+      "loop"
+    ],
+    "accessible_alternative": "TalkBack custom action; prototype Shift+Enter"
+  },
+  "preserved": {
+    "themes": 9,
+    "artwork": "gallery_only",
+    "pad_colors": "distinct_stable_gradients",
+    "button_menus": "edit_only",
+    "quick_add": "first",
+    "playback": "mock_in_html_native_required"
+  }
+}

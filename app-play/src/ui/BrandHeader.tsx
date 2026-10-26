@@ -15,7 +15,7 @@ export function BrandHeader({ theme, title, optionsButtonRef, onOptions, hidden 
   return <View style={[styles.root, hidden && styles.hidden]} collapsable={false} pointerEvents={hidden ? 'none' : 'auto'} accessibilityElementsHidden={hidden} importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'}>
     <View style={styles.brandRow}>
       <View style={styles.logoWrap}>
-        <Image source={require('../../assets/stimyz/stimmyz-logo-transparent.png')} accessibilityLabel="Stimmyz" resizeMode="contain" style={[styles.logo, { shadowColor: theme.name === 'Coffee' ? '#000' : '#6E938B' }]} />
+        <Image source={require('../../assets/stimyz/stimmyz-logo-transparent.png')} accessibilityLabel="Stimmyz" resizeMode="contain" style={[styles.logo, { shadowColor: ['Chocolate', 'Grape', 'Nut', 'Blackberry'].includes(theme.name) ? '#000' : '#6E938B' }]} />
       </View>
       <Pressable ref={optionsButtonRef} accessibilityRole="button" accessibilityLabel="App options" onPress={onOptions} style={[styles.optionsButton, { backgroundColor: theme.surfaceAlt }]}>
         <Icon name="more" size={21} color={theme.text} />

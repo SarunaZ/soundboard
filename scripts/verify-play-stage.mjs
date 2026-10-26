@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +7,7 @@ export const forbiddenMarker = /soundboard-youtube|yt-dlp|youtube-dl|YoutubeExtr
 const forbiddenArtifactMarker = /soundboard-youtube|yt-dlp|youtube-dl|YoutubeExtractor|NativeYoutube|onDeviceYoutube|youtubeUrl|youtube\.com|youtu\.be|com[./]yausername|libpython|quickjs|youtubedl/i;
 const forbiddenSegments = new Set(['.git', '.expo', 'node_modules', 'android', 'ios', 'build', 'dist', '.yarn']);
 const allowedAppPlayFiles = new Set([
-  'index.ts', 'App.tsx', 'app.json', 'package.json', 'tsconfig.json', '.gitignore', 'README.md',
+  'index.ts', 'App.tsx', 'app.json', 'app.config.js', 'package.json', 'tsconfig.json', '.gitignore', 'README.md',
   'assets/stimyz/icon.png',
   'assets/stimyz/android-icon-foreground.png',
   'assets/stimyz/android-icon-monochrome.png',
@@ -26,7 +27,20 @@ const allowedDevLeaves = new Set([
   'app-client/src/board/reorderGeometry.ts',
   'app-client/src/types/react-native-audio-api.d.ts',
 ]);
-const allowedRootFiles = new Set(['package.json', '.yarnrc.yml', 'yarn.lock', 'play-stage-inventory.json']);
+const allowedRootFiles = new Set([
+  'package.json', '.yarnrc.yml', 'yarn.lock', 'scripts/check-elf-page-alignment.py',
+  'scripts/assert-play-gradle-security-versions.cjs', 'play-stage-inventory.json',
+  '.yarn/patches/metro-npm-0.84.4-security.patch',
+  '.yarn/patches/node-forge-npm-1.4.0-security.patch',
+  'scripts/native-ffmpeg/build-android.sh',
+  'scripts/native-ffmpeg/README.md',
+  'scripts/native-ffmpeg/LICENSE',
+  'scripts/native-tests/ffmpeg_decode_probe.c',
+]);
+const reviewedYarnPatches = new Map([
+  ['.yarn/patches/metro-npm-0.84.4-security.patch', '37d98e433105f341e41c06972389b8f551e65ed7c85e9dee770c22493eb131f0'],
+  ['.yarn/patches/node-forge-npm-1.4.0-security.patch', '61370a7c0f2ee74e29b3b60ee14a1645270f914b584f1f1c59d3e693cf736280'],
+]);
 export const allowedDeviceAudioModuleFiles = new Set([
   'app-play/play-native-modules/soundboard-device-audio/package.json',
   'app-play/play-native-modules/soundboard-device-audio/index.js',
@@ -79,17 +93,25 @@ export function validateRecordingPermissionPolicy(appConfig) {
   if (options.enableBackgroundRecording !== false || options.enableBackgroundPlayback !== false) {
     throw new Error('Play audio must keep background recording and playback disabled.');
   }
+  const audioApiPlugin = (appConfig.plugins ?? []).find((plugin) => Array.isArray(plugin) ? plugin[0] === 'react-native-audio-api' : plugin === 'react-native-audio-api');
+  const audioApiOptions = Array.isArray(audioApiPlugin) ? audioApiPlugin[1] : null;
+  if (audioApiOptions?.androidForegroundService !== false || !Array.isArray(audioApiOptions.androidPermissions) || audioApiOptions.androidPermissions.length !== 0 || audioApiOptions.iosBackgroundMode !== false) {
+    throw new Error('Play audio API must disable its optional background services, permissions and iOS background mode.');
+  }
   if (blocked.includes('android.permission.POST_NOTIFICATIONS')) throw new Error('Play must allow notifications for device-audio recording Stop controls.');
-  if (!(appConfig.plugins ?? []).includes('./plugins/withDeviceAudioCapture')) throw new Error('Play must apply the isolated device-audio Android config plugin.');
+  if ((appConfig.plugins ?? []).includes('./plugins/withDeviceAudioCapture')) throw new Error('Device-audio capture must be configured dynamically, not in the static app.json configuration.');
+  if (appConfig.android?.minSdkVersion !== 24) throw new Error('Play Android minSdkVersion must remain 24 for the native playback core.');
+  if (appConfig.android?.targetSdkVersion !== 36 || appConfig.android?.compileSdkVersion !== 36) throw new Error('Play Android target and compile SDK versions must be 36.');
 }
 
 export function isAllowedPath(relative) {
   const normalized = relative.replaceAll('\\', '/').replace(/^\.\//, '');
   if (allowedDeviceAudioModuleFiles.has(normalized)) return true;
+  if (allowedRootFiles.has(normalized)) return true;
   if (normalized.split('/').some((segment) => forbiddenSegments.has(segment))) return false;
   if (/(^|\/)\.env([^/]*$|\/)|\.(?:keystore|jks|pem|p12|pfx|key|mobileprovision)$/i.test(normalized)) return false;
   if (/\.test\.(?:mjs|cjs|js|jsx|ts|tsx)$/i.test(normalized)) return false;
-  if (allowedRootFiles.has(normalized) || allowedWorkspaceManifests.has(normalized) || allowedDevLeaves.has(normalized)) return true;
+  if (allowedWorkspaceManifests.has(normalized) || allowedDevLeaves.has(normalized)) return true;
   if (!normalized.startsWith('app-play/')) return false;
   const inApp = normalized.slice('app-play/'.length);
   if (allowedAppPlayFiles.has(inApp)) return true;
@@ -126,6 +148,12 @@ export function verifyStage(root) {
   if (!fs.statSync(root).isDirectory()) throw new Error('Play stage is not a directory.');
   const files = collectFiles(root);
   if (!files.length) throw new Error('Play stage is empty.');
+  for (const [relative, expectedHash] of reviewedYarnPatches) {
+    const stagedPatch = files.find((entry) => entry.relative === relative);
+    if (!stagedPatch) throw new Error(`Reviewed Yarn patch is missing from the Play stage: ${relative}`);
+    const actualHash = createHash('sha256').update(fs.readFileSync(stagedPatch.full)).digest('hex');
+    if (actualHash !== expectedHash) throw new Error(`Reviewed Yarn patch hash changed in the Play stage: ${relative}`);
+  }
   for (const { full, relative } of files) {
     if (!isAllowedPath(relative)) throw new Error(`Path is outside the Play build allowlist: ${relative}`);
     if (forbiddenArtifactMarker.test(relative)) throw new Error(`Forbidden extractor marker in staged path: ${relative}`);
@@ -167,6 +195,11 @@ export function verifyStage(root) {
   const logoSignature = fs.readFileSync(logoPath).subarray(0, 8);
   if (!logoSignature.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('Play transparent Stimmyz logo asset must be a PNG.');
   validateRecordingPermissionPolicy(appConfig);
+  const dynamicConfigPath = path.join(root, 'app-play/app.config.js');
+  if (!fs.existsSync(dynamicConfigPath)) throw new Error('Play dynamic app config is missing from the stage.');
+  const dynamicConfig = fs.readFileSync(dynamicConfigPath, 'utf8');
+  if (!/EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED\s*!==\s*['"]false['"]/.test(dynamicConfig)) throw new Error('Play capture plugin must be enabled by default and support an explicit false diagnostic override.');
+  if (!dynamicConfig.includes('./plugins/withDeviceAudioCapture')) throw new Error('Play device-audio config plugin is missing from the dynamic configuration.');
   if (!fs.existsSync(path.join(root, 'app-play/plugins/withDeviceAudioCapture.js'))) throw new Error('Play device-audio config plugin is missing from the stage.');
   if (appConfig.android?.allowBackup !== false) throw new Error('Play must disable Android backup.');
   if (appConfig.android?.usesCleartextTraffic !== false) throw new Error('Play must disable cleartext traffic.');

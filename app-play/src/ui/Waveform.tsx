@@ -45,8 +45,8 @@ export function Waveform({ peaks, durationMs, startMs, endMs, previewPositionMs,
   }) : Array.from({ length: 64 }, () => 0.08);
   const startX = timeToPosition(startMs, durationMs, width);
   const endX = timeToPosition(endMs, durationMs, width);
-  const selectedColor = theme.name === 'Coffee' ? theme.primary : theme.focus;
-  const playedColor = theme.name === 'Coffee' ? theme.focus : theme.primary;
+  const selectedColor = ['Chocolate', 'Grape', 'Nut', 'Blackberry'].includes(theme.name) ? theme.primary : theme.focus;
+  const playedColor = ['Chocolate', 'Grape', 'Nut', 'Blackberry'].includes(theme.name) ? theme.focus : theme.primary;
   const playheadMs = previewPositionMs == null ? startMs : Math.max(startMs, Math.min(endMs, previewPositionMs));
   const playheadX = timeToPosition(playheadMs, durationMs, width);
   const stackedTimes = fontScale > 1.2 || width < 300;

@@ -15,9 +15,10 @@ const joinUri = (base, child) => String(base).replace(/\\/+$/, '') + '/' + Strin
 export const Paths = { document: 'file:///documents', cache: { uri: 'file:///cache' } };
 export class Directory {
   constructor(...parts) { this.uri = parts.map((part) => part?.uri ?? part).reduce((base, part) => base === undefined ? String(part) : joinUri(base, part), undefined); }
+  get name() { return this.uri.split('/').at(-1); }
   get exists() { return globalThis.__localAudio.directories.has(this.uri); }
   create({ idempotent = false } = {}) { const s = globalThis.__localAudio; if (s.failLibraryDirectoryCreate && this.uri.endsWith('/play-library')) throw new Error('Simulated library directory failure.'); if (this.exists && !idempotent) throw new Error('Directory already exists.'); s.directories.add(this.uri); }
-  list() { const prefix = this.uri.replace(/\\/+$/, '') + '/'; return [...globalThis.__localAudio.files.keys()].filter((uri) => uri.startsWith(prefix) && !uri.slice(prefix.length).includes('/')).map((uri) => new File(uri)); }
+  list() { const s = globalThis.__localAudio; const prefix = this.uri.replace(/\\/+$/, '') + '/'; const files = [...s.files.keys()].filter((uri) => uri.startsWith(prefix) && !uri.slice(prefix.length).includes('/')).map((uri) => new File(uri)); const directories = [...s.directories].filter((uri) => uri.startsWith(prefix) && !uri.slice(prefix.length).includes('/')).map((uri) => new Directory(uri)); return [...directories, ...files]; }
   delete() { globalThis.__localAudio.directories.delete(this.uri); const prefix = this.uri.replace(/\\/+$/, '') + '/'; for (const uri of [...globalThis.__localAudio.files.keys()]) if (uri.startsWith(prefix)) globalThis.__localAudio.files.delete(uri); }
 }
 export class File {
@@ -74,18 +75,20 @@ export default class AudioContext {
     const state = globalThis.__localAudio; state.decodeUris.push(uri);
     if (state.decodeError) return Promise.reject(new Error('bad audio'));
     if (state.decodeNeverSettles) return new Promise(() => {});
-    return Promise.resolve({ duration: state.bufferDuration, numberOfChannels: state.channels.length, length: state.channels[0].length, sampleRate: state.sampleRate,
-      getChannelData(index) { return state.channels[index]; } });
+    const buffer = { duration: state.bufferDuration, numberOfChannels: state.channels.length, length: state.channels[0].length, sampleRate: state.sampleRate,
+      getChannelData(index) { return state.channels[index]; } };
+    return state.decodeGate ? state.decodeGate.then(() => buffer) : Promise.resolve(buffer);
   }
   async close() { globalThis.__localAudio.contextCloses += 1; }
 }
 `;
 
-async function harness(t, { seconds = 4, channels = 2 } = {}) {
+async function harness(t, { seconds = 4, channels = 2, sparse = false, fastWaveform = false } = {}) {
   const directory = await mkdtemp(join(process.env.TEMP ?? process.env.TMP ?? '.', 'soundboard-local-audio-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const length = seconds * LOCAL_AUDIO_SAMPLE_RATE;
   const channelData = Array.from({ length: channels }, (_, channel) => {
+    if (sparse) return new Proxy({ length }, { get(target, key) { if (key === 'length') return target.length; if (typeof key === 'string' && /^\d+$/.test(key)) return 0; return undefined; } });
     const samples = new Float32Array(length);
     for (let index = 0; index < length; index += 1) samples[index] = channel === 0 ? -1.25 : 0.5;
     return samples;
@@ -93,7 +96,7 @@ async function harness(t, { seconds = 4, channels = 2 } = {}) {
   const state = {
     files: new Map(), directories: new Set(['file:///cache', 'file:///documents']), pickerResult: null, pickerError: null, pickerPromise: null,
     metadataDuration: seconds, bufferDuration: seconds, sampleRate: LOCAL_AUDIO_SAMPLE_RATE, channels: channelData,
-    contextOptions: [], contextCloses: 0, decodeUris: [], decodeError: false, decodeNeverSettles: false,
+    contextOptions: [], contextCloses: 0, decodeUris: [], decodeError: false, decodeNeverSettles: false, decodeGate: null,
     playerUris: [], playerListeners: 0, playerRemoves: 0, pickerOptions: null, copyCount: 0, failCopyAt: null,
     capacityChecks: 0, capacityFull: false, committed: [], failLibraryDirectoryCreate: false, failDeleteUri: null,
   };
@@ -104,6 +107,7 @@ async function harness(t, { seconds = 4, channels = 2 } = {}) {
     'fake-audio.mjs': fakeAudioSource,
     'fake-document-picker.mjs': fakeDocumentPickerSource,
     'fake-context.mjs': fakeContextSource,
+    'fake-pcm.mjs': `export const LOCAL_AUDIO_SAMPLE_RATE = 44100; export const LOCAL_AUDIO_MAX_CHANNELS = 2; export const LOCAL_AUDIO_MAX_RENDER_MS = 60000; export const LOCAL_AUDIO_MIN_RENDER_MS = 100; export async function waveformPeaks(_channels, _frames, bins = 256) { return Array(bins).fill(0); } export async function encodePcm16WavSlice() { return new Uint8Array(44); }`,
   'fake-library.mjs': `export function assertLibraryCapacity() { const s = globalThis.__localAudio; s.capacityChecks += 1; if (s.capacityFull) throw new Error('Library is full.'); }\nexport function commitImportedClip(entry) { const s = globalThis.__localAudio; const uri = 'file:///documents/play-library/' + entry.id + '.wav'; if (!s.files.has(uri)) throw new Error('Missing final file.'); s.committed.push(entry); return { ...entry, uri, missing: false }; }\n`,
   })) {
     fakePaths[name] = join(directory, name);
@@ -120,7 +124,7 @@ async function harness(t, { seconds = 4, channels = 2 } = {}) {
     .replace("from '../data/importValidation';", `from '${pathToFileURL(join(appRoot, 'src/data/importValidation.ts')).href}';`)
     .replace("from '../data/catalog';", `from '${pathToFileURL(join(appClientRoot, 'src/editor/catalog.ts')).href}';`)
     .replace("from '../data/protocol';", `from '${pathToFileURL(join(appRoot, 'src/data/protocol.ts')).href}';`)
-    .replace("from '../../../app-client/src/editor/localAudioPcm.ts';", `from '${pathToFileURL(join(appClientRoot, 'src/editor/localAudioPcm.ts')).href}';`);
+    .replace("from '../../../app-client/src/editor/localAudioPcm.ts';", fastWaveform ? `from '${urls['fake-pcm.mjs']}';` : `from '${pathToFileURL(join(appClientRoot, 'src/editor/localAudioPcm.ts')).href}';`);
   const modulePath = join(directory, 'localAudio.ts');
   await writeFile(modulePath, source);
   state.files.set(contentUri, { displayName: 'Downloaded song.mp3', type: 'audio/mpeg', bytes: new Uint8Array([1, 2, 3, 4]) });
@@ -194,6 +198,39 @@ test('opens a caller-provided MP3 through the same owned staging path and safely
   assert.equal(state.files.has(contentUri), true);
   assert.equal(state.copyCount, 1);
   await editor.disposeLocalAudioSource(source);
+});
+
+test('picker cancellation retains the current draft while a replacement is opened nondestructively', async (t) => {
+  const { state, load } = await harness(t);
+  const editor = await load();
+  const selected = { uri: contentUri, name: 'Downloaded song.mp3', type: 'audio/mpeg', size: 4, exists: true,
+    async copy(destination) { state.files.set(destination.uri, { displayName: 'Downloaded song.mp3', type: 'audio/mpeg', bytes: new Uint8Array([1, 2, 3, 4]) }); } };
+  const current = await editor.openLocalAudioFile(selected);
+  state.pickerResult = { canceled: true, assets: [] };
+  assert.equal(await editor.pickLocalAudioSource(), null);
+  assert.equal(state.files.has(current.uri), true);
+  const replacement = await editor.openLocalAudioFile(selected);
+  assert.equal(state.files.has(current.uri), true, 'the current source remains until replacement is accepted');
+  assert.equal(state.files.has(replacement.uri), true);
+  await editor.renderLocalAudioRange(current, 0, 1_000);
+  await editor.disposeLocalAudioSource(current);
+  await editor.disposeLocalAudioSource(replacement);
+});
+
+test('aggregate PCM preflight rejects an oversized replacement and preserves the current draft', async (t) => {
+  const { state, load } = await harness(t, { seconds: 280, sparse: true, fastWaveform: true });
+  const editor = await load();
+  const makeSelected = () => ({ uri: contentUri, name: 'Downloaded song.mp3', type: 'audio/mpeg', size: 4, exists: true,
+    async copy(destination) { state.files.set(destination.uri, { displayName: 'Downloaded song.mp3', type: 'audio/mpeg', bytes: new Uint8Array([1, 2, 3, 4]) }); } });
+  const current = await editor.openLocalAudioFile(makeSelected());
+  const decodeCount = state.decodeUris.length;
+  state.metadataDuration = 101;
+  state.bufferDuration = 101;
+  state.channels = Array.from({ length: 2 }, () => new Proxy({ length: 101 * LOCAL_AUDIO_SAMPLE_RATE }, { get(target, key) { if (key === 'length') return target.length; if (typeof key === 'string' && /^\d+$/.test(key)) return 0; return undefined; } }));
+  await assert.rejects(editor.openLocalAudioFile(makeSelected()), /Save or discard the current draft.*unchanged/);
+  assert.equal(state.decodeUris.length, decodeCount, 'the replacement is rejected before decoding');
+  assert.equal(state.files.has(current.uri), true, 'the rejected replacement leaves the current audio source intact');
+  await editor.disposeLocalAudioSource(current);
 });
 
 test('preflights oversized and overlong sources before copy or decode', async (t) => {
@@ -326,12 +363,36 @@ test('cancellation during decode releases the context and owned cache copy', asy
   const editor = await load();
   const controller = new AbortController();
   const pending = editor.pickLocalAudioSource(controller.signal);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  for (let attempts = 0; attempts < 500 && state.decodeUris.length === 0; attempts += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  assert.equal(state.decodeUris.length, 1, 'abort only after the native decoder has started');
   controller.abort();
   await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(state.files.has(contentUri), true);
   assert.equal([...state.files.keys()].some((uri) => uri.includes('soundboard-editor-')), false);
   assert.equal(state.contextCloses, 2);
+});
+
+test('aborted native decode retains its slot until the native promise settles', async (t) => {
+  const { state, load } = await harness(t);
+  let settleNativeDecode;
+  state.decodeGate = new Promise((resolve) => { settleNativeDecode = resolve; });
+  const editor = await load();
+  const selected = { uri: contentUri, name: 'Downloaded song.mp3', type: 'audio/mpeg', size: 4, exists: true,
+    async copy(destination) { state.files.set(destination.uri, { displayName: 'Downloaded song.mp3', type: 'audio/mpeg', bytes: new Uint8Array([1, 2, 3, 4]) }); } };
+  const controller = new AbortController();
+  const abortedOpen = editor.openLocalAudioFile(selected, controller.signal);
+  while (state.decodeUris.length === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+  controller.abort();
+  await assert.rejects(abortedOpen, { name: 'AbortError' });
+  await assert.rejects(editor.openLocalAudioFile(selected), /still finishing from a cancelled import/);
+  assert.equal(state.decodeUris.length, 1, 'a second native decode does not start while the first is active');
+  settleNativeDecode();
+  await new Promise((resolve) => setImmediate(resolve));
+  const retry = await editor.openLocalAudioFile(selected);
+  assert.equal(state.decodeUris.length, 2, 'a settled native decode releases the slot for retry');
+  await editor.disposeLocalAudioSource(retry);
 });
 
 test('disposing during a render aborts work, waits for it to settle, and removes all owned cache files', async (t) => {

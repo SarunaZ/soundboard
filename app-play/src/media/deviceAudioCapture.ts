@@ -15,10 +15,13 @@ type NativeDeviceAudioModule = {
 };
 
 const nativeModule = requireOptionalNativeModule<NativeDeviceAudioModule>('SoundboardDeviceAudio');
+// Expo inlines this public build variable into the JS bundle. Capture is part
+// of the Play build by default; diagnostic builds may explicitly disable it.
+const deviceAudioCaptureBuildEnabled = process.env.EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED !== 'false';
 let sessionCounter = 0;
 
 export function isDeviceAudioCaptureSupported(): boolean {
-  return Platform.OS === 'android' && Number(Platform.Version) >= 29 && nativeModule !== null;
+  return deviceAudioCaptureBuildEnabled && Platform.OS === 'android' && Number(Platform.Version) >= 29 && nativeModule !== null;
 }
 
 export function isDeviceAudioSourceAlreadyOwned(source: LocalAudioSource, current: LocalAudioSource | null, pending: LocalAudioSource | null): boolean {

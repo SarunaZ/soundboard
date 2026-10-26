@@ -29,13 +29,15 @@ function makeBuffer({ duration, length, numberOfChannels, sampleRate, value = 1,
 }
 
 function makeHarness() {
-  const h = { time: 5, sources: [], gains: [], shapers: [], outputBufferCreations: 0, deferEndedOnStop: false, resumePromise: null, decode: (uri) => Promise.resolve({
+  const h = { time: 5, sources: [], gains: [], shapers: [], outputBufferCreations: 0, activeDecodes: 0, maxConcurrentDecodes: 0, deferEndedOnStop: false, resumePromise: null, decode: (uri) => Promise.resolve({
     ...makeBuffer({ duration: 2, length: 96_000, numberOfChannels: 2, sampleRate: 48_000 }), uri,
   }) };
   h.context = {
     state: 'running',
     resumeCalls: 0,
+    suspendCalls: 0,
     async resume() { this.resumeCalls += 1; await h.resumePromise; this.state = 'running'; },
+    async suspend() { this.suspendCalls += 1; this.state = 'suspended'; },
     get currentTime() { return h.time; },
     destination: {},
     decodeAudioData: (uri) => h.decode(uri),
@@ -64,15 +66,18 @@ async function loadEngine(t) {
   const directory = mkdtempSync(path.join(tmpdir(), 'soundboard-playback-'));
   const fakePath = path.join(directory, 'fakeContext.mjs');
   const fakeReactNative = path.join(directory, 'fakeReactNative.mjs');
+  const fakeAudioManager = path.join(directory, 'fakeAudioManager.mjs');
   const fakePreparation = path.join(directory, 'fakePreparation.mjs');
   const engineFile = path.join(directory, 'playbackEngine.ts');
   const source = readFileSync(enginePath, 'utf8')
     .replace("from 'react-native-audio-api/lib/module/core/AudioContext';", "from './fakeContext.mjs';")
     .replace("from './playbackDsp';", `from '${dspUrl}';`)
     .replace("from 'react-native';", "from './fakeReactNative.mjs';")
+    .replace("from 'react-native-audio-api/lib/module/system/AudioManager';", "from './fakeAudioManager.mjs';")
     .replace("from './nativePlaybackPreparation';", "from './fakePreparation.mjs';");
   writeFileSync(fakePath, 'export default class FakeAudioContext { constructor() { return globalThis.__playbackHarness.context; } }');
   writeFileSync(fakeReactNative, "export const Platform = { get OS() { return globalThis.__playbackHarness.platform; } };");
+  writeFileSync(fakeAudioManager, 'export default globalThis.__playbackHarness.audioManager;');
   writeFileSync(fakePreparation, `
     import { conservativePeakBound, conservativePeakEstimate, LIMITER_CEILING, processClipPcm } from '${dspUrl}';
     export function assertNativePlaybackPreparationAvailable() {
@@ -102,6 +107,11 @@ async function loadEngine(t) {
   harness.nativeAvailable = true;
   harness.nativeCalls = 0;
   harness.nativePrepare = null;
+  harness.audioManager = {
+    observeCalls: [], listeners: [],
+    observeAudioInterruptions(value) { this.observeCalls.push(value); },
+    addSystemEventListener(name, callback) { this.listeners.push({ name, callback }); return { remove() {} }; },
+  };
   globalThis.__playbackHarness = harness;
   const engine = await import(`${pathToFileURL(engineFile).href}?run=${Math.random()}`);
   t.after(() => {
@@ -185,7 +195,24 @@ test('stop during context resume prevents the pending pad from starting', async 
   resume.resolve();
   await pending;
   assert.equal(harness.sources.length, 0);
-  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], active: false });
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
+});
+
+test('a cancelled deferred resume is suspended after it finishes in the background', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const resume = deferred();
+  harness.context.state = 'suspended';
+  harness.resumePromise = resume.promise;
+  const pending = engine.play('resume-cancelled', 'pad-resume-cancelled');
+  await new Promise((resolve) => setImmediate(resolve));
+  engine.stop();
+  await new Promise((resolve) => setTimeout(resolve, 55));
+  assert.equal(harness.context.suspendCalls, 0, 'do not suspend while resume is still pending');
+  resume.resolve();
+  await pending;
+  await new Promise((resolve) => setTimeout(resolve, 55));
+  assert.equal(harness.context.state, 'suspended');
+  assert.equal(harness.sources.length, 0);
 });
 
 test('a rejected context resume rejects play while a pending decode stays inert', async (t) => {
@@ -203,7 +230,7 @@ test('a rejected context resume rejects play while a pending decode stays inert'
   decode.resolve(makeBuffer({ duration: 1, length: 48_000, numberOfChannels: 1, sampleRate: 48_000 }));
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(harness.sources.length, 0);
-  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], active: false });
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
 });
 
 test('the shared final shaper uses its stateless curve after a source ends', async (t) => {
@@ -278,7 +305,7 @@ test('decode completing after stop cannot start stale playback', async (t) => {
   await pending;
   assert.equal(harness.sources.length, 0);
   assert.equal(harness.outputBufferCreations, 0);
-  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], active: false });
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
 });
 
 test('stopping during asynchronous clip DSP cancels before a derived buffer can start', async (t) => {
@@ -289,7 +316,7 @@ test('stopping during asynchronous clip DSP cancels before a derived buffer can 
   engine.stop();
   await pending;
   assert.equal(harness.sources.length, 0);
-  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], active: false });
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
 });
 
 test('Android delegates analysis to native preparation and reuses prepared PCM', async (t) => {
@@ -379,7 +406,7 @@ test('same-pad tap restarts, native clock drives progress, and repeat three star
   assert.equal(snapshot.voices[0].soundId, 'saved-clip');
   first.end();
   assert.equal(first.stops[0], 11);
-  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], active: false });
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
 
   await engine.play('clip', 'same-pad');
   const previous = harness.sources[1];
@@ -455,4 +482,231 @@ test('large decoded buffers have a combined playback memory ceiling', async (t) 
 
   harness.decode = () => Promise.resolve(makeBuffer({ duration: 10, length: 33_600_000, numberOfChannels: 1, sampleRate: 48_000, value: 0, lazy: true }));
   await assert.rejects(engine.play('too-large', 'pad-large', { allowOverlap: true }), /too large to play safely/);
+});
+
+test('protected pad survives monophonic B then C replacement and overlap changes', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('A', 'pad-A', { protected: true, soundId: 'sound-A' });
+  await engine.play('B', 'pad-B');
+  await engine.play('C', 'pad-C');
+  assert.deepEqual(engine.getPlaybackSnapshot().voices.map(({ padId, protected: locked }) => [padId, locked]), [['pad-A', true], ['pad-C', false]]);
+  await engine.play('D', 'pad-D', { allowOverlap: true });
+  assert.deepEqual(engine.getPlaybackSnapshot().voices.map(({ padId }) => padId), ['pad-A', 'pad-C', 'pad-D']);
+  await engine.play('E', 'pad-E', { allowOverlap: false });
+  assert.deepEqual(engine.getPlaybackSnapshot().voices.map(({ padId }) => padId), ['pad-A', 'pad-E']);
+  assert.equal(harness.sources[0].stops.length, 0, 'protected source was never scheduled to stop');
+});
+
+test('multiple protected sounds coexist and pad or sound aliases cannot retrigger them', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('A', 'pad-A', { protected: true, soundId: 'sound-A' });
+  await engine.play('B', 'pad-B', { protected: true, soundId: 'sound-B' });
+  await engine.play('again', 'pad-A', { protected: true, soundId: 'other-id' });
+  await engine.play('alias', 'pad-alias', { soundId: 'sound-A' });
+  assert.equal(harness.sources.length, 2);
+  assert.deepEqual(engine.getPlaybackSnapshot().voices.map(({ protected: locked }) => locked), [true, true]);
+});
+
+test('protected pending requests survive ordinary replacement and can be stopped by pad', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const decode = deferred();
+  harness.decode = (uri) => uri === 'pending' ? decode.promise : Promise.resolve(makeBuffer({ duration: 1, length: 20, numberOfChannels: 1, sampleRate: 20 }));
+  const pending = engine.play('pending', 'pad-protected-pending', { protected: true, soundId: 'reserved' });
+  await engine.play('ordinary', 'pad-ordinary');
+  decode.resolve(makeBuffer({ duration: 1, length: 20, numberOfChannels: 1, sampleRate: 20 }));
+  await pending;
+  assert.deepEqual(engine.getPlaybackSnapshot().voices.map(({ padId }) => padId), ['pad-ordinary', 'pad-protected-pending']);
+  engine.stopPad('pad-protected-pending');
+  assert.equal(engine.getPlaybackSnapshot().voices.some(({ padId }) => padId === 'pad-protected-pending'), false);
+  await engine.play('alias', 'pad-alias', { soundId: 'reserved' });
+  assert.equal(engine.getPlaybackSnapshot().voices.some(({ padId }) => padId === 'pad-alias'), true, 'reservation unlocks when stopped');
+});
+
+test('protected once and three repeats unlock on natural completion; stop all clears loop locks', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('once', 'pad-once', { protected: true, repeat: 'once' });
+  harness.sources[0].end();
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
+  await engine.play('three', 'pad-three', { protected: true, repeat: 'three' });
+  const three = harness.sources[1];
+  assert.equal(three.stops[0], harness.time + three.buffer.duration * 3);
+  three.end();
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
+  await engine.play('loop', 'pad-loop', { protected: true, repeat: 'loop' });
+  engine.stop();
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
+  await engine.play('unlocked', 'pad-loop');
+  assert.equal(engine.getPlaybackSnapshot().voices[0].protected, false);
+});
+
+test('stopPad cancels a pending protected decode and stop all cancels all protected requests', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const decodeA = deferred();
+  const decodeB = deferred();
+  harness.decode = (uri) => uri === 'A' ? decodeA.promise : decodeB.promise;
+  const pendingA = engine.play('A', 'pad-A', { protected: true, soundId: 'A' });
+  const pendingB = engine.play('B', 'pad-B', { protected: true, soundId: 'B' });
+  assert.deepEqual(engine.getPlaybackSnapshot().pendingProtected, [{ padId: 'pad-A', soundId: 'A' }, { padId: 'pad-B', soundId: 'B' }]);
+  engine.stopPad('pad-A');
+  assert.deepEqual(engine.getPlaybackSnapshot().pendingProtected, [{ padId: 'pad-B', soundId: 'B' }]);
+  decodeA.resolve(makeBuffer({ duration: 1, length: 20, numberOfChannels: 1, sampleRate: 20 }));
+  decodeB.resolve(makeBuffer({ duration: 1, length: 20, numberOfChannels: 1, sampleRate: 20 }));
+  await Promise.all([pendingA, pendingB]);
+  assert.deepEqual(engine.getPlaybackSnapshot().voices.map(({ padId }) => padId), ['pad-B']);
+  const pendingC = deferred();
+  harness.decode = () => pendingC.promise;
+  const requestC = engine.play('C', 'pad-C', { protected: true });
+  assert.equal(engine.getPlaybackSnapshot().active, true);
+  engine.stop();
+  assert.equal(engine.getPlaybackSnapshot().active, false);
+  pendingC.resolve(makeBuffer({ duration: 1, length: 20, numberOfChannels: 1, sampleRate: 20 }));
+  await requestC;
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
+});
+
+test('voice cap refuses playback rather than stealing protected voices', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  for (let index = 0; index < 8; index += 1) await engine.play(`protected-${index}`, `pad-${index}`, { protected: true });
+  await assert.rejects(engine.play('ninth', 'pad-ninth'), /protected voice limit/);
+  assert.equal(engine.getPlaybackSnapshot().voices.length, 8);
+  assert.ok(harness.sources.slice(0, 8).every((source) => source.stops.length === 0));
+});
+
+test('system audio interruption stops and unlocks protected playback', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('protected', 'pad-protected', { protected: true, soundId: 'sound-protected', repeat: 'loop' });
+  const manager = harness.audioManager;
+  assert.deepEqual(manager.observeCalls, ['gainTransientMayDuck']);
+  assert.deepEqual(manager.listeners.map(({ name }) => name), ['interruption', 'duck']);
+  manager.listeners.find(({ name }) => name === 'interruption').callback({ type: 'began', shouldResume: false });
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
+  assert.deepEqual(manager.observeCalls, ['gainTransientMayDuck', false]);
+  await engine.play('retrigger', 'pad-protected', { soundId: 'sound-protected' });
+  assert.deepEqual(manager.observeCalls, ['gainTransientMayDuck', false, 'gainTransientMayDuck']);
+  assert.equal(harness.sources.length, 2, 'audio focus loss clears the pad and sound reservations');
+});
+
+test('audio focus is abandoned after a one-shot ends and requested again for the next tap', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('one-shot', 'pad-one-shot');
+  assert.deepEqual(harness.audioManager.observeCalls, ['gainTransientMayDuck']);
+  harness.sources[0].end();
+  assert.deepEqual(harness.audioManager.observeCalls, ['gainTransientMayDuck', false]);
+  await engine.play('next-tap', 'pad-next-tap');
+  assert.deepEqual(harness.audioManager.observeCalls, ['gainTransientMayDuck', false, 'gainTransientMayDuck']);
+  engine.stop();
+  assert.deepEqual(harness.audioManager.observeCalls, ['gainTransientMayDuck', false, 'gainTransientMayDuck', false]);
+});
+
+test('idle playback context suspends after the last fade and resumes before the next source', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('first', 'pad-first');
+  harness.sources[0].end();
+  await new Promise((resolve) => setTimeout(resolve, 55));
+  assert.equal(harness.context.state, 'suspended');
+  assert.equal(harness.context.suspendCalls, 1);
+  await engine.play('second', 'pad-second');
+  assert.equal(harness.context.resumeCalls, 1);
+  assert.equal(harness.context.state, 'running');
+});
+
+test('audio focus duck stops current sounds without automatic resume', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('ducked', 'pad-ducked', { repeat: 'loop' });
+  harness.audioManager.listeners.find(({ name }) => name === 'duck').callback({});
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
+  assert.deepEqual(harness.audioManager.observeCalls, ['gainTransientMayDuck', false]);
+});
+
+test('Stop remains safe if Android audio-focus release throws', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('focus-release', 'pad-focus-release');
+  const original = harness.audioManager.observeAudioInterruptions;
+  harness.audioManager.observeAudioInterruptions = function observe(value) {
+    this.observeCalls.push(value);
+    if (value === false) throw new Error('native focus release failed');
+  };
+  assert.doesNotThrow(() => engine.stop());
+  harness.audioManager.observeAudioInterruptions = original;
+});
+
+test('distinct cold decodes are bounded and queued taps do not decode after Stop all', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const gateA = deferred();
+  const gateB = deferred();
+  const decodeCalls = [];
+  harness.decode = async (uri) => {
+    decodeCalls.push(uri);
+    harness.activeDecodes += 1;
+    harness.maxConcurrentDecodes = Math.max(harness.maxConcurrentDecodes, harness.activeDecodes);
+    await (uri === 'cold-a' ? gateA.promise : gateB.promise);
+    harness.activeDecodes -= 1;
+    return { ...makeBuffer({ duration: 2, length: 96_000, numberOfChannels: 2, sampleRate: 48_000 }), uri };
+  };
+  const first = engine.play('cold-a', 'pad-cold-a', { allowOverlap: true });
+  const second = engine.play('cold-b', 'pad-cold-b', { allowOverlap: true });
+  const third = engine.play('cold-c', 'pad-cold-c', { allowOverlap: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(harness.activeDecodes, 2);
+  engine.stop();
+  gateA.resolve(); gateB.resolve();
+  await Promise.all([first, second, third]);
+  assert.equal(harness.maxConcurrentDecodes, 2);
+  assert.deepEqual(decodeCalls, ['cold-a', 'cold-b']);
+  assert.equal(engine.getPlaybackSnapshot().active, false);
+});
+
+test('synchronous resume failure releases a protected reservation for retry', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  harness.context.state = 'suspended';
+  harness.context.resume = () => { throw new Error('resume threw synchronously'); };
+  await assert.rejects(engine.play('retry', 'pad-retry', { protected: true, soundId: 'retry-id' }), /resume threw synchronously/);
+  harness.context.resume = async function resume() { this.state = 'running'; };
+  await engine.play('retry', 'pad-retry', { protected: true, soundId: 'retry-id' });
+  assert.equal(engine.getPlaybackSnapshot().voices[0].protected, true);
+});
+
+test('protectPad promotes the active voice without restarting its playback', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  await engine.play('already-playing', 'pad-promote', { soundId: 'sound-promote' });
+  const source = harness.sources[0];
+  harness.time = 6;
+  assert.equal(engine.getPlaybackSnapshot().voices[0].position, 1);
+  assert.equal(engine.protectPad('pad-promote'), true);
+  assert.equal(harness.sources.length, 1);
+  assert.equal(engine.getPlaybackSnapshot().voices[0].position, 1);
+  assert.equal(engine.getPlaybackSnapshot().voices[0].protected, true);
+  await engine.play('alias', 'another-pad', { soundId: 'sound-promote' });
+  assert.equal(harness.sources.length, 1, 'sound identity alias is reserved by promoted voice');
+  engine.stopPad('pad-promote');
+  assert.equal(engine.getPlaybackSnapshot().active, false);
+  assert.equal(source.stops.length, 1);
+});
+
+test('protectPad promotes a pending decode and protects it from monophonic replacement', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const decode = deferred();
+  harness.decode = (uri) => uri === 'pending-promote' ? decode.promise : Promise.resolve(makeBuffer({ duration: 1, length: 20, numberOfChannels: 1, sampleRate: 20 }));
+  const pending = engine.play('pending-promote', 'pad-pending-promote', { soundId: 'sound-pending-promote' });
+  assert.equal(engine.protectPad('pad-pending-promote'), true);
+  assert.deepEqual(engine.getPlaybackSnapshot().pendingProtected, [{ padId: 'pad-pending-promote', soundId: 'sound-pending-promote' }]);
+  assert.equal(engine.getPlaybackSnapshot().active, true, 'pending protected playback keeps global Stop all available');
+  await engine.play('normal-after-promotion', 'pad-normal');
+  decode.resolve(makeBuffer({ duration: 1, length: 20, numberOfChannels: 1, sampleRate: 20 }));
+  await pending;
+  assert.deepEqual(engine.getPlaybackSnapshot().pendingProtected, []);
+  assert.deepEqual(engine.getPlaybackSnapshot().voices.map(({ padId, protected: locked }) => [padId, locked]), [['pad-normal', false], ['pad-pending-promote', true]]);
+  const promotedSource = harness.sources[1];
+  await engine.play('B', 'pad-B');
+  await engine.play('C', 'pad-C');
+  assert.deepEqual(engine.getPlaybackSnapshot().voices.map(({ padId, protected: locked }) => [padId, locked]), [['pad-pending-promote', true], ['pad-C', false]]);
+  assert.equal(promotedSource.stops.length, 0, 'monophonic taps cannot stop the promoted source');
+  promotedSource.end();
+  await engine.play('sound-alias-after-natural-end', 'pad-alias-after-end', { soundId: 'sound-pending-promote' });
+  assert.equal(engine.getPlaybackSnapshot().voices.some(({ padId }) => padId === 'pad-alias-after-end'), true, 'natural completion releases the migrated alias reservation');
+  await engine.play('protected-again', 'pad-pending-promote', { protected: true, soundId: 'sound-pending-promote' });
+  engine.stop();
+  await engine.play('alias-after-stop-all', 'pad-after-stop-all', { soundId: 'sound-pending-promote' });
+  assert.equal(engine.getPlaybackSnapshot().voices.some(({ padId }) => padId === 'pad-after-stop-all'), true, 'Stop all clears the migrated reservation');
+  assert.equal(engine.protectPad('missing-pad'), false);
 });

@@ -12,6 +12,9 @@ import { encodePcm16WavSlice, LOCAL_AUDIO_MAX_CHANNELS, LOCAL_AUDIO_MAX_RENDER_M
 
 export const MAX_LOCAL_AUDIO_SOURCE_BYTES = 32 * 1024 * 1024;
 export const MAX_LOCAL_AUDIO_SOURCE_MS = 5 * 60_000;
+// The largest supported PCM decode is five minutes of 44.1 kHz stereo float PCM.
+// Keep this explicit so a metadata change cannot silently make imports unbounded.
+export const MAX_LOCAL_AUDIO_PCM_BYTES = 128 * 1024 * 1024;
 export const MAX_LOCAL_AUDIO_RENDER_MS = LOCAL_AUDIO_MAX_RENDER_MS;
 export const MIN_LOCAL_AUDIO_RENDER_MS = LOCAL_AUDIO_MIN_RENDER_MS;
 export const LOCAL_AUDIO_WAVEFORM_BINS = 256;
@@ -40,6 +43,7 @@ type SourceRecord = {
   source: LocalAudioSource;
   directory: Directory;
   buffer: DecodedAudio | null;
+  pcmBytes: number;
   render: RenderRecord | null;
   disposed: boolean;
   rendering: boolean;
@@ -50,6 +54,9 @@ type SourceRecord = {
 };
 
 const sources = new Map<string, SourceRecord>();
+const MAX_RETAINED_EDITOR_SOURCES = 2;
+let sourceOpenInProgress = false;
+let nativeDecodeOutstanding = false;
 
 function abortError(message = 'Audio editing was cancelled.'): Error {
   const error = new Error(message);
@@ -63,7 +70,7 @@ function assertNotAborted(signal?: AbortSignal): void {
 
 function throwProbeError(error: unknown, message: string): Error {
   if (error instanceof Error && error.name === 'AbortError') return error;
-  return error instanceof Error && /seconds|minutes|duration|MB|size|audio file|channel count|sample rate|inconsistent/i.test(error.message)
+  return error instanceof Error && /seconds|minutes|duration|MB|size|audio file|channel count|sample rate|inconsistent|memory|draft|decoder|finishing/i.test(error.message)
     ? error
     : new Error(message);
 }
@@ -118,10 +125,24 @@ async function probeDurationMs(uri: string, signal?: AbortSignal): Promise<numbe
 
 async function decodeAudio(uri: string, signal?: AbortSignal): Promise<DecodedAudio> {
   assertNotAborted(signal);
+  if (nativeDecodeOutstanding) throw new Error('Audio decoding is still finishing from a cancelled import. Wait and try again; restart the app if it never clears.');
   const context = new AudioContext({ sampleRate: LOCAL_AUDIO_SAMPLE_RATE });
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
-    const decoding = context.decodeAudioData(uri);
+    nativeDecodeOutstanding = true;
+    let releasedNativeSlot = false;
+    const releaseNativeSlot = () => {
+      if (releasedNativeSlot) return;
+      releasedNativeSlot = true;
+      nativeDecodeOutstanding = false;
+    };
+    let decoding: Promise<DecodedAudio>;
+    try { decoding = context.decodeAudioData(uri); }
+    catch (error) { releaseNativeSlot(); throw error; }
+    // The editor may abort its wait while the native codec is still working.
+    // Keep the global decoder slot occupied until the actual native promise
+    // settles, even if the caller has already left the import flow.
+    void decoding.then(releaseNativeSlot, releaseNativeSlot);
     return await new Promise<DecodedAudio>((resolve, reject) => {
       let settled = false;
       const finish = (error?: Error, buffer?: DecodedAudio) => {
@@ -211,6 +232,11 @@ export async function openLocalAudioFile(
   selectedMetadata?: { name?: string; mimeType?: string | null },
 ): Promise<LocalAudioSource> {
   assertNotAborted(signal);
+  if (nativeDecodeOutstanding) throw new Error('Audio decoding is still finishing from a cancelled import. Wait and try again; restart the app if it never clears.');
+  if (sourceOpenInProgress) throw new Error('An audio source is already being opened. Wait for it to finish before choosing another.');
+  if (sources.size >= MAX_RETAINED_EDITOR_SOURCES) throw new Error('Close the current and previous audio drafts before opening another source.');
+  sourceOpenInProgress = true;
+  try {
   if (typeof selectedFile.size !== 'number' || !Number.isSafeInteger(selectedFile.size) || selectedFile.size <= 0) {
     throw new Error('The selected file has an unknown or empty size.');
   }
@@ -240,11 +266,20 @@ export async function openLocalAudioFile(
 
     const durationMs = await probeDurationMs(stagedFile.uri, signal);
     assertNotAborted(signal);
+    const retainedPcmBytes = [...sources.values()].reduce((total, record) => total + record.pcmBytes, 0);
+    const expectedPcmBytes = Math.ceil(durationMs * LOCAL_AUDIO_SAMPLE_RATE / 1000) * LOCAL_AUDIO_MAX_CHANNELS * Float32Array.BYTES_PER_ELEMENT;
+    if (retainedPcmBytes + expectedPcmBytes > MAX_LOCAL_AUDIO_PCM_BYTES) {
+      throw new Error('This source plus your current audio draft would use too much memory. Save or discard the current draft, or choose a shorter file. Your current draft is unchanged.');
+    }
     const buffer = await decodeAudio(stagedFile.uri, signal);
     assertNotAborted(signal);
     if (!Number.isFinite(buffer.duration) || buffer.duration <= 0 || !Number.isInteger(buffer.length) || buffer.length <= 0 ||
         buffer.numberOfChannels < 1 || buffer.numberOfChannels > LOCAL_AUDIO_MAX_CHANNELS || buffer.sampleRate !== LOCAL_AUDIO_SAMPLE_RATE) {
       throw new Error('This audio format or channel count is not supported.');
+    }
+    const decodedPcmBytes = buffer.length * buffer.numberOfChannels * Float32Array.BYTES_PER_ELEMENT;
+    if (!Number.isSafeInteger(decodedPcmBytes) || retainedPcmBytes + decodedPcmBytes > MAX_LOCAL_AUDIO_PCM_BYTES) {
+      throw new Error('This source plus your current audio draft would use too much memory. Save or discard the current draft, or choose a shorter file. Your current draft is unchanged.');
     }
     const decodedDurationMs = buffer.length / buffer.sampleRate * 1000;
     if (decodedDurationMs > MAX_LOCAL_AUDIO_SOURCE_MS + 0.001 || Math.abs(decodedDurationMs - durationMs) > 1_000) {
@@ -264,7 +299,7 @@ export async function openLocalAudioFile(
       peaks,
     };
     const record: SourceRecord = {
-      source, directory, buffer, render: null, disposed: false,
+      source, directory, buffer, pcmBytes: decodedPcmBytes, render: null, disposed: false,
       rendering: false, saving: 0, operations: new Set(), controllers: new Set(), cleanupPromise: null,
     };
     sources.set(id, record);
@@ -274,6 +309,9 @@ export async function openLocalAudioFile(
     throw throwProbeError(error, 'The selected file could not be opened as audio.');
   } finally {
     if (ownsDirectory && directory.exists) directory.delete();
+  }
+  } finally {
+    sourceOpenInProgress = false;
   }
 }
 

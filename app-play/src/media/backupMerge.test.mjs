@@ -7,7 +7,7 @@ import { mergePlayBackup } from './backupMerge.ts';
 const firstId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const secondId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const clip = (id, title) => ({ id, title, durationMs: 1200, createdAt: '2026-10-17T00:00:00.000Z', extension: 'wav' });
-const prefs = (appearance) => ({ version: 4, appearance, quickAction: 'file', masterVolume: 1 });
+const prefs = (appearance, nextPadColorIndex = 15) => ({ version: 5, appearance: appearance === 'Coffee' ? 'Chocolate' : appearance, quickAction: 'file', masterVolume: 1, nextPadColorIndex });
 
 test('backup merge retains current IDs, adds missing clips, and imports settings', () => {
   const baseBoards = emptyBoardCollection();
@@ -18,7 +18,7 @@ test('backup merge retains current IDs, adds missing clips, and imports settings
   };
   const backup = {
     clips: [clip(firstId, 'Backup title'), clip(secondId, 'New clip')], boards: importedBoards,
-    presentations: {}, playback: { [firstId]: { gain: 0, repeat: 'three' }, [secondId]: { gain: 2, repeat: 'once' } }, preferences: prefs('Coffee'),
+    presentations: { [secondId]: { color: '#ff5e68', colorEnd: '#ff172c', colorIndex: 15 } }, playback: { [firstId]: { gain: 0, repeat: 'three' }, [secondId]: { gain: 2, repeat: 'once' } }, preferences: prefs('Coffee', 16),
   };
 
   const merged = mergePlayBackup(existing, backup);
@@ -26,7 +26,9 @@ test('backup merge retains current IDs, adds missing clips, and imports settings
   assert.deepEqual(merged.importedClipIds, [secondId]);
   assert.equal(merged.playback[firstId].gain, 1.4);
   assert.deepEqual(merged.playback[secondId], { gain: 2, repeat: 'once' });
-  assert.equal(merged.preferences.appearance, 'Coffee');
+  assert.equal(merged.preferences.appearance, 'Chocolate');
+  assert.equal(merged.preferences.nextPadColorIndex, 16);
+  assert.deepEqual(merged.presentations[secondId], { color: '#ff5e68', colorEnd: '#ff172c', colorIndex: 15 });
   assert.equal(merged.boards.boards[0].navigation, 'pages', 'existing board ID wins conflicts');
   assert.equal(merged.boards.activeBoardId, baseBoards.activeBoardId);
 });

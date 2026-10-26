@@ -1,0 +1,138 @@
+[
+  {
+    "name": "Prototype boots",
+    "passed": true
+  },
+  {
+    "name": "No inline edit panel",
+    "passed": true
+  },
+  {
+    "name": "Pad menu initially hidden",
+    "passed": true
+  },
+  {
+    "name": "Edit Board opens modal",
+    "passed": true
+  },
+  {
+    "name": "Modal has grid settings",
+    "passed": true
+  },
+  {
+    "name": "Modal has nav settings",
+    "passed": true
+  },
+  {
+    "name": "Modal has overlap",
+    "passed": true
+  },
+  {
+    "name": "Grid changed to 3x4",
+    "passed": true
+  },
+  {
+    "name": "Modal persists after grid change",
+    "passed": true
+  },
+  {
+    "name": "Modal closes",
+    "passed": true
+  },
+  {
+    "name": "Edit-only menus visible",
+    "passed": true
+  },
+  {
+    "name": "Modal reopens",
+    "passed": true
+  },
+  {
+    "name": "Escape closes dialog",
+    "passed": true
+  },
+  {
+    "name": "Done editing exits",
+    "passed": true
+  },
+  {
+    "name": "Short tap begins normal playback",
+    "passed": true
+  },
+  {
+    "name": "Short tap does not protect",
+    "passed": true
+  },
+  {
+    "name": "Tap feedback CSS defined",
+    "passed": true
+  },
+  {
+    "name": "Stop all works",
+    "passed": true
+  },
+  {
+    "name": "Charging border shown during hold",
+    "passed": true
+  },
+  {
+    "name": "Charge does not start protected early",
+    "passed": true
+  },
+  {
+    "name": "Full hold protects sound",
+    "passed": true
+  },
+  {
+    "name": "Protected pad is disabled",
+    "passed": true
+  },
+  {
+    "name": "Per-pad Stop appears",
+    "passed": true
+  },
+  {
+    "name": "Release does not retrigger",
+    "passed": true
+  },
+  {
+    "name": "New tap does not interrupt protected",
+    "passed": true
+  },
+  {
+    "name": "New tap starts an ordinary sound",
+    "passed": true
+  },
+  {
+    "name": "A third tap replaces previous ordinary sound",
+    "passed": true
+  },
+  {
+    "name": "Protected survives replacement",
+    "passed": true
+  },
+  {
+    "name": "Individual Stop unlocks",
+    "passed": true
+  },
+  {
+    "name": "Pad enabled after Stop",
+    "passed": true
+  },
+  {
+    "name": "Repeat 3 holds protected session",
+    "passed": true
+  },
+  {
+    "name": "Repeat 3 naturally unlocks",
+    "passed": true
+  },
+  {
+    "name": "Playback options still available in edit mode",
+    "passed": true
+  },
+  {
+    "name": "No runtime JS errors",
+    "passed": true
+  }
+]

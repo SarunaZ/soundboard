@@ -1,0 +1,1 @@
+Unzip this folder, then open StimmyzApp_Interactive_Prototype.html in Chrome, Edge, or Firefox. Self-contained and offline. Edit Board opens modal; hold a pad 2 seconds to lock its playback; use the pad Stop control or Stop all. Audio is simulated for design testing. See BOARD_MODAL_AND_PROTECTED_PLAYBACK_HANDOFF.md for native requirements.

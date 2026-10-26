@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, FlatList, Image, Keyboard, Modal, PanResponder, PixelRatio, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
+import { AccessibilityInfo, Alert, Animated, AppState, FlatList, Image, Keyboard, KeyboardAvoidingView, Modal, PanResponder, PixelRatio, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { stop, getPlaybackSnapshot, subscribePlayback, type PlaybackSnapshot } from '../media/playbackEngine';
-import { clearPad, createBoard as persistBoard, loadBoards, movePad, renamePad, reorderPad, selectBoard, setBoardPreferences, type Board, type BoardCollection, type BoardPad } from '../data/boards';
+import { stop, stopPad, protectPad, getPlaybackSnapshot, subscribePlayback, type PlaybackSnapshot } from '../media/playbackEngine';
+import { clearPad, createBoard as persistBoard, deleteBoard as persistBoardDelete, loadBoards, movePad, renameBoard as persistBoardRename, renamePad, reorderBoard as persistBoardReorder, reorderPad, selectBoard, setBoardPreferences, type Board, type BoardCollection, type BoardPad } from '../data/boards';
 import type { LocalClip } from '../data/library';
 import { loadPlayPreferences, savePlayPreferences, type QuickAction } from '../data/preferences';
 import { isDeviceAudioCaptureSupported } from '../media/deviceAudioCapture';
@@ -12,15 +12,18 @@ import { calculateBoardGrid, calculateBoardTileHeight } from './boardLayout';
 import { clampScrollOffset, edgeScrollStep, gridIndexAtPoint } from '../../../app-client/src/board/reorderGeometry';
 import { gridIndexToPadIndex, gridItemCountWithQuickAdd } from './quickAddGrid';
 import { boardDistanceFromEnd, boardPageCount, boardPageSlice, boardSoundsPerPage, nextBoardBatchCount, shouldAutoLoadBoardSounds } from './boardNavigation';
+import { boardNeedsScrollRail, boardScrollRailGeometry, boardScrollRailOffset, boardScrollRailShouldLoadMore } from './boardScrollRail';
 import type { Theme } from './theme';
 import { contrastForeground, iconChoices } from './theme';
+import { PROTECTED_HOLD_MS, holdProgress, movedBeyondHoldThreshold, runBoardHold } from './boardHold';
+import { PadGradient } from './PadGradient';
 
 type Props = {
   theme: Theme;
   collection: BoardCollection;
   clips: LocalClip[];
   onChange: (collection: BoardCollection) => void;
-  onPlay: (clip: LocalClip, padId: string, boardId: string) => void;
+  onPlay: (clip: LocalClip, padId: string, boardId: string, protectedPlayback?: boolean) => Promise<void> | void;
   onCreate: (boardId: string, padId?: string, initialAction?: 'file' | 'record' | 'device-audio') => void;
   onAddClip: () => void;
   onOpenLibrary: (target?: { boardId: string; padId?: string }) => void;
@@ -40,9 +43,20 @@ function blendTowardWhite(hex: string, amount: number): string {
   return `#${channels.map((channel) => Math.round(channel + (255 - channel) * amount).toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCreate, onAddClip, onOpenLibrary, onAppearance, onPlaybackOptions, newBoardRequest }: Props) {
+export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCreate, onAddClip, onOpenLibrary, onPlaybackOptions, newBoardRequest }: Props) {
   const [editing, setEditing] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [charge, setCharge] = useState<{ padId: string; progress: number } | null>(null);
+  const [reduceMotion, setReduceMotion] = useState(true);
+  const [reduceMotionKnown, setReduceMotionKnown] = useState(false);
+  const reduceMotionRef = useRef(true);
+  const [scrollMetrics, setScrollMetrics] = useState({ offset: 0, contentHeight: 0, viewportHeight: 0 });
+  const [scrollRailTrackHeight, setScrollRailTrackHeight] = useState(0);
+  const [railVisibleScope, setRailVisibleScope] = useState<string | null>(null);
+  const scrollRailCue = useRef(new Animated.Value(0)).current;
   const [newBoard, setNewBoard] = useState(false);
+  const [boardNameEditing, setBoardNameEditing] = useState(false);
+  const [boardNameDraft, setBoardNameDraft] = useState('');
   const [boardName, setBoardName] = useState('');
   const [selectedPad, setSelectedPad] = useState<{ boardId: string; pad: BoardPad } | null>(null);
   const [rename, setRename] = useState('');
@@ -60,6 +74,8 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const padAnchors = useRef(new Map<string, View>());
   const viewport = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const scroll = useRef({ offset: 0, contentHeight: 0, viewportHeight: 0 });
+  const scrollRailStart = useRef<{ y: number; offset: number } | null>(null);
+  const scrollRailSeen = useRef(new Set<string>());
   const activeDrag = useRef<{ sourcePadId: string; targetPadId: string } | null>(null);
   const armedPadId = useRef<string | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
@@ -68,6 +84,9 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const userScrolled = useRef(false);
   const lastAutoLoadedCount = useRef(-1);
   const touchStartY = useRef<number | null>(null);
+  const hold = useRef<{ padId: string; runtimePadId: string; soundId: string; startedAt: number; x: number; y: number; timer: ReturnType<typeof setTimeout> | null; progressTimer: ReturnType<typeof setInterval> | null; cancelled: boolean; fired: boolean } | null>(null);
+  const touchPressLatch = useRef(new Map<string, ReturnType<typeof setTimeout> | null>());
+  const padAnimations = useRef(new Map<string, { scale: Animated.Value; opacity: Animated.Value; highlight: Animated.Value }>());
   const [quickAction, setQuickAction] = useState<QuickAction>(() => {
     try {
       const saved = loadPlayPreferences(isDeviceAudioCaptureSupported()).quickAction;
@@ -79,6 +98,14 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const [loadedCount, setLoadedCount] = useState(15);
   const { fontScale, width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const padAnimation = (padId: string) => {
+    let animation = padAnimations.current.get(padId);
+    if (!animation) {
+      animation = { scale: new Animated.Value(1), opacity: new Animated.Value(1), highlight: new Animated.Value(0) };
+      padAnimations.current.set(padId, animation);
+    }
+    return animation;
+  };
   const layout = calculateBoardGrid(availableWidth, fontScale, 8, PixelRatio.get(), collection.boards.find((board) => board.id === collection.activeBoardId)?.grid === '3x4' ? 3 : 4);
   const tileHeight = calculateBoardTileHeight(layout.tileWidth, fontScale);
   const basePopupWidth = popup?.kind === 'boards' ? Math.max(210, Math.min(238, popup.rect.width)) : popup?.kind === 'quick' ? 204 : 176;
@@ -91,7 +118,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const popupLeft = popup ? Math.min(Math.max(insets.left + 10, popup.rect.x), windowWidth - insets.right - popupWidth - 10) : 0;
   const popupBelow = popup ? popup.rect.y + popup.rect.height + 6 : 0;
   const popupTop = popup ? (popupBelow + popupEstimatedHeight <= windowHeight - insets.bottom - 10 ? popupBelow : Math.max(insets.top + 10, popup.rect.y - popupEstimatedHeight - 6)) : 0;
-  const active = collection.boards.find((board) => board.id === collection.activeBoardId) ?? collection.boards[0] ?? { id: '', name: '', pads: [] };
+  const active = collection.boards.find((board) => board.id === collection.activeBoardId) ?? collection.boards[0] ?? { id: '', name: '', pads: [], pageIndex: 0 };
   const viewScope = `${active.id}:${active.grid}:${active.navigation}:${search}`;
   const viewScopeRef = useRef(viewScope);
   viewScopeRef.current = viewScope;
@@ -108,13 +135,14 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const pageCapacity = columns * 4;
   const ordinaryPerPage = boardSoundsPerPage(columns);
   const pageCount = boardPageCount(filteredPads.length, columns);
+  const displayPage = Math.min(Math.max(0, page), Math.max(0, pageCount - 1));
   const pageSounds = useMemo(() => active.navigation === 'pages'
-    ? boardPageSlice(filteredPads, columns, page)
+    ? boardPageSlice(filteredPads, columns, displayPage)
     : filteredPads.slice(0, Math.min(filteredPads.length, Math.max(ordinaryPerPage, loadedCount))),
-  [active.navigation, filteredPads, columns, page, ordinaryPerPage, loadedCount]);
-  const visiblePads = useMemo(() => pageSounds.length < ordinaryPerPage && (active.navigation === 'pages' ? page + 1 >= pageCount : filteredPads.length <= ordinaryPerPage)
+  [active.navigation, filteredPads, columns, displayPage, ordinaryPerPage, loadedCount]);
+  const visiblePads = useMemo(() => pageSounds.length < ordinaryPerPage && (active.navigation === 'pages' ? displayPage + 1 >= pageCount : filteredPads.length <= ordinaryPerPage)
     ? [...pageSounds, ...emptyPads.slice(0, ordinaryPerPage - pageSounds.length)] : pageSounds,
-  [pageSounds, ordinaryPerPage, active.navigation, page, pageCount, filteredPads.length, emptyPads]);
+  [pageSounds, ordinaryPerPage, active.navigation, displayPage, pageCount, filteredPads.length, emptyPads]);
   const gridItems = useMemo<BoardGridItem[]>(() => [{ kind: 'quick', key: 'quick-add' }, ...visiblePads.map((pad) => ({ kind: 'pad' as const, key: pad.id, pad }))], [visiblePads]);
   const cancelDrag = useCallback(() => {
     pointer.current = null;
@@ -128,17 +156,180 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     setSelectedMovePadId(null);
   }, [cancelDrag]);
 
+  const cancelPadHold = useCallback(() => {
+    const activeHold = hold.current;
+    if (activeHold?.timer) clearTimeout(activeHold.timer);
+    if (activeHold?.progressTimer) clearInterval(activeHold.progressTimer);
+    if (activeHold) activeHold.cancelled = true;
+    if (activeHold) animatePadRelease(activeHold.padId);
+    hold.current = null;
+    setCharge(null);
+  }, []);
+
+  const railScope = `${viewScope}:${active.navigation === 'pages' ? displayPage : 'scroll'}`;
+  const hasScrollRail = boardNeedsScrollRail({
+    navigation: active.navigation,
+    filteredSoundCount: filteredPads.length,
+    loadedSoundCount: pageSounds.length,
+    contentHeight: scrollMetrics.contentHeight,
+    viewportHeight: scrollMetrics.viewportHeight,
+    latchedVisible: railVisibleScope === railScope,
+  });
+  const scrollRailGeometry = boardScrollRailGeometry(scrollMetrics.contentHeight, scrollMetrics.viewportHeight, scrollRailTrackHeight, 42, scrollMetrics.offset);
+  const scrollRailThumbHeight = scrollRailGeometry.thumbHeight;
+  const scrollRailMaxOffset = scrollRailGeometry.maxScrollOffset;
+  const scrollRailTravel = scrollRailGeometry.thumbTravel;
+  const scrollRailThumbTop = scrollRailGeometry.thumbTop;
+  const scrollRailPan = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderGrant: (_event, gesture) => { cancelPadHold(); userScrolled.current = true; scrollRailStart.current = { y: gesture.y0, offset: scroll.current.offset }; },
+    onPanResponderMove: (_event, gesture) => {
+      const start = scrollRailStart.current;
+      if (!start) return;
+      const geometry = boardScrollRailGeometry(scroll.current.contentHeight, scroll.current.viewportHeight, scrollRailTrackHeight, 42, start.offset);
+      const next = boardScrollRailOffset(start.offset, gesture.moveY - start.y, scroll.current.contentHeight, scroll.current.viewportHeight, geometry.thumbTravel);
+      scroll.current.offset = next;
+      setScrollMetrics({ ...scroll.current, offset: next });
+      scrollRef.current?.scrollToOffset({ offset: next, animated: false });
+      if (boardScrollRailShouldLoadMore(next, scroll.current.contentHeight, scroll.current.viewportHeight, Math.max(120, scroll.current.viewportHeight * 0.6), pageSounds.length, filteredPads.length)) requestNextSoundBatch();
+    },
+    onPanResponderRelease: () => { scrollRailStart.current = null; },
+    onPanResponderTerminate: () => { scrollRailStart.current = null; },
+    onPanResponderTerminationRequest: () => false,
+  }), [cancelPadHold, scrollRailTrackHeight, pageSounds.length, filteredPads.length, viewScope, active.navigation]);
+
+  const animatePadRelease = (padId: string) => {
+    const animation = padAnimation(padId);
+    if (reduceMotionRef.current) {
+      animation.scale.setValue(1);
+      animation.opacity.setValue(1);
+      animation.highlight.setValue(0);
+      return;
+    }
+    Animated.parallel([
+      Animated.timing(animation.scale, { toValue: 1, duration: 125, useNativeDriver: true }),
+      Animated.timing(animation.opacity, { toValue: 1, duration: 125, useNativeDriver: true }),
+      Animated.timing(animation.highlight, { toValue: 0, duration: 160, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const beginPadHold = (pad: BoardPad, clip: LocalClip) => (event: { nativeEvent: { pageX: number; pageY: number } }) => {
+    if (editing || playback.voices.some((voice) => voice.protected && voice.soundId === clip.id)
+      || playback.pendingProtected.some((voice) => voice.soundId === clip.id)) return;
+    cancelPadHold();
+    const activeHold = { padId: pad.id, runtimePadId: `${active.id}:${pad.id}`, soundId: clip.id, startedAt: Date.now(), x: event.nativeEvent.pageX, y: event.nativeEvent.pageY,
+      timer: null as ReturnType<typeof setTimeout> | null, progressTimer: null as ReturnType<typeof setInterval> | null, cancelled: false, fired: false };
+    hold.current = activeHold;
+    setCharge({ padId: pad.id, progress: 0 });
+    const oldLatchTimer = touchPressLatch.current.get(activeHold.runtimePadId);
+    if (oldLatchTimer) clearTimeout(oldLatchTimer);
+    touchPressLatch.current.set(activeHold.runtimePadId, null);
+    void Promise.resolve(onPlay(clip, activeHold.runtimePadId, active.id)).catch((error) => Alert.alert('Could not play sound', error instanceof Error ? error.message : 'Playback could not start.'));
+    const animation = padAnimation(pad.id);
+    animation.scale.stopAnimation();
+    animation.opacity.stopAnimation();
+    animation.highlight.stopAnimation();
+    if (reduceMotion) {
+      animation.scale.setValue(1);
+      animation.opacity.setValue(0.92);
+    } else {
+      Animated.parallel([
+        Animated.spring(animation.scale, { toValue: 0.92, speed: 30, bounciness: 0, useNativeDriver: true }),
+        Animated.timing(animation.opacity, { toValue: 0.78, duration: 85, useNativeDriver: true }),
+        Animated.timing(animation.highlight, { toValue: 0.55, duration: 85, useNativeDriver: true }),
+      ]).start();
+    }
+    activeHold.progressTimer = setInterval(() => {
+      if (hold.current !== activeHold) return;
+      setCharge({ padId: pad.id, progress: holdProgress(Date.now() - activeHold.startedAt) });
+    }, 40);
+    activeHold.timer = setTimeout(() => finishPadHold(false), PROTECTED_HOLD_MS);
+  };
+
+  const finishPadHold = (cancelled: boolean) => {
+    const activeHold = hold.current;
+    if (!activeHold || activeHold.fired) return;
+    activeHold.fired = true;
+    if (activeHold.timer) clearTimeout(activeHold.timer);
+    if (activeHold.progressTimer) clearInterval(activeHold.progressTimer);
+    hold.current = null;
+    animatePadRelease(activeHold.padId);
+    const pad = active?.pads.find((item) => item.id === activeHold.padId);
+    const clip = pad?.clipId ? clipById.get(pad.clipId) : undefined;
+    if (!clip || clip.missing) { setCharge(null); return; }
+    const resolution = runBoardHold(Date.now() - activeHold.startedAt, cancelled || activeHold.cancelled, {
+      tap: () => {},
+      protect: () => {
+        if (!protectPad(activeHold.runtimePadId)) {
+          const snapshot = getPlaybackSnapshot();
+          const alreadyProtected = snapshot.voices.some((voice) => voice.protected && voice.soundId === clip.id)
+            || snapshot.pendingProtected.some((voice) => voice.soundId === clip.id);
+          if (!alreadyProtected) launchProtectedPad(clip, activeHold.runtimePadId);
+        }
+      },
+    });
+    if (resolution === 'protect') {
+      setCharge({ padId: activeHold.padId, progress: 1 });
+      setTimeout(() => setCharge((current) => current?.padId === activeHold.padId && current.progress === 1 ? null : current), 110);
+    } else setCharge(null);
+  };
+
+  const movePadHold = (padId: string) => (event: { nativeEvent: { pageX: number; pageY: number } }) => {
+    const activeHold = hold.current;
+    if (!activeHold || activeHold.padId !== padId) return;
+    if (movedBeyondHoldThreshold(event.nativeEvent.pageX - activeHold.x, event.nativeEvent.pageY - activeHold.y)) finishPadHold(true);
+  };
+
+  const accessibilityProtect = (pad: BoardPad, clip: LocalClip) => {
+    if (playback.voices.some((voice) => voice.protected && voice.soundId === clip.id) || playback.pendingProtected.some((voice) => voice.soundId === clip.id)) return;
+    launchProtectedPad(clip, `${active.id}:${pad.id}`);
+  };
+
+  const launchProtectedPad = (clip: LocalClip, runtimePadId: string) => {
+    Promise.resolve(onPlay(clip, runtimePadId, active.id, true)).catch((error) => {
+      Alert.alert('Could not protect playback', error instanceof Error ? error.message : 'Playback could not start.');
+    });
+  };
+
+  const playPadNow = (pad: BoardPad) => {
+    const clip = pad.clipId ? clipById.get(pad.clipId) : undefined;
+    if (!clip || clip.missing) { onCreate(active.id, pad.id); return; }
+    const runtimePadId = `${active.id}:${pad.id}`;
+    if (touchPressLatch.current.has(runtimePadId)) {
+      const timer = touchPressLatch.current.get(runtimePadId);
+      if (timer) clearTimeout(timer);
+      touchPressLatch.current.delete(runtimePadId);
+      return;
+    }
+    if (playback.voices.some((voice) => voice.protected && voice.soundId === clip.id) || playback.pendingProtected.some((voice) => voice.soundId === clip.id)) return;
+    void Promise.resolve(onPlay(clip, runtimePadId, active.id)).catch((error) => Alert.alert('Could not play sound', error instanceof Error ? error.message : 'Playback could not start.'));
+  };
+
   useEffect(() => subscribePlayback(setPlayback), []);
   useEffect(() => {
-    setPage(0);
+    let mounted = true;
+    const updatePreference = (value: boolean) => { reduceMotionRef.current = value; setReduceMotion(value); setReduceMotionKnown(true); };
+    AccessibilityInfo.isReduceMotionEnabled().then((value) => { if (mounted) updatePreference(value); }).catch(() => { if (mounted) setReduceMotionKnown(true); });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', updatePreference);
+    return () => { mounted = false; subscription.remove(); };
+  }, []);
+  useEffect(() => {
+    cancelPadHold();
+    setPage(active.pageIndex);
     setLoadedCount((active.grid === '3x4' ? 3 : 4) * 4 - 1);
     userScrolled.current = false;
     lastAutoLoadedCount.current = -1;
     scroll.current.offset = 0;
     scroll.current.contentHeight = 0;
+    setScrollMetrics({ ...scroll.current });
     scrollRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [viewScope]);
-  useEffect(() => { if (page >= pageCount) setPage(Math.max(0, pageCount - 1)); }, [page, pageCount]);
+  }, [viewScope, active.pageIndex, cancelPadHold]);
+  useEffect(() => { cancelPadHold(); }, [editing, settingsOpen, cancelPadHold]);
+
+  useEffect(() => {
+    if (hasScrollRail) setRailVisibleScope(railScope);
+  }, [hasScrollRail, railScope]);
 
   function openPopupFromRef(kind: PopupKind, anchor: View | null, pad?: { boardId: string; pad: BoardPad }) {
     if (!anchor) return;
@@ -251,9 +442,14 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
 
   const measureViewport = (event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
-    scroll.current.viewportHeight = height;
     setAvailableWidth((current) => Math.abs(current - width) > 0.5 ? width : current);
     viewportRef.current?.measureInWindow((x, y) => { viewport.current = { x, y, width, height }; });
+  };
+
+  const measureListViewport = (event: LayoutChangeEvent) => {
+    scroll.current.viewportHeight = event.nativeEvent.layout.height;
+    setScrollMetrics({ ...scroll.current });
+    if (scroll.current.contentHeight > scroll.current.viewportHeight + 1) setRailVisibleScope(railScope);
   };
 
   useEffect(() => {
@@ -275,6 +471,9 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   }, [Boolean(drag), layout.columns, layout.gap, tileHeight, visiblePads]);
 
   useEffect(() => () => {
+    const activeHold = hold.current;
+    if (activeHold?.timer) clearTimeout(activeHold.timer);
+    if (activeHold?.progressTimer) clearInterval(activeHold.progressTimer);
     pointer.current = null;
     activeDrag.current = null;
     armedPadId.current = null;
@@ -282,10 +481,26 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') cancelDragAndSelection();
+      if (state !== 'active') { cancelDragAndSelection(); cancelPadHold(); }
     });
     return () => subscription.remove();
-  }, [cancelDrag, cancelDragAndSelection]);
+  }, [cancelDrag, cancelDragAndSelection, cancelPadHold]);
+  useEffect(() => {
+    if (!hasScrollRail || !reduceMotionKnown) return;
+    const cueKey = `${active.id}:${active.navigation}`;
+    if (scrollRailSeen.current.has(cueKey)) return;
+    scrollRailSeen.current.add(cueKey);
+    scrollRailCue.setValue(0);
+    if (reduceMotion) return;
+    const cue = Animated.sequence([
+      Animated.timing(scrollRailCue, { toValue: 5, duration: 220, useNativeDriver: true }),
+      Animated.timing(scrollRailCue, { toValue: 0, duration: 260, useNativeDriver: true }),
+      Animated.timing(scrollRailCue, { toValue: -4, duration: 200, useNativeDriver: true }),
+      Animated.timing(scrollRailCue, { toValue: 0, duration: 240, useNativeDriver: true }),
+    ]);
+    cue.start();
+    return () => cue.stop();
+  }, [hasScrollRail, active.id, active.navigation, reduceMotion, reduceMotionKnown, scrollRailCue]);
 
   useEffect(() => {
     if (newBoardRequest === undefined || newBoardRequest === lastNewBoardRequest.current) return;
@@ -298,10 +513,11 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   if (!active.id) return null;
 
   function switchBoard(board: Board) {
+    cancelPadHold();
+    setBoardNameEditing(false);
     cancelDrag();
     setSelectedMovePadId(null);
     setEditing(false);
-    if (board.id !== active.id) stop();
     onChange(selectBoard(board.id));
     setPopup(null);
   }
@@ -350,6 +566,37 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     setBoardName(''); setNewBoard(false); setPopup(null);
   }
 
+  function saveBoardName() {
+    try {
+      onChange(persistBoardRename(active.id, boardNameDraft));
+      setBoardNameEditing(false);
+      Keyboard.dismiss();
+    } catch (error) {
+      Alert.alert('Could not rename board', error instanceof Error ? error.message : 'Try another board name.');
+    }
+  }
+
+  function moveBoardBy(delta: -1 | 1) {
+    const index = collection.boards.findIndex((board) => board.id === active.id);
+    const target = collection.boards[index + delta];
+    if (!target) return;
+    try { onChange(persistBoardReorder(active.id, target.id)); }
+    catch (error) { Alert.alert('Could not reorder board', error instanceof Error ? error.message : 'Try again.'); }
+  }
+
+  function confirmDeleteBoard() {
+    Alert.alert('Delete board?', `“${active.name}” and its pad assignments will be deleted. Sounds remain in Library.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete board', style: 'destructive', onPress: () => {
+        try {
+          for (const pad of active.pads) stopPad(`${active.id}:${pad.id}`);
+          onChange(persistBoardDelete(active.id));
+          cancelPadHold(); cancelDragAndSelection(); setEditing(false); setSettingsOpen(false); setBoardNameEditing(false);
+        } catch (error) { Alert.alert('Could not delete board', error instanceof Error ? error.message : 'Try again.'); }
+      } },
+    ]);
+  }
+
   const finishPadRename = () => {
     if (!selectedPad) return;
     const label = rename.trim().slice(0, 100);
@@ -374,14 +621,30 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
 
   function requestNextSoundBatch() {
     if (viewScopeRef.current !== viewScope || active.navigation !== 'scroll' || pageSounds.length >= filteredPads.length) return;
+    if (lastAutoLoadedCount.current === pageSounds.length) return;
     lastAutoLoadedCount.current = pageSounds.length;
     setLoadedCount(nextBoardBatchCount(pageSounds.length, filteredPads.length, columns));
   }
 
+  function selectPage(nextPage: number) {
+    const pageIndex = Math.min(Math.max(0, nextPage), Math.max(0, pageCount - 1));
+    setPage(pageIndex);
+    if (!search.trim() && pageIndex !== active.pageIndex) onChange(setBoardPreferences(active.id, { pageIndex }));
+    scrollRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }
+
   function openPad(pad: BoardPad) {
     const clip = pad.clipId ? clipById.get(pad.clipId) : undefined;
-    if (clip && !clip.missing) onPlay(clip, pad.id, active.id);
+    if (clip && !clip.missing) void Promise.resolve(onPlay(clip, `${active.id}:${pad.id}`, active.id)).catch((error) => Alert.alert('Could not play sound', error instanceof Error ? error.message : 'Playback could not start.'));
     else onCreate(active.id, pad.id);
+  }
+
+  function stopProtectedPad(pad: BoardPad, clip?: LocalClip) {
+    stopPad(`${active.id}:${pad.id}`);
+    if (clip?.id) {
+      playback.voices.filter((voice) => voice.protected && voice.soundId === clip.id).forEach((voice) => stopPad(voice.padId));
+      playback.pendingProtected.filter((voice) => voice.soundId === clip.id).forEach((voice) => stopPad(voice.padId));
+    }
   }
 
   function popupRow(label: string, icon: 'controller' | 'check' | 'file' | 'mic' | 'library' | 'plus' | 'spark' | 'stop' | 'more' | 'pencil' | 'music' | 'close', onPress: () => void, disabled = false, selected = false) {
@@ -399,37 +662,26 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
         <Icon name="controller" size={25} color={theme.accent} cutColor={theme.background} />
         <Text numberOfLines={1} style={[styles.boardName, { color: theme.text }]}>{active.name}</Text><Icon name="chevron" size={18} color={theme.accent} />
       </Pressable>
-      <Pressable onPress={() => { if (editing) { cancelDrag(); setSelectedMovePadId(null); } else { Keyboard.dismiss(); setSearch(''); setPopup(null); } setEditing((value) => !value); }} accessibilityRole="button" accessibilityState={{ selected: editing }} accessibilityLabel={editing ? 'Done editing board' : 'Edit board'} style={[styles.editButton, { backgroundColor: 'transparent', borderColor: theme.accent }]}>
+      <Pressable onPress={() => { if (editing) { cancelPadHold(); setSettingsOpen(false); cancelDrag(); setSelectedMovePadId(null); setEditing(false); } else { Keyboard.dismiss(); setSearch(''); setPopup(null); setEditing(true); setSettingsOpen(true); } }} accessibilityRole="button" accessibilityState={{ selected: editing }} accessibilityLabel={editing ? 'Done editing board' : 'Edit board'} style={[styles.editButton, { backgroundColor: 'transparent', borderColor: theme.accent }]}>
         <Icon name="pencil" size={17} color={theme.accent} />
         <Text accessible={false} numberOfLines={2} style={[styles.editButtonLabel, { color: theme.accent }]}>{editing ? 'Done editing' : 'Edit board'}</Text>
       </Pressable>
     </View>
     <View style={[styles.search, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-      <Icon name="search" size={21} color={theme.muted} />
-      <TextInput value={search} onChangeText={setSearch} editable={!editing} placeholder="Search soundbites…" placeholderTextColor={theme.muted} accessibilityLabel="Search pads" returnKeyType="search" selectionColor={theme.focus}
-        style={[styles.searchInput, { color: theme.text }]} />
+      {editing ? <Pressable onPress={() => { cancelPadHold(); setSettingsOpen(true); }} accessibilityRole="button" accessibilityLabel={`Board settings for ${active.name}`} style={styles.settingsReopen}><Icon name="spark" size={17} color={theme.accent} /><Text style={{ color: theme.accent, fontSize: 13, fontWeight: '700' }}>Board settings</Text></Pressable>
+        : <><Icon name="search" size={21} color={theme.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="Search soundbites…" placeholderTextColor={theme.muted} accessibilityLabel="Search pads" returnKeyType="search" selectionColor={theme.focus} style={[styles.searchInput, { color: theme.text }]} /></>}
     </View>
-    {editing ? <View style={[styles.editPanel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-      <ScrollView style={styles.editPanelScroll} contentContainerStyle={styles.editPanelContent} nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <Text numberOfLines={2} style={[styles.editPanelEyebrow, { color: theme.accent }]}>Edit board · {active.name}</Text>
-        <View style={styles.preferenceRow}><Text style={[styles.preferenceLabel, { color: theme.text }]}>Grid size</Text>
-          <View style={styles.preferenceChoices}>{(['3x4', '4x4'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: active.grid === value }} onPress={() => onChange(setBoardPreferences(active.id, { grid: value }))} style={[styles.preferenceButton, { backgroundColor: active.grid === value ? theme.accent : theme.surfaceAlt }]}><Text style={{ color: active.grid === value ? '#fff' : theme.text, fontSize: 12, fontWeight: '800' }}>{value === '3x4' ? '3 × 4' : '4 × 4'}</Text></Pressable>)}</View>
-        </View>
-        <View style={styles.preferenceRow}><Text style={[styles.preferenceLabel, { color: theme.text }]}>More sounds</Text>
-          <View style={styles.preferenceChoices}>{(['pages', 'scroll'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: active.navigation === value }} onPress={() => onChange(setBoardPreferences(active.id, { navigation: value }))} style={[styles.preferenceButton, { backgroundColor: active.navigation === value ? theme.accent : theme.surfaceAlt }]}><Text style={{ color: active.navigation === value ? '#fff' : theme.text, fontSize: 12, fontWeight: '800' }}>{value === 'pages' ? 'Pages' : 'Scroll'}</Text></Pressable>)}</View>
-        </View>
-        <Pressable accessibilityRole="switch" accessibilityState={{ checked: active.allowOverlap }} onPress={() => { const allowOverlap = !active.allowOverlap; if (!allowOverlap) stop(); onChange(setBoardPreferences(active.id, { allowOverlap })); }} style={styles.overlapRow}><Text style={[styles.preferenceLabel, styles.overlapLabel, { color: theme.text }]}>Allow overlapping sounds</Text><View style={[styles.switchTrack, { backgroundColor: active.allowOverlap ? theme.accent : theme.border }]}><View style={[styles.switchThumb, { alignSelf: active.allowOverlap ? 'flex-end' : 'flex-start', backgroundColor: '#fff' }]} /></View></Pressable>
-        <Text style={[styles.preferenceNote, { color: theme.muted }]}>{active.navigation === 'pages' ? 'Browse one page at a time. Quick add stays first on each page. Applies only to this board.' : 'Keep scrolling to load more sounds automatically. Quick add stays first at the top. Applies only to this board.'}</Text>
-      </ScrollView>
-    </View> : null}
+    <View style={[styles.boardViewportRow, active.scrollbarSide === 'left' && { flexDirection: 'row-reverse' }]}>
     <View ref={viewportRef} collapsable={false} onLayout={measureViewport} {...pan.panHandlers} style={{ flex: 1 }}>
-    <FlatList ref={scrollRef} style={{ flex: 1 }} data={gridItems} numColumns={columns} key={`${active.id}:${columns}:${active.navigation}`} keyExtractor={(item) => item.key}
+    <FlatList ref={scrollRef} onLayout={measureListViewport} style={{ flex: 1 }} data={gridItems} numColumns={columns} key={`${active.id}:${columns}:${active.navigation}`} keyExtractor={(item) => item.key}
       windowSize={5} initialNumToRender={pageCapacity} maxToRenderPerBatch={pageCapacity} updateCellsBatchingPeriod={50}
-      columnWrapperStyle={styles.gridRow} ItemSeparatorComponent={() => <View style={{ height: layout.gap }} />} scrollEnabled={!drag} onScrollBeginDrag={() => { userScrolled.current = true; }} onScroll={(event) => {
+      columnWrapperStyle={styles.gridRow} ItemSeparatorComponent={() => <View style={{ height: layout.gap }} />} scrollEnabled={!drag} onScrollBeginDrag={() => { userScrolled.current = true; cancelPadHold(); }} onScroll={(event) => {
         const metrics = event.nativeEvent;
         scroll.current.offset = metrics.contentOffset.y;
         scroll.current.contentHeight = metrics.contentSize.height;
         scroll.current.viewportHeight = metrics.layoutMeasurement.height;
+        setScrollMetrics({ ...scroll.current });
+        if (metrics.contentSize.height > metrics.layoutMeasurement.height + 1) setRailVisibleScope(railScope);
         const distanceFromEnd = boardDistanceFromEnd(metrics.contentSize.height, metrics.layoutMeasurement.height, metrics.contentOffset.y);
         maybeLoadMoreSounds(distanceFromEnd, Math.max(120, metrics.layoutMeasurement.height * 0.6));
       }} onTouchStart={(event) => { touchStartY.current = event.nativeEvent.pageY; }} onTouchMove={(event) => {
@@ -441,7 +693,11 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
           touchStartY.current = pageY;
         }
       }} onTouchEnd={() => { touchStartY.current = null; }} scrollEventThrottle={16}
-      onContentSizeChange={(_width, height) => { scroll.current.contentHeight = height; }}
+      onContentSizeChange={(_width, height) => {
+        scroll.current.contentHeight = height;
+        setScrollMetrics({ ...scroll.current });
+        if (height > scroll.current.viewportHeight + 1) setRailVisibleScope(railScope);
+      }}
       contentContainerStyle={[styles.grid, { paddingBottom: 12 }]} keyboardShouldPersistTaps="handled" extraData={{ editing, selectedMovePadId, drag, playback, theme }}
       onEndReached={() => maybeLoadMoreSounds(boardDistanceFromEnd(scroll.current.contentHeight, scroll.current.viewportHeight, scroll.current.offset), Math.max(120, scroll.current.viewportHeight * 0.6))}
       onEndReachedThreshold={0.6}
@@ -465,6 +721,9 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
         const clip = pad.clipId ? clipById.get(pad.clipId) : undefined;
         const padLabel = pad.label || clip?.title || `Pad ${index + 1}`;
         const color = pad.color || clip?.color || theme.primary;
+        const gradientStops: [string, string] = clip?.colorEnd && !pad.color
+          ? [clip.color || color, clip.colorEnd]
+          : [blendTowardWhite(color, 0.2), color];
         const icon = iconChoices.find((item) => item.id === clip?.icon)?.glyph ?? (clip ? '♫' : '＋');
         const artworkUri = clip?.artworkUri && !failedArtworkUris.has(clip.artworkUri) ? clip.artworkUri : undefined;
         const foreground = contrastForeground(color);
@@ -472,25 +731,60 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
         const isSelected = selectedMovePadId === pad.id;
         const isSource = drag?.sourcePadId === pad.id;
         const isTarget = drag?.targetPadId === pad.id;
-        const voice = playback.voices.find((row) => row.padId === pad.id);
-        return <View key={pad.id} ref={(node) => { if (node) padAnchors.current.set(pad.id, node); else padAnchors.current.delete(pad.id); }} style={[styles.tileWrap, { width: layout.tileWidth, height: tileHeight }]}>
-          <Pressable onPressIn={!editing && usableClip ? () => openPad(pad) : undefined}
-            onPress={editing ? selectedMovePadId ? () => selectOrMove(pad.id) : usableClip ? () => openPad(pad) : () => openPad(pad) : usableClip ? undefined : () => openPad(pad)}
-            accessibilityRole="button" accessibilityState={{ selected: isSelected }} accessibilityLabel={editing ? selectedMovePadId ? `Move to ${padLabel}` : clip ? `Play ${padLabel}. Use its grip to move.` : `Add sound to ${padLabel}` : clip ? `Play ${padLabel}` : `Add sound to ${padLabel}`}
+        const runtimePadId = `${active.id}:${pad.id}`;
+        const voice = playback.voices.find((row) => row.padId === runtimePadId)
+          ?? (clip ? playback.voices.find((row) => row.protected && row.soundId === clip.id) : undefined);
+        const soundProtected = Boolean(clip && (playback.voices.some((row) => row.protected && row.soundId === clip.id)
+          || playback.pendingProtected.some((row) => row.soundId === clip.id)));
+        const animation = padAnimation(pad.id);
+        const chargeActive = charge?.padId === pad.id;
+        const currentCharge = chargeActive ? charge.progress : 0;
+        return <Animated.View key={pad.id} ref={(node) => { if (node) padAnchors.current.set(pad.id, node as unknown as View); else padAnchors.current.delete(pad.id); }} style={[styles.tileWrap, { width: layout.tileWidth, height: tileHeight, opacity: animation.opacity, transform: [{ scale: animation.scale }] }]}>
+          <Pressable disabled={soundProtected && !editing} onPressIn={!editing && usableClip && !soundProtected ? beginPadHold(pad, clip!) : undefined}
+            onTouchMove={!editing && usableClip ? movePadHold(pad.id) : undefined}
+            onTouchEnd={!editing && usableClip ? () => { if (hold.current?.padId === pad.id) finishPadHold(false); } : undefined}
+            onPressOut={!editing && usableClip ? (event) => {
+              const x = event.nativeEvent.locationX;
+              const y = event.nativeEvent.locationY;
+              const leftControl = x >= 0 && x <= layout.tileWidth && y >= 0 && y <= tileHeight;
+              if (hold.current?.padId === pad.id) finishPadHold(!leftControl);
+              animatePadRelease(pad.id);
+              if (touchPressLatch.current.has(runtimePadId)) {
+                const timer = setTimeout(() => touchPressLatch.current.delete(runtimePadId), 3_000);
+                touchPressLatch.current.set(runtimePadId, timer);
+              }
+            } : undefined}
+            onPress={editing ? selectedMovePadId ? () => selectOrMove(pad.id) : () => openPad(pad) : () => playPadNow(pad)}
+            accessibilityRole="button" accessibilityActions={!editing && usableClip && !soundProtected ? [{ name: 'activate', label: `Play ${padLabel}` }, { name: 'protectPlayback', label: 'Protect playback' }] : undefined}
+            onAccessibilityAction={!editing && usableClip && !soundProtected ? (event) => { if (event.nativeEvent.actionName === 'protectPlayback') accessibilityProtect(pad, clip!); else if (event.nativeEvent.actionName === 'activate') playPadNow(pad); } : undefined}
+            accessibilityState={{ selected: isSelected, disabled: soundProtected }}
+            accessibilityLabel={editing ? selectedMovePadId ? `Move to ${padLabel}` : clip ? `Play ${padLabel}. Use its grip to move.` : `Add sound to ${padLabel}` : soundProtected ? `${padLabel}, protected playback. Disabled until playback finishes or you stop it.` : voice ? `${padLabel}, playing. Hold one second to protect playback.` : clip ? `Play ${padLabel}. Hold one second to protect playback.` : `Add sound to ${padLabel}`}
             style={({ pressed }) => [styles.tile, {
               backgroundColor: pad.clipId !== null ? color : theme.surface,
               borderColor: pad.clipId !== null ? 'transparent' : theme.border,
               borderWidth: pad.clipId !== null ? 0 : 1.5,
-              experimental_backgroundImage: pad.clipId ? `linear-gradient(155deg, ${blendTowardWhite(color, 0.2)}, ${color})` : undefined,
-              opacity: pressed ? 0.8 : 1,
+              opacity: pressed && (editing || !usableClip) ? 0.8 : 1,
+              ...(soundProtected ? { opacity: 0.58 } : {}),
             }, pad.clipId === null && styles.emptyTile, isSource && { opacity: 0.62 }]}>
+            {clip && usableClip ? <PadGradient colors={gradientStops} style={StyleSheet.absoluteFill} /> : null}
+            {soundProtected ? <View pointerEvents="none" style={styles.protectedDisabledOverlay} /> : null}
+            <Animated.View pointerEvents="none" style={[styles.pressFlash, { opacity: animation.highlight }]} />
             {artworkUri ? <Image source={{ uri: artworkUri }} onError={() => setFailedArtworkUris((current) => new Set(current).add(artworkUri))} resizeMode="contain" style={styles.padArtwork} />
               : <View style={styles.padIconArea}><Text allowFontScaling={false} style={[styles.tileIcon, { color: foreground }, !clip && { color: theme.muted }]}>{icon}</Text></View>}
             <View style={[styles.padFooter, editing && styles.padFooterEditing]}><Text numberOfLines={2} ellipsizeMode="tail" style={[styles.tileLabel, { color: foreground }, !clip && { color: theme.muted }]}>{padLabel}</Text>
               {voice ? <View accessibilityLabel={`Playback progress ${Math.round(voice.progress * 100)} percent`} style={[styles.progressTrack, { backgroundColor: `${foreground}44` }]}><View style={[styles.progressFill, { width: `${Math.round(Math.max(0, Math.min(1, voice.progress)) * 100)}%`, backgroundColor: foreground }]} /></View> : null}
             </View>
+            {soundProtected ? <View pointerEvents="none" style={styles.protectedOutline}><View style={styles.protectedOutlineInner} /></View> : null}
+            {chargeActive ? <View pointerEvents="none" style={styles.chargeRing}>
+              <View style={styles.chargeTrack} />
+              <View style={[styles.chargeTop, { width: `${Math.min(1, currentCharge * 4) * 100}%` }]} />
+              <View style={[styles.chargeRight, { height: `${Math.max(0, Math.min(1, (currentCharge - 0.25) * 4)) * 100}%` }]} />
+              <View style={[styles.chargeBottom, { width: `${Math.max(0, Math.min(1, (currentCharge - 0.5) * 4)) * 100}%` }]} />
+              <View style={[styles.chargeLeft, { height: `${Math.max(0, Math.min(1, (currentCharge - 0.75) * 4)) * 100}%` }]} />
+            </View> : null}
             {editing && (isSelected || isTarget) ? <View pointerEvents="none" style={[styles.tileHighlight, { borderColor: theme.focus }]} /> : null}
           </Pressable>
+          {soundProtected ? <Pressable onPress={() => stopProtectedPad(pad, clip)} accessibilityRole="button" accessibilityLabel={`Stop protected playback for ${padLabel}`} style={styles.stopProtected}><View style={styles.stopProtectedBadge}><Icon name="stop" size={14} color="#ffffff" /></View></Pressable> : null}
           {editing && pad.clipId ? <Pressable onPress={() => {
             setRename(pad.label ?? clip?.title ?? ''); setRenameOpen(false);
             openPopupFromRef('pad', padAnchors.current.get(pad.id) ?? null, { boardId: active.id, pad });
@@ -501,15 +795,85 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
             accessibilityState={{ selected: isSelected }} onPress={() => selectedMovePadId && selectedMovePadId !== pad.id ? selectOrMove(pad.id) : setSelectedMovePadId((current) => current === pad.id ? null : pad.id)} style={styles.dragGrip}>
             <Text allowFontScaling={false} style={[styles.dragGripGlyph, { color: clip ? foreground : theme.muted }]}>⠿</Text>
           </Pressable> : null}
-        </View>;
+        </Animated.View>;
       }
     }} />
     {active.navigation === 'pages' && pageCount > 1 ? <View style={styles.pageNav}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Previous page" disabled={page === 0} onPress={() => { setPage((current) => Math.max(0, current - 1)); scrollRef.current?.scrollToOffset({ offset: 0, animated: false }); }} style={[styles.pageButton, { backgroundColor: theme.surfaceAlt, opacity: page === 0 ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontWeight: '800' }}>‹ Prev</Text></Pressable>
-      <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, fontSize: 12 }}>{`Page ${page + 1} of ${pageCount}`}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Next page" disabled={page + 1 >= pageCount} onPress={() => { setPage((current) => Math.min(pageCount - 1, current + 1)); scrollRef.current?.scrollToOffset({ offset: 0, animated: false }); }} style={[styles.pageButton, { backgroundColor: theme.surfaceAlt, opacity: page + 1 >= pageCount ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontWeight: '800' }}>Next ›</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Previous page" disabled={displayPage === 0} onPress={() => selectPage(displayPage - 1)} style={[styles.pageButton, { backgroundColor: theme.surfaceAlt, opacity: displayPage === 0 ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontWeight: '800' }}>‹ Prev</Text></Pressable>
+      <Text accessibilityLiveRegion="polite" style={{ color: theme.muted, fontSize: 12 }}>{`Page ${displayPage + 1} of ${pageCount}`}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Next page" disabled={displayPage + 1 >= pageCount} onPress={() => selectPage(displayPage + 1)} style={[styles.pageButton, { backgroundColor: theme.surfaceAlt, opacity: displayPage + 1 >= pageCount ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontWeight: '800' }}>Next ›</Text></Pressable>
     </View> : active.navigation === 'scroll' ? <Text style={{ color: theme.muted, textAlign: 'center', fontSize: 11, paddingVertical: 2 }}>{`${pageSounds.length} of ${filteredPads.length} sounds`}</Text> : null}
     </View>
+    {hasScrollRail ? <View {...scrollRailPan.panHandlers} accessible accessibilityRole="adjustable" accessibilityLabel="Scroll board. Drag up or down." accessibilityValue={{ min: 0, max: scrollRailMaxOffset, now: scrollMetrics.offset }} accessibilityActions={[{ name: 'scrollBackward', label: 'Scroll up' }, { name: 'scrollForward', label: 'Scroll down' }]} onAccessibilityAction={(event) => {
+      const direction = event.nativeEvent.actionName === 'scrollForward' ? 1 : event.nativeEvent.actionName === 'scrollBackward' ? -1 : 0;
+      if (!direction) return;
+      const offset = clampScrollOffset(scroll.current.offset + direction * Math.max(100, scroll.current.viewportHeight * 0.75), scroll.current.contentHeight, scroll.current.viewportHeight);
+      scroll.current.offset = offset; setScrollMetrics({ ...scroll.current }); scrollRef.current?.scrollToOffset({ offset, animated: true });
+    }} style={styles.scrollRailTarget}>
+      <View pointerEvents="none" accessible={false} style={[styles.scrollRailVisual, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}>
+        <Text style={[styles.scrollRailArrow, { color: theme.accent }]}>⌃</Text>
+        <View onLayout={(event) => setScrollRailTrackHeight(event.nativeEvent.layout.height)} style={[styles.scrollRailTrack, { backgroundColor: theme.border }]}>
+          <Animated.View style={[styles.scrollRailThumb, { top: scrollRailThumbTop, height: scrollRailThumbHeight, backgroundColor: theme.accent, transform: [{ translateY: scrollRailCue }] }]}>
+            <Text style={styles.scrollRailGrip}>⠿</Text>
+          </Animated.View>
+        </View>
+        <Text style={[styles.scrollRailArrow, { color: theme.accent }]}>⌄</Text>
+      </View>
+    </View> : null}
+    </View>
+
+    <Modal visible={settingsOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={() => { cancelPadHold(); setSettingsOpen(false); setBoardNameEditing(false); }}>
+      <View style={styles.dialogScrim}>
+        <KeyboardAvoidingView style={styles.boardSettingsAvoid} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView contentContainerStyle={styles.boardSettingsScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <Panel theme={theme} style={styles.boardSettingsDialog}>
+          <View style={styles.boardSettingsHeader}>
+            <View style={[styles.settingsIcon, { backgroundColor: theme.surfaceAlt }]}><Icon name="pencil" size={18} color={theme.accent} /></View>
+            <View style={{ flex: 1 }}><Text style={[styles.settingsEyebrow, { color: theme.accent }]}>EDIT BOARD</Text><Text accessibilityRole="header" style={[styles.settingsTitle, { color: theme.text }]}>{active.name}</Text></View>
+            <Pressable onPress={() => { cancelPadHold(); setSettingsOpen(false); setBoardNameEditing(false); }} accessibilityRole="button" accessibilityLabel="Close board settings" style={[styles.settingsClose, { backgroundColor: theme.surfaceAlt }]}><Icon name="close" size={19} color={theme.text} /></Pressable>
+          </View>
+          <Text style={[styles.settingsIntro, { color: theme.muted }]}>Personalize this board without changing your other boards.</Text>
+          {boardNameEditing ? <View style={styles.boardRenameForm}>
+            <TextInput value={boardNameDraft} onChangeText={setBoardNameDraft} placeholder="Board name" placeholderTextColor={theme.muted} maxLength={40} accessibilityLabel="Board name" returnKeyType="done" onSubmitEditing={saveBoardName} selectionColor={theme.focus} style={[styles.boardNameInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.raised }]} />
+            <View style={styles.actions}><ActionButton label="Cancel" onPress={() => { setBoardNameEditing(false); setBoardNameDraft(active.name); }} theme={theme} /><ActionButton label="Save name" onPress={saveBoardName} theme={theme} variant="primary" disabled={!boardNameDraft.trim()} /></View>
+          </View> : <Pressable onPress={() => { setBoardNameDraft(active.name); setBoardNameEditing(true); }} accessibilityRole="button" accessibilityLabel={`Rename board ${active.name}`} style={[styles.renameBoardButton, { backgroundColor: theme.surfaceAlt }]}><Icon name="pencil" size={15} color={theme.accent} /><Text style={{ color: theme.accent, fontSize: 12, fontWeight: '700' }}>Rename board</Text></Pressable>}
+          <View style={[styles.settingsDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.boardOrderRow}>
+            <Text style={[styles.preferenceLabel, { color: theme.text }]}>Board order</Text>
+            <View style={styles.boardOrderActions}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Move board earlier" accessibilityState={{ disabled: collection.boards.findIndex((board) => board.id === active.id) === 0 }} disabled={collection.boards.findIndex((board) => board.id === active.id) === 0} onPress={() => moveBoardBy(-1)} style={[styles.boardOrderButton, { backgroundColor: theme.surfaceAlt, opacity: collection.boards.findIndex((board) => board.id === active.id) === 0 ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontSize: 12, fontWeight: '800' }}>↑ Earlier</Text></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="Move board later" accessibilityState={{ disabled: collection.boards.findIndex((board) => board.id === active.id) === collection.boards.length - 1 }} disabled={collection.boards.findIndex((board) => board.id === active.id) === collection.boards.length - 1} onPress={() => moveBoardBy(1)} style={[styles.boardOrderButton, { backgroundColor: theme.surfaceAlt, opacity: collection.boards.findIndex((board) => board.id === active.id) === collection.boards.length - 1 ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontSize: 12, fontWeight: '800' }}>↓ Later</Text></Pressable>
+            </View>
+          </View>
+          <View style={[styles.settingsDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.preferenceRow}><Text style={[styles.preferenceLabel, { color: theme.text }]}>Grid size</Text>
+            <View style={[styles.preferenceGroup, { backgroundColor: theme.surfaceAlt }]}>{(['3x4', '4x4'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: active.grid === value }} onPress={() => onChange(setBoardPreferences(active.id, { grid: value }))} style={[styles.preferenceButton, active.grid === value && { backgroundColor: theme.accent }]}><Text style={{ color: active.grid === value ? contrastForeground(theme.accent) : theme.text, fontSize: 12, fontWeight: '800' }}>{value === '3x4' ? '3 × 4' : '4 × 4'}</Text></Pressable>)}</View>
+          </View>
+          <View style={[styles.settingsDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.preferenceRow}><Text style={[styles.preferenceLabel, { color: theme.text }]}>More sounds</Text>
+            <View style={[styles.preferenceGroup, { backgroundColor: theme.surfaceAlt }]}>{(['pages', 'scroll'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: active.navigation === value }} onPress={() => onChange(setBoardPreferences(active.id, { navigation: value }))} style={[styles.preferenceButton, active.navigation === value && { backgroundColor: theme.accent }]}><Text style={{ color: active.navigation === value ? contrastForeground(theme.accent) : theme.text, fontSize: 12, fontWeight: '800' }}>{value === 'pages' ? 'Pages' : 'Scroll'}</Text></Pressable>)}</View>
+          </View>
+          <View style={[styles.settingsDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.preferenceRow}><Text style={[styles.preferenceLabel, { color: theme.text }]}>Scroll rail side</Text>
+            <View style={[styles.preferenceGroup, { backgroundColor: theme.surfaceAlt }]}>{(['left', 'right'] as const).map((value) => <Pressable key={value} accessibilityRole="button" accessibilityState={{ selected: active.scrollbarSide === value }} onPress={() => onChange(setBoardPreferences(active.id, { scrollbarSide: value }))} style={[styles.preferenceButton, active.scrollbarSide === value && { backgroundColor: theme.accent }]}><Text style={{ color: active.scrollbarSide === value ? contrastForeground(theme.accent) : theme.text, fontSize: 12, fontWeight: '800' }}>{value === 'left' ? 'Left' : 'Right'}</Text></Pressable>)}</View>
+          </View>
+          <View style={[styles.settingsDivider, { backgroundColor: theme.border }]} />
+          <Pressable accessibilityRole="switch" accessibilityLabel="Allow overlapping sounds" accessibilityState={{ checked: active.allowOverlap }} onPress={() => onChange(setBoardPreferences(active.id, { allowOverlap: !active.allowOverlap }))} style={styles.overlapRow}>
+            <View style={{ flex: 1, gap: 3 }}><Text style={[styles.preferenceLabel, styles.overlapLabel, { color: theme.text }]}>Allow overlapping sounds</Text><Text style={[styles.preferenceNote, { color: theme.muted }]}>Normal taps can play multiple sounds together. Protected holds work even when this is off.</Text></View>
+            <View style={[styles.switchTrack, { backgroundColor: active.allowOverlap ? theme.accent : theme.border }]}><View style={[styles.switchThumb, { alignSelf: active.allowOverlap ? 'flex-end' : 'flex-start', backgroundColor: '#fff' }]} /></View>
+          </Pressable>
+          <View style={[styles.settingsFootnote, { backgroundColor: theme.surfaceAlt }]}><Text style={[styles.preferenceNote, { color: theme.muted }]}>Normal tap: play a sound · Hold one second: protect it from interruption until it finishes (or you stop it).</Text></View>
+          <View style={[styles.settingsDivider, { backgroundColor: theme.border }]} />
+          <Pressable accessibilityRole="button" accessibilityLabel={`Delete board ${active.name}`} accessibilityState={{ disabled: collection.boards.length <= 1 }} disabled={collection.boards.length <= 1} onPress={confirmDeleteBoard} style={[styles.deleteBoardButton, { borderColor: theme.danger, opacity: collection.boards.length <= 1 ? 0.55 : 1 }]}>
+            <Text style={{ color: theme.danger, fontSize: 13, fontWeight: '800' }}>{collection.boards.length <= 1 ? 'Keep at least one board' : 'Delete this board'}</Text>
+          </Pressable>
+          {collection.boards.length <= 1 ? <Text style={[styles.preferenceNote, { color: theme.muted }]}>Create another board before deleting this one.</Text> : null}
+          <ActionButton label="Done" onPress={() => { cancelPadHold(); setSettingsOpen(false); setBoardNameEditing(false); }} theme={theme} variant="primary" />
+        </Panel>
+        </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
 
     <Modal visible={Boolean(popup)} transparent animationType="none" statusBarTranslucent onRequestClose={() => { setPopup(null); setSelectedPad(null); }}>
       <View style={styles.popupRoot}>
@@ -520,7 +884,6 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
               {collection.boards.map((board) => popupRow(board.name, 'controller', () => switchBoard(board), false, board.id === active.id))}
               <View style={[styles.popupDivider, { backgroundColor: theme.border }]} />
               {popupRow('Create new board', 'plus', () => { setPopup(null); setNewBoard(true); setBoardName(''); })}
-              {onAppearance ? popupRow('Appearance', 'spark', () => { setPopup(null); onAppearance(); }) : null}
               {playback.active ? popupRow('Stop playback', 'stop', () => { stop(); setPopup(null); }) : null}
             </> : null}
             {popup.kind === 'quick' ? <>
@@ -545,6 +908,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
                 Alert.alert('Clear this pad?', 'The sound will stay in your Library.', [
                   { text: 'Cancel', style: 'cancel', onPress: () => setSelectedPad(null) },
                   { text: 'Clear pad', style: 'destructive', onPress: () => {
+                    stopPad(`${target.boardId}:${target.pad.id}`);
                     try { onChange(clearPad(target.boardId, target.pad.id)); } catch (error) { Alert.alert('Could not clear pad', error instanceof Error ? error.message : 'Try again.'); }
                     setSelectedPad(null);
                   } },
@@ -552,8 +916,8 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
               }, !popup.pad?.pad.clipId)}
             </> : null}
             {popup.kind === 'replace' && popup.pad ? <>
-              {popupRow('Choose local file', 'file', () => { const target = popup.pad!; setPopup(null); setSelectedPad(null); onCreate(target.boardId, target.pad.id, 'file'); })}
-              {popupRow('Open library', 'library', () => { const target = popup.pad!; setPopup(null); setSelectedPad(null); onOpenLibrary({ boardId: target.boardId, padId: target.pad.id }); })}
+              {popupRow('Choose local file', 'file', () => { const target = popup.pad!; stopPad(`${target.boardId}:${target.pad.id}`); setPopup(null); setSelectedPad(null); onCreate(target.boardId, target.pad.id, 'file'); })}
+              {popupRow('Open library', 'library', () => { const target = popup.pad!; stopPad(`${target.boardId}:${target.pad.id}`); setPopup(null); setSelectedPad(null); onOpenLibrary({ boardId: target.boardId, padId: target.pad.id }); })}
             </> : null}
             {popup.kind === 'move' && popup.pad ? collection.boards.filter((board) => board.id !== popup.pad?.boardId).map((board) => popupRow(board.name, 'controller', () => moveSelectedPad(board))): null}
           </ScrollView>
@@ -580,21 +944,25 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, gap: 12 }, boardControls: { flexDirection: 'row', alignItems: 'center', gap: 10 }, actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+  root: { flex: 1, gap: 12 }, boardControls: { flexDirection: 'row', alignItems: 'center', gap: 10 }, actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }, boardViewportRow: { flex: 1, flexDirection: 'row', gap: 4, alignItems: 'stretch' },
   boardButton: { flex: 1, minWidth: 0, height: 49, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, flexDirection: 'row', gap: 9, alignItems: 'center' },
   boardName: { flex: 1, fontSize: 14, fontWeight: '700' }, editButton: { width: 138, minHeight: 49, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 14, borderWidth: 1.5, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
   editButtonLabel: { flexShrink: 1, textAlign: 'center', fontSize: 13, fontWeight: '700' },
   search: { minHeight: 48, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }, searchInput: { flex: 1, minWidth: 0, padding: 0, fontSize: 16 }, grid: { alignContent: 'flex-start' }, gridRow: { gap: 8 },
-  editPanel: { borderWidth: 1, borderRadius: 15, paddingHorizontal: 10, paddingVertical: 7 }, editPanelScroll: { maxHeight: 250 }, editPanelContent: { gap: 5 }, editPanelEyebrow: { fontSize: 13, lineHeight: 18, fontWeight: '800', paddingHorizontal: 1, paddingBottom: 2 }, preferenceRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 }, preferenceLabel: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 16, fontWeight: '800' }, preferenceChoices: { flexDirection: 'row', flexShrink: 0, gap: 4 }, preferenceButton: { minWidth: 60, minHeight: 48, paddingHorizontal: 8, borderRadius: 11, alignItems: 'center', justifyContent: 'center' }, preferenceNote: { fontSize: 11, lineHeight: 15, paddingHorizontal: 1, paddingVertical: 1 }, overlapRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 9 }, overlapLabel: { fontWeight: '700' }, switchTrack: { width: 42, height: 24, borderRadius: 12, padding: 3, justifyContent: 'center' }, switchThumb: { width: 18, height: 18, borderRadius: 9 }, loadMore: { minHeight: 48, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 10 }, pageNav: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10 }, pageButton: { minHeight: 48, minWidth: 86, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  settingsReopen: { alignSelf: 'flex-start', minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8 }, preferenceRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 }, preferenceLabel: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 16, fontWeight: '800' }, preferenceGroup: { flexDirection: 'row', flexShrink: 0, gap: 4, borderRadius: 12, padding: 4 }, preferenceButton: { minWidth: 60, minHeight: 40, paddingHorizontal: 8, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }, preferenceNote: { fontSize: 11, lineHeight: 15, paddingHorizontal: 1, paddingVertical: 1 }, overlapRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 9 }, overlapLabel: { fontWeight: '700' }, switchTrack: { width: 42, height: 24, borderRadius: 12, padding: 3, justifyContent: 'center' }, switchThumb: { width: 18, height: 18, borderRadius: 9 }, loadMore: { minHeight: 48, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 10 }, pageNav: { minHeight: 48, marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10 }, pageButton: { minHeight: 48, minWidth: 86, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   tileWrap: { position: 'relative' }, tile: { flex: 1, position: 'relative', borderRadius: 14, borderWidth: 0, padding: 4, alignItems: 'center', overflow: 'hidden' }, quickTile: { justifyContent: 'center', gap: 2, borderWidth: 1.5, borderStyle: 'dashed' }, emptyTile: { borderStyle: 'dashed' },
   padArtwork: { flex: 1, width: '100%', marginTop: 2 }, padIconArea: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' }, padFooter: { width: '100%', minHeight: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 }, padFooterEditing: { paddingRight: 26 },
   tileIcon: { fontSize: 28, color: '#ffffff', fontWeight: '800' }, tileLabel: { color: '#ffffff', fontSize: 11.5, fontWeight: '800', lineHeight: 14, textAlign: 'center' }, padIdentity: { fontSize: 10.5, lineHeight: 13, textAlign: 'center' }, progressTrack: { width: '92%', height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 3 }, progressFill: { height: '100%', borderRadius: 2 },
   menuButton: { position: 'absolute', top: 0, right: 0, width: 48, height: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' }, moreGlyphPosition: { position: 'absolute', top: 3, right: 5 },
   quickMenuButton: { position: 'absolute', right: 0, bottom: 0, width: 48, height: 48, alignItems: 'flex-end', justifyContent: 'flex-end' }, quickMenuGlyph: { width: 26, height: 26, marginRight: 4, marginBottom: 4, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   dragGrip: { position: 'absolute', right: 0, bottom: 0, width: 48, height: 48 }, dragGripGlyph: { position: 'absolute', right: 2, bottom: 2, width: 20, height: 20, textAlign: 'center', textAlignVertical: 'center', fontWeight: '900', fontSize: 18, lineHeight: 20 },
-  tileHighlight: { ...StyleSheet.absoluteFill, borderWidth: 3, borderRadius: 14 },
+  tileHighlight: { ...StyleSheet.absoluteFill, borderWidth: 3, borderRadius: 14 }, pressFlash: { ...StyleSheet.absoluteFill, borderRadius: 14, backgroundColor: '#ffffff' },
+  chargeRing: { ...StyleSheet.absoluteFill, borderRadius: 14 }, chargeTrack: { ...StyleSheet.absoluteFill, borderRadius: 14, borderWidth: 4, borderColor: 'rgba(37,24,57,0.82)', shadowColor: '#ffffff', shadowOpacity: 0.75, shadowRadius: 7, elevation: 6 }, chargeTop: { position: 'absolute', top: 0, left: 0, height: 6, borderTopLeftRadius: 14, backgroundColor: '#ffffff', shadowColor: '#ffffff', shadowOpacity: 1, shadowRadius: 6, elevation: 7 }, chargeRight: { position: 'absolute', top: 0, right: 0, width: 6, borderTopRightRadius: 14, backgroundColor: '#ffffff', shadowColor: '#ffffff', shadowOpacity: 1, shadowRadius: 6, elevation: 7 }, chargeBottom: { position: 'absolute', bottom: 0, right: 0, height: 6, borderBottomRightRadius: 14, backgroundColor: '#ffffff', shadowColor: '#ffffff', shadowOpacity: 1, shadowRadius: 6, elevation: 7 }, chargeLeft: { position: 'absolute', bottom: 0, left: 0, width: 6, borderBottomLeftRadius: 14, backgroundColor: '#ffffff', shadowColor: '#ffffff', shadowOpacity: 1, shadowRadius: 6, elevation: 7 }, protectedOutline: { ...StyleSheet.absoluteFill, borderRadius: 14, borderWidth: 5, borderColor: '#26183A', shadowColor: '#ffffff', shadowOpacity: 0.9, shadowRadius: 6, elevation: 5 }, protectedOutlineInner: { ...StyleSheet.absoluteFill, top: 2, left: 2, right: 2, bottom: 2, borderRadius: 11, borderWidth: 1.5, borderColor: '#ffffff' },
+  scrollRailTarget: { width: 48, minWidth: 48, alignSelf: 'stretch', alignItems: 'center' }, scrollRailVisual: { width: 24, flex: 1, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }, scrollRailArrow: { fontSize: 14, fontWeight: '900', lineHeight: 18 }, scrollRailTrack: { flex: 1, width: 6, marginVertical: 4, borderRadius: 4, position: 'relative', alignItems: 'center' }, scrollRailThumb: { position: 'absolute', left: -4, width: 14, minHeight: 42, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }, scrollRailGrip: { color: '#ffffff', fontSize: 11, fontWeight: '900' },
+  protectedDisabledOverlay: { ...StyleSheet.absoluteFill, borderRadius: 14, backgroundColor: 'rgba(62,66,76,0.24)' }, stopProtected: { position: 'absolute', top: 0, right: 0, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }, stopProtectedBadge: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#251b39' },
   popupRoot: { flex: 1 }, popup: { position: 'absolute', borderWidth: 1, borderRadius: 14, paddingVertical: 4, overflow: 'hidden', elevation: 14, shadowColor: '#000000', shadowOpacity: 0.22, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
   popupRow: { minHeight: 48, height: 48, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, popupLabel: { flex: 1, fontSize: 12, fontWeight: '600' }, popupDivider: { height: StyleSheet.hairlineWidth, marginVertical: 3, marginHorizontal: 10 },
   dialogScrim: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.58)' }, dialog: { width: '100%', maxWidth: 400, alignSelf: 'center', gap: 16 },
+  boardSettingsAvoid: { flex: 1, justifyContent: 'center' }, boardSettingsScroll: { flexGrow: 1, justifyContent: 'center', paddingVertical: 8 }, boardSettingsDialog: { width: '100%', maxWidth: 400, alignSelf: 'center', gap: 12 }, boardSettingsHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 }, settingsIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, settingsEyebrow: { fontSize: 10, lineHeight: 15, letterSpacing: 1.1, fontWeight: '900' }, settingsTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800' }, settingsClose: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, settingsIntro: { fontSize: 11, lineHeight: 16 }, settingsDivider: { height: StyleSheet.hairlineWidth, width: '100%' }, settingsFootnote: { borderRadius: 13, paddingHorizontal: 12, paddingVertical: 9 }, renameBoardButton: { minHeight: 40, paddingHorizontal: 12, borderRadius: 12, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8 }, boardRenameForm: { gap: 10 }, boardNameInput: { minHeight: 45, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 15 }, boardOrderRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, boardOrderActions: { flexDirection: 'row', gap: 7 }, boardOrderButton: { minHeight: 44, borderRadius: 12, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' }, deleteBoardButton: { minHeight: 48, borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   nameInput: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontSize: 16 },
 });

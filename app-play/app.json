@@ -2,13 +2,16 @@
   "expo": {
     "name": "Stimmyz",
     "slug": "stimmyz-play",
-    "version": "1.0.20",
+    "version": "1.0.28",
     "icon": "./assets/stimyz/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "dev.sarunas.soundboard.play",
-      "versionCode": 21,
+      "versionCode": 29,
+      "minSdkVersion": 24,
+      "targetSdkVersion": 36,
+      "compileSdkVersion": 36,
       "adaptiveIcon": {
         "backgroundColor": "#14161a",
         "foregroundImage": "./assets/stimyz/android-icon-foreground.png",
@@ -30,7 +33,14 @@
       "predictiveBackGestureEnabled": true
     },
     "plugins": [
-      "react-native-audio-api",
+      [
+        "react-native-audio-api",
+        {
+          "androidPermissions": [],
+          "androidForegroundService": false,
+          "iosBackgroundMode": false
+        }
+      ],
       [
         "expo-audio",
         {
@@ -40,8 +50,7 @@
           "enableBackgroundPlayback": false
         }
       ],
-      "./plugins/withPlayRelease",
-      "./plugins/withDeviceAudioCapture"
+      "./plugins/withPlayRelease"
     ]
   }
 }

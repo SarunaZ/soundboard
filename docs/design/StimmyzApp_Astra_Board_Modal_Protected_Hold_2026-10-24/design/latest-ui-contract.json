@@ -1,0 +1,27 @@
+{
+  "revision": "2026-10-24",
+  "logo": "approved transparent source",
+  "themes": [
+    "Vanilla",
+    "Peach",
+    "Mint",
+    "Snow",
+    "Ice",
+    "Chocolate",
+    "Grape",
+    "Nut",
+    "Blackberry"
+  ],
+  "legacyThemeMigration": {
+    "Coffee": "Chocolate"
+  },
+  "creation": "Editor only",
+  "galleryOnly": true,
+  "giphy": false,
+  "editorHeader": false,
+  "libraryHeader": false,
+  "libraryRecordCTA": false,
+  "themeLocation": "Settings > Appearance only",
+  "padColorPolicy": "Persist monotonic per-sound color id; first 15 vivid, next 16 pastel; subsequent deterministic golden-angle HSL gradients; never recolor on render",
+  "sourceOfTruth": "LATEST_CHANGES_2026-10-24.md"
+}

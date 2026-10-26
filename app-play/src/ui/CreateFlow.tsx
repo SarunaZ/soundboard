@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, BackHandler, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Alert, AppState, BackHandler, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { createAudioPlayer, getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 import { stop } from '../../../app-client/src/audio/engine';
 import { useKeyboardInputReveal } from '../../../app-client/src/keyboard/useKeyboardInputReveal';
@@ -10,7 +10,9 @@ import { disposeDraftArtwork, type DraftArtwork } from '../media/artwork';
 import type { LocalClip } from '../data/library';
 import { ActionButton, GradientFill, Panel, TextField } from './controls';
 import type { Theme } from './theme';
-import { iconChoices, padColors } from './theme';
+import { iconChoices } from './theme';
+import { padGradientStops } from './PadGradient';
+import { allocateNextPadColorIndex } from '../data/preferences';
 import { formatTime, Waveform } from './Waveform';
 import { pickGalleryArtwork } from './ArtworkPicker';
 import { Icon } from './Icons';
@@ -61,7 +63,6 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const [fineTune, setFineTune] = useState(false);
   const [name, setName] = useState('');
   const icon = iconChoices[0]!.id;
-  const color = padColors[6]!;
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingStopped, setRecordingStopped] = useState(false);
@@ -293,7 +294,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
 
   async function startDeviceCapture() {
     if (busy || recorderRef.current || deviceCaptureRef.current || permissionPendingRef.current) return;
-    if (!isDeviceAudioCaptureSupported()) { setMessage('Device audio recording requires Android 10 or later.'); return; }
+    if (!isDeviceAudioCaptureSupported()) { setMessage('Device audio capture is unavailable in this build or on this device. Import a file or record with the microphone instead.'); return; }
     const capture = createDeviceAudioCaptureController();
     deviceCaptureRef.current = capture;
     deviceResultHandledRef.current = false;
@@ -623,10 +624,14 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     saveLocked.current = true;
     const op = new AbortController(); controller.current = op; setBusy(true); setMessage('Saving to Library…');
     try {
+      // Reserve before writing audio so a settings I/O failure cannot leave a
+      // committed clip with no stable gradient and invite an accidental retry.
+      const colorIndex = allocateNextPadColorIndex();
+      const [color, colorEnd] = padGradientStops(colorIndex);
       const clip = await saveLocalAudioRender(source, render, cleanName, op.signal);
       if (op.signal.aborted) return;
       try {
-        const assigned = await onSaved({ ...clip, icon, color }, target, artworkRef.current ?? undefined);
+        const assigned = await onSaved({ ...clip, icon, color, colorEnd, colorIndex }, target, artworkRef.current ?? undefined);
         // The app callback owns the local artwork after it copies it into library storage.
         artworkRef.current = null;
         setArtwork(null);
@@ -665,10 +670,11 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     setImagePreparing(true);
     try {
       const next = await pickGalleryArtwork();
+      if (!mountedRef.current) { if (next) disposeDraftArtwork(next); return; }
       if (next) adoptArtwork(next);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not open that image. Choose another one.');
-    } finally { setImagePreparing(false); }
+      if (mountedRef.current) setMessage(error instanceof Error ? error.message : 'Could not open that image. Choose another one.');
+    } finally { if (mountedRef.current) setImagePreparing(false); }
   }
 
   const steps: Array<{ id: Step; label: string }> = [{ id: 'source', label: 'Source' }, { id: 'trim', label: 'Trim' }, { id: 'customize', label: 'Details' }];
@@ -695,10 +701,8 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
         {!recording && !recordingStopped && !deviceActive ? <>
           <Text style={{ color: theme.text, fontSize: 18, fontWeight: '800', marginBottom: 4 }}>Where’s your audio from?</Text>
           {isDeviceAudioCaptureSupported() ? <Pressable onPress={() => void startDeviceCapture()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record device audio from a compatible app" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.primary, opacity: busy ? 0.6 : 1 }]}>
-            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="music" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record device audio</Text><Text style={{ color: theme.muted }}>Compatible apps only · Android will ask for permission · up to 2 minutes</Text></View>
-          </Pressable> : <View accessibilityRole="summary" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
-            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="music" size={24} color={theme.muted} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record device audio</Text><Text style={{ color: theme.muted }}>{Platform.OS === 'android' && Number(Platform.Version) < 29 ? 'Requires Android 10 or later. Record with the microphone or import audio or video instead.' : 'Unavailable on this device. Record with the microphone or import audio or video instead.'}</Text></View>
-          </View>}
+            <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="music" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record device audio</Text><Text style={{ color: theme.muted }}>Compatible apps only · Android will ask for permission · up to 2 minutes · stays in your private Library</Text></View>
+          </Pressable> : null}
           <Pressable onPress={() => void startRecording()} disabled={busy} accessibilityRole="button" accessibilityLabel="Record microphone" style={[styles.sourceCard, { backgroundColor: theme.surface, borderColor: theme.border, opacity: busy ? 0.6 : 1 }]}>
             <View style={[styles.sourceIcon, { backgroundColor: theme.raised }]}><Icon name="mic" size={24} color={theme.focus} /></View><View style={styles.sourceCardCopy}><Text style={{ color: theme.text, fontWeight: '800', fontSize: 16 }}>Record microphone</Text><Text style={{ color: theme.muted }}>Use your phone microphone</Text></View>
           </Pressable>
@@ -782,7 +786,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
         <TextField inputRef={nameInputRef} onFocus={() => { if (nameInputRef.current) keyboardReveal.onFocus(nameInputRef.current); }} onBlur={() => { if (nameInputRef.current) keyboardReveal.onBlur(nameInputRef.current); }} value={name} onChangeText={(value) => setName(value.slice(0, 100))} placeholder="Name this sound" theme={theme} maxLength={100} />
         <View style={styles.artOptions}>
           <Pressable onPress={() => { if (busy || imagePreparing) return; setArtMode('default'); clearArtwork(); }} disabled={busy || imagePreparing} accessibilityRole="button" accessibilityState={{ selected: artMode === 'default', disabled: busy || imagePreparing }} style={[styles.artOption, { backgroundColor: artMode === 'default' ? theme.raised : theme.surface, borderColor: artMode === 'default' ? theme.focus : theme.border, borderWidth: artMode === 'default' ? 2 : 1, opacity: busy || imagePreparing ? 0.6 : 1 }]}><Icon name="music" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Default</Text></Pressable>
-          <Pressable onPress={() => void chooseGalleryArtwork()} disabled={busy || imagePreparing} accessibilityRole="button" accessibilityState={{ selected: artMode === 'gallery', disabled: busy || imagePreparing }} style={[styles.artOption, { backgroundColor: artMode === 'gallery' ? theme.raised : theme.surface, borderColor: artMode === 'gallery' ? theme.focus : theme.border, borderWidth: artMode === 'gallery' ? 2 : 1, opacity: busy || imagePreparing ? 0.6 : 1 }]}><Icon name="image" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Gallery</Text></Pressable>
+          <Pressable onPress={() => void chooseGalleryArtwork()} disabled={busy || imagePreparing} accessibilityRole="button" accessibilityLabel="Open gallery" accessibilityState={{ selected: artMode === 'gallery', disabled: busy || imagePreparing }} style={[styles.artOption, { backgroundColor: artMode === 'gallery' ? theme.raised : theme.surface, borderColor: artMode === 'gallery' ? theme.focus : theme.border, borderWidth: artMode === 'gallery' ? 2 : 1, opacity: busy || imagePreparing ? 0.6 : 1 }]}><Icon name="image" size={22} color={theme.focus} /><Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>Open gallery</Text></Pressable>
         </View>
         <Text style={{ color: theme.muted, lineHeight: 20 }}>{artwork ? 'Your sound and Gallery picture will be stored on this device.' : artMode === 'default' ? 'Your sound will be stored on this device with the default music icon.' : 'Choose a Gallery picture to add artwork, or select Default to keep the music icon.'}</Text>
       </> : null}

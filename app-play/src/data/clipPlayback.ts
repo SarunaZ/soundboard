@@ -1,6 +1,6 @@
 import { File } from 'expo-file-system';
 
-import { emptyOrRecoveredSnapshot, PLAY_LIBRARY_DIRECTORY, writeSnapshot } from './snapshot.ts';
+import { emptyOrRecoveredSnapshot, PLAY_LIBRARY_DIRECTORY, registerSnapshotParser, writeSnapshot } from './snapshot.ts';
 import { isUuid } from './protocol.ts';
 
 export type ClipRepeat = 'once' | 'loop' | 'three';
@@ -10,6 +10,7 @@ interface ClipPlaybackSnapshot { version: 1; clips: ClipPlaybackPreferences }
 
 const PREFERENCES_FILE = new File(PLAY_LIBRARY_DIRECTORY, 'clip-playback.json');
 const BACKUP_FILE = new File(PLAY_LIBRARY_DIRECTORY, 'clip-playback.backup.json');
+registerSnapshotParser('clip-playback.json', parseSnapshot);
 const nextFile = () => new File(PLAY_LIBRARY_DIRECTORY, 'clip-playback.next.json');
 const DEFAULT_PREFERENCE: ClipPlaybackPreference = { gain: 1, repeat: 'once' };
 
@@ -29,7 +30,7 @@ export function parseClipPlaybackPreferences(value: unknown): ClipPlaybackPrefer
 }
 
 function readSnapshot(): ClipPlaybackSnapshot {
-  const clips = emptyOrRecoveredSnapshot(PREFERENCES_FILE, BACKUP_FILE, () => ({}), (value) => parseClipPlaybackPreferences(value));
+  const clips = emptyOrRecoveredSnapshot(PREFERENCES_FILE, BACKUP_FILE, () => ({}), (value) => parseClipPlaybackPreferences(value), nextFile());
   return { version: 1, clips };
 }
 

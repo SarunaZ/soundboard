@@ -1,5 +1,30 @@
 # Soundboard — Steps
 
+**Google Play release readiness (2026-10-25):** see the [per-item production
+tracker](docs/production/ANDROID_PRODUCTION_READINESS.md) and its [release
+runbook](docs/production/release-runbook.md). The owner-approved final Play
+scope requires file import, foreground microphone recording, and device
+playback capture; all are enabled by default, with capture omitted only by an
+explicit diagnostic-disable option. The historical r3 artifact was capture-off;
+the all-source r4 candidate is now built unsigned and passed bounded physical
+capture/restore checks on one Samsung phone. Broader device coverage and
+conditional policy checks remain pending. No signed AAB or Play submission is
+approved by these source changes.
+
+**Latest Play update (2026-10-24):** the [board-modal/protected-playback package](docs/design/StimmyzApp_Astra_Board_Modal_Protected_Hold_2026-10-24/DESIGN_SOURCE_OF_TRUTH.md)
+supersedes earlier UI handoffs. The owner additionally requires immediate pad
+playback on touch, a visible animated scroll rail, and editable board names.
+Implementation and current verification are tracked in the [October 24 record](docs/play-board-modal-protected-2026-10-24.md).
+Historical test counts and open physical-device acceptance items below are retained.
+The latest owner refinement changes protection to a one-second hold with visible
+perimeter charging and disabled styling, and adds a per-board rail-side setting.
+See the [gesture feedback record](docs/play-gesture-feedback-2026-10-24.md) for native regression evidence.
+The [October 25 follow-up](docs/play-stop-overlay-2026-10-24.md) is installed as
+1.0.28/code 29 on the S24: 12dp gap between pads and Prev/Next page controls,
+half-width visible rail with a retained 48dp drag area,
+reduced-motion hold perimeter, no numeric hold badge or
+DRAG label, and stable Stop all/rail geometry verified in the emulator.
+
 **Status (authoritative, 2026-10-15):** M0's remote feature path is complete;
 its real-phone/cellular exit measurement remains pending. Local authoring L1–L5,
 L7, L8 backend live-source smoke, L10, and L11 are implemented and verified. App
@@ -30,7 +55,9 @@ remote pipeline remains historical/deferred; its open items are not completed
 by this pivot. Local board assignments (L11) and search/naming/capacity UI
 (L13) are implemented and verified. L12 records a superseded whole-file device
 import; L14's corrected device-file Editor flow is implemented and emulator-
-verified with MP3. M4A/WAV/AAC and physical-phone checks remain pending.
+verified with MP3. Synthetic WAV and M4A/AAC import/trim/save also passed in a
+bounded physical Samsung run recorded in [phone QA](docs/production/PHONE_QA-2026-10-25.md);
+other formats and broader device coverage remain pending.
 **Date:** 2026-08-15, revised 2026-10-15
 **Reads with:** [DESIGN.md](DESIGN.md) (the *why*) · [PLAN.md](PLAN.md) (the *order* and the reasoning behind it).
 This file is the short checklist — the flat list of what to actually do next.
@@ -343,7 +370,7 @@ pending until implementation and the stated acceptance check are confirmed.
 
 Source: [Stimmyz design implementation plan](docs/stimmyz-design-plan.md).
 The [October 22 transparent-logo handoff](docs/design/StimmyzApp_Astra_Final_Transparent_Logo_Handoff_2026-10-22/ASTRA_IMPLEMENTATION.md)
-is the current visual and interaction authority. It retains the October 21
+records the retained transparent-branding baseline. It carries forward the October 21
 interaction contracts and applies the approved transparent mint PNG across
 Board, Editor and Library. The owner's subsequent request removes the GIPHY
 demo and defaults Details to Gallery with the phone's photo picker; see the
@@ -428,8 +455,10 @@ SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-20
   excluded; the user's later migration request is handled through explicit
   shared-folder clip export/import, documented in the
   [transfer guide](docs/soundbite-transfer.md).
-- [ ] **D3 — Play presentation.** Board, Editor and Library screens use the six
-  clean-rebuild palettes. The [visual-fixes record](docs/play-visual-fixes-2026-10-17.md)
+- [ ] **D3 — Play presentation.** The October 24 implementation has nine
+  palettes, modal board settings, board renaming, protected playback and the
+  owner's animated scroll rail. See the [current record](docs/play-board-modal-protected-2026-10-24.md)
+  for verification limits. Earlier evidence follows. The [visual-fixes record](docs/play-visual-fixes-2026-10-17.md)
   and [native follow-ups](docs/play-recording-emulator-2026-10-18.md) include the
   user's edit-only Quick add arrow preference, verified in simulator 1.0.4.
   The earlier visual-fixes record
@@ -453,7 +482,7 @@ SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-20
   Version 1.0.14/code 15 used a sun icon for Appearance and four numbered Editor
   introduction steps. TypeScript and normal/compact large-text native checks
   passed; see the [historical visual record](docs/play-appearance-editor-2026-10-18.md).
-  The current visual authority is [Stimmyz Astra Clean Rebuild](docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/DESIGN_SOURCE_OF_TRUTH.md).
+  The historical clean-rebuild authority was [Stimmyz Astra Clean Rebuild](docs/design/StimmyzApp_Astra_Clean_Rebuild_2026-10-18/DESIGN_SOURCE_OF_TRUTH.md).
   Verified build 1.0.15/code 16 includes six persisted palettes
   (Peach, Mint, Snow, Ice, Vanilla, Coffee), header theme options, always-available
   anchored sound-pad overflow menus, Record in Quick add preferences, anchored
@@ -485,11 +514,13 @@ SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-20
   pad preview. Small-screen device checks and resilient draft restoration remain
   open; cancellation/interruption discards the draft. See the
   [recording emulator record](docs/play-recording-emulator-2026-10-18.md).
-- [ ] **D5 — Play local artwork.** Icon/color presentation and optional Imgflip
-  thumbnail storage with missing-image fallback exist. Gallery import and saved
-  clip artwork replacement from gallery or Imgflip are implemented; manual
-  crop/reposition remains open. TypeScript, gallery/offline-storage tests, and
-  clean-rebuild native simulator QA pass. No Dev UI.
+- [ ] **D5 — Play local artwork.** October 24 uses gallery-only artwork,
+  Default restoration, safe private thumbnails, persisted individual gradients
+  and legacy-local-art compatibility. Remote provider selection is removed.
+  Automated persistence/failure checks pass; updated Android picker, offline,
+  accessibility and visual acceptance remain open. See the
+  [current record](docs/play-board-modal-protected-2026-10-24.md). Earlier native
+  artwork checks are historical. Manual crop/reposition remains open. No Dev UI.
 - [ ] **D6 — Play native sources.** Microphone recording is implemented with
   foreground capture and passed emulator first-use permission, save/relaunch and
   interruption checks. Source is capped at five minutes and 32 MiB; selected
@@ -518,18 +549,12 @@ SHA-256 are recorded in the [clean-rebuild QA record](docs/play-clean-rebuild-20
   and rights provenance, and reconcile actual SDK/network/microphone behavior
   with Play Data Safety and the privacy policy. Research audit claims are prompts
   for verification, not legal conclusions.
-- [ ] **D8 — Play online artwork (P2).** User selected Imgflip's free popular list.
-  Local name filtering, source links, bounded private thumbnails and optional
-  Customize selection are implemented. 58 Play tests, TypeScript and 9 build
-  checks pass; simulator selection, save, offline restart and stable edit bounds
-  passed. See the [artwork record](docs/play-imgflip-artwork-2026-10-18.md).
-  The October 22 handoff initially replaced creation Search with a GIPHY sample
-  concept. The owner subsequently requested its removal; Details now defaults
-  to Gallery and uses the phone's photo picker. Library Imgflip replacement
-  remains available. See the [gallery update](docs/play-gallery-picker-2026-10-22.md).
-  Full-catalog search and manual crop/reposition remain open. No API key is used;
-  no unreviewed Dev sounds or prototype media are
-  Play defaults. Public packs/sharing also require rights and moderation decisions.
+- **D8 — Online artwork superseded by gallery-only scope.** The October 24
+  handoff removes online image selection from creation and Library. No provider
+  search, source-link action or remote artwork request remains; already stored
+  private images are retained. Earlier Imgflip and GIPHY records are historical,
+  not future implementation scope. No unreviewed Dev sounds or prototype media
+  are Play defaults. Public packs/sharing remain separate pending work.
 - [ ] **D9 — Play backup/export/import (P1).** Add bounded, validated archives
   for Play boards, metadata and owned media; handle conflicts, duplicates,
   corruption, cancellation and interrupted writes without touching Dev data.

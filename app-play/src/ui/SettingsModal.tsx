@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Alert, BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, BackHandler, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import appConfig from '../../app.json';
+import openSourceNotices from '../data/openSourceNotices.json';
 import { loadPlayPreferences, savePlayPreferences } from '../data/preferences';
 import { exportPlayBackup, importPlayBackup } from '../media/backup';
 import { setMasterVolume } from '../media/playbackEngine';
+import { isDeviceAudioCaptureSupported } from '../media/deviceAudioCapture';
 import { ActionButton } from './controls';
 import { Icon } from './Icons';
 import type { Theme, ThemeName } from './theme';
@@ -17,6 +19,11 @@ export function SettingsModal({ visible, theme, appearance, bottomInset = 78, on
   const [busy, setBusy] = useState(false);
   const [showThemes, setShowThemes] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showNotices, setShowNotices] = useState(false);
+  const [noticeSearch, setNoticeSearch] = useState('');
+  const [noticePage, setNoticePage] = useState(0);
+  const [selectedNoticeKey, setSelectedNoticeKey] = useState('');
 
   useEffect(() => {
     if (!visible) return;
@@ -52,8 +59,28 @@ export function SettingsModal({ visible, theme, appearance, bottomInset = 78, on
     finally { setBusy(false); }
   }
 
+  async function reportProblem() {
+    try {
+      await Share.share({
+        title: 'Report a Stimmyz problem',
+        message: 'Stimmyz problem report\n\nPlease describe what happened and what you expected. No sound, recording, filename, or diagnostic data is attached automatically.',
+      });
+    } catch (error) {
+      Alert.alert('Could not open sharing options', error instanceof Error ? error.message : 'Try again.');
+    }
+  }
+
   const percent = Math.round(masterVolume * 100);
   const version = appConfig.expo.version;
+  const noticePageSize = 12;
+  const filteredNotices = useMemo(() => {
+    const query = noticeSearch.trim().toLocaleLowerCase();
+    if (!query) return openSourceNotices.packages;
+    return openSourceNotices.packages.filter((notice) => `${notice.name} ${notice.version} ${notice.license ?? ''}`.toLocaleLowerCase().includes(query));
+  }, [noticeSearch]);
+  const noticePageCount = Math.max(1, Math.ceil(filteredNotices.length / noticePageSize));
+  const visibleNotices = filteredNotices.slice(noticePage * noticePageSize, (noticePage + 1) * noticePageSize);
+  const selectedNotice = visibleNotices.find((notice) => `${notice.name}@${notice.version}` === selectedNoticeKey) ?? visibleNotices[0] ?? null;
   if (!visible) return null;
   return <View style={[styles.screen, { backgroundColor: theme.background, bottom: bottomInset }]}>
     <View style={styles.pageHeader}>
@@ -127,8 +154,59 @@ export function SettingsModal({ visible, theme, appearance, bottomInset = 78, on
         </Pressable>
         {showAbout ? <View style={[styles.aboutDetails, { borderTopColor: theme.border }]}>
           <Text style={[styles.aboutLine, { color: theme.text }]}>Version {version}</Text>
-          <Text style={[styles.aboutCopy, { color: theme.muted }]}>Sounds and boards are stored in this app on your device. Exporting a backup saves a copy to the location you choose. Browsing artwork may connect to Imgflip.</Text>
-          <Text style={[styles.aboutCopy, { color: theme.muted }]}>This app uses open-source software. License notices for bundled libraries are not currently shown in the app.</Text>
+          <Text style={[styles.aboutCopy, { color: theme.muted }]}>Sounds, boards and artwork are stored in this app on your device. Uninstalling the app removes that data. Exporting a backup saves a copy to the location you choose. Artwork comes from images you select in your Gallery.</Text>
+          <Text style={[styles.aboutCopy, { color: theme.muted }]}>This app uses open-source software. Its dependency notices are included below and available offline.</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: showNotices }} onPress={() => setShowNotices((open) => !open)} style={styles.privacyButton}>
+            <Text style={[styles.rowTitle, { color: theme.text }]}>Open-source notices ({openSourceNotices.packageCount})</Text>
+            <Text style={[styles.chevron, { color: theme.accent }]}>{showNotices ? '⌃' : '→'}</Text>
+          </Pressable>
+          {showNotices ? <View style={[styles.noticeDetails, { borderTopColor: theme.border }]}>
+            <Text style={[styles.aboutCopy, { color: theme.muted }]}>Search {openSourceNotices.packageCount} package records and select one to read its copyright, license and notice text.</Text>
+            <TextInput accessibilityLabel="Search open-source packages" value={noticeSearch} onChangeText={(value) => { setNoticeSearch(value); setNoticePage(0); }} placeholder="Search packages or licenses" placeholderTextColor={theme.muted}
+              style={[styles.noticeSearch, { color: theme.text, backgroundColor: theme.surfaceAlt, borderColor: theme.border }]} autoCapitalize="none" autoCorrect={false} />
+            {visibleNotices.map((notice) => {
+              const key = `${notice.name}@${notice.version}`;
+              const selected = selectedNotice?.name === notice.name && selectedNotice.version === notice.version;
+              return <Pressable key={key} accessibilityRole="button" accessibilityState={{ selected }} accessibilityLabel={`${notice.name}, version ${notice.version}, license ${notice.license ?? 'not specified'}`} onPress={() => setSelectedNoticeKey(key)}
+                style={[styles.noticeChoice, { backgroundColor: selected ? theme.surfaceAlt : 'transparent', borderColor: selected ? theme.accent : theme.border }]}>
+                <View style={styles.noticeChoiceText}>
+                  <Text numberOfLines={1} style={[styles.noticeName, { color: theme.text }]}>{notice.name}</Text>
+                  <Text numberOfLines={1} style={[styles.aboutCopy, { color: theme.muted }]}>{notice.version} · {notice.license ?? 'License metadata unavailable'}</Text>
+                </View>
+                {selected ? <Text accessibilityLabel="Selected" style={{ color: theme.accent, fontWeight: '900' }}>✓</Text> : null}
+              </Pressable>;
+            })}
+            {visibleNotices.length === 0 ? <Text style={[styles.aboutCopy, { color: theme.muted }]}>No packages match this search.</Text> : null}
+            {noticePageCount > 1 ? <View style={styles.noticePager}>
+              <Pressable accessibilityRole="button" accessibilityLabel="Previous notices page" disabled={noticePage === 0} onPress={() => setNoticePage((page) => Math.max(0, page - 1))}
+                style={[styles.noticePageButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, opacity: noticePage === 0 ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontWeight: '800' }}>Previous</Text></Pressable>
+              <Text accessibilityLiveRegion="polite" style={[styles.aboutCopy, { color: theme.muted }]}>Page {noticePage + 1} of {noticePageCount}</Text>
+              <Pressable accessibilityRole="button" accessibilityLabel="Next notices page" disabled={noticePage + 1 >= noticePageCount} onPress={() => setNoticePage((page) => Math.min(noticePageCount - 1, page + 1))}
+                style={[styles.noticePageButton, { backgroundColor: theme.surfaceAlt, borderColor: theme.border, opacity: noticePage + 1 >= noticePageCount ? 0.45 : 1 }]}><Text style={{ color: theme.text, fontWeight: '800' }}>Next</Text></Pressable>
+            </View> : null}
+            {selectedNotice ? <View style={[styles.noticeSelected, { borderTopColor: theme.border }]}>
+              <Text accessibilityRole="header" style={[styles.noticeSelectedTitle, { color: theme.text }]}>{selectedNotice.name} {selectedNotice.version}</Text>
+              <Text style={[styles.aboutCopy, { color: theme.muted }]}>License: {selectedNotice.license ?? 'not specified in package metadata'}</Text>
+              {selectedNotice.source ? <Text selectable style={[styles.aboutCopy, { color: theme.muted }]}>Source: {selectedNotice.source}</Text> : null}
+              {'buildNote' in selectedNotice && selectedNotice.buildNote ? <Text style={[styles.aboutCopy, { color: theme.muted }]}>{selectedNotice.buildNote}</Text> : null}
+              {'sourceSha256' in selectedNotice && selectedNotice.sourceSha256 ? <Text selectable style={[styles.aboutCopy, { color: theme.muted }]}>Source archive SHA-256: {selectedNotice.sourceSha256}</Text> : null}
+              {selectedNotice.texts.length ? selectedNotice.texts.map((noticeText) => <View key={noticeText.file} style={styles.noticeTextBlock}>
+                <Text style={[styles.noticeFileName, { color: theme.accent }]}>{noticeText.file}</Text>
+                <Text selectable style={[styles.noticeText, { color: theme.text }]}>{noticeText.text}</Text>
+              </View>) : <Text style={[styles.aboutCopy, { color: theme.muted }]}>This package does not include a license text. The license shown above is information supplied by its publisher.</Text>}
+            </View> : null}
+            <Text style={[styles.aboutCopy, { color: theme.muted }]}>These notices cover libraries and tools used to build Stimmyz. Some packages provide license information without a full license text.</Text>
+          </View> : null}
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: showPrivacy }} onPress={() => setShowPrivacy((open) => !open)} style={styles.privacyButton}>
+            <Text style={[styles.rowTitle, { color: theme.text }]}>Privacy on this device</Text>
+            <Text style={[styles.chevron, { color: theme.accent }]}>{showPrivacy ? '⌃' : '→'}</Text>
+          </Pressable>
+          {showPrivacy ? <View style={[styles.privacyDetails, { borderTopColor: theme.border }]}>
+            <Text style={[styles.aboutCopy, { color: theme.muted }]}>Stimmyz stores your sounds, board settings and selected artwork in app-private storage. The app does not sync them to an account. A backup is created only when you choose Export and select a destination; that copy is managed by the destination you choose.</Text>
+            <Text style={[styles.aboutCopy, { color: theme.muted }]}>Microphone recording starts only after you choose Record your voice and grant Android permission. {isDeviceAudioCaptureSupported() ? 'Device audio recording is available in this testing build; Android shows its capture consent and some apps may block capture.' : 'Device audio recording is not enabled in this build.'} Captures stay in your local Library unless you explicitly export a backup.</Text>
+            <Text style={[styles.aboutCopy, { color: theme.muted }]}>The app does not attach recordings, filenames or diagnostics to a problem report. Review anything you choose to share before sending it.</Text>
+          </View> : null}
+          <ActionButton label="Report a problem" onPress={() => void reportProblem()} theme={theme} variant="secondary" />
         </View> : null}
       </View>
       <View style={{ height: 12 }} />
@@ -178,6 +256,20 @@ const styles = StyleSheet.create({
   backupActions: { flexDirection: 'row', gap: 8 },
   backupButton: { flex: 1, minWidth: 0, minHeight: 50, paddingHorizontal: 8 },
   aboutDetails: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, gap: 7 },
+  privacyButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2 },
+  privacyDetails: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, gap: 7 },
+  noticeDetails: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 8, gap: 8 },
+  noticeSearch: { minHeight: 48, borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, fontSize: 14 },
+  noticeChoice: { minHeight: 48, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  noticeChoiceText: { flex: 1, minWidth: 0 },
+  noticeName: { fontSize: 13, fontWeight: '800' },
+  noticePager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  noticePageButton: { minHeight: 48, minWidth: 88, borderWidth: 1, borderRadius: 12, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
+  noticeSelected: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, gap: 6 },
+  noticeSelectedTitle: { fontSize: 15, lineHeight: 20, fontWeight: '900' },
+  noticeTextBlock: { gap: 4 },
+  noticeFileName: { fontSize: 12, fontWeight: '800' },
+  noticeText: { fontSize: 11, lineHeight: 15, fontFamily: 'monospace' },
   aboutLine: { fontSize: 13, fontWeight: '800' },
   aboutCopy: { fontSize: 12, lineHeight: 17 },
 });

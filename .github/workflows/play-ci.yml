@@ -1,0 +1,56 @@
+name: Play readiness gates
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  play:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.22.1
+          cache: yarn
+      - name: Install the exact locked dependency graph
+        run: |
+          corepack enable
+          yarn install --immutable
+      - name: Verify compatibility and patched node-forge regression fixtures
+        run: node --test scripts/dependency-compat.test.cjs scripts/node-forge-security.test.cjs scripts/npm-audit-gate.test.cjs
+      - name: Audit all locked workspace dependencies without suppressing findings
+        run: node scripts/npm-audit-gate.mjs
+      - name: Run Play unit and packaging security tests
+        run: |
+          yarn workspace app-play test
+          yarn test:play-stage
+          node --test scripts/assert-play-gradle-security-versions.test.cjs
+      - name: Type check Play
+        run: yarn workspace app-play check
+      - name: Verify production-default source stage
+        shell: pwsh
+        run: ./scripts/build-play-android.ps1 -StageOnly
+
+  android-release-build:
+    needs: play
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.22.1
+      - name: Build the source stage and Android toolchain image
+        run: docker build --file app-client/Dockerfile.android --tag soundboard-android:local .
+      - name: Prepare isolated build caches
+        run: |
+          docker volume create soundboard_gradle
+          docker volume create soundboard_yarn-cache
+      - name: Build and audit unsigned dual-ABI production-default artifacts
+        shell: pwsh
+        run: ./scripts/build-play-android.ps1 -StagePath "data/ci-play-${{ github.run_id }}-${{ github.run_attempt }}" -ReactNativeArchitectures 'arm64-v8a,x86_64'

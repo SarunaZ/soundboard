@@ -1,4 +1,5 @@
 import AudioContext from 'react-native-audio-api/lib/module/core/AudioContext';
+import AudioManager from 'react-native-audio-api/lib/module/system/AudioManager';
 import { Platform } from 'react-native';
 import { calculateMixHeadroom, conservativePeakBound, conservativePeakEstimate, createSoftLimiterCurve, DSP_YIELD_SAMPLES, LIMITER_CEILING, playbackGainFromControl, processClipPcm } from './playbackDsp';
 import { assertNativePlaybackPreparationAvailable, prepareNativePlaybackPcm } from './nativePlaybackPreparation';
@@ -15,6 +16,7 @@ export type PlaybackOptions = {
   gain?: number;
   repeat?: PlaybackRepeat;
   allowOverlap?: boolean;
+  protected?: boolean;
 };
 export type PlaybackVoiceSnapshot = {
   padId: string;
@@ -22,8 +24,13 @@ export type PlaybackVoiceSnapshot = {
   position: number;
   duration: number;
   progress: number;
+  protected: boolean;
 };
-export type PlaybackSnapshot = { voices: PlaybackVoiceSnapshot[]; active: boolean };
+export type PlaybackSnapshot = {
+  voices: PlaybackVoiceSnapshot[];
+  pendingProtected: Array<{ padId: string; soundId?: string }>;
+  active: boolean;
+};
 
 /** Safe boosted clips keep their requested gain; unsafe clips use protected PCM processing. */
 export const PLAYBACK_BOOST_AVAILABLE = true;
@@ -33,6 +40,7 @@ const MAX_CACHE_ENTRIES = 24;
 const MAX_VOICE_BUFFER_BYTES = 128 * 1024 * 1024;
 const FADE_SECONDS = 0.008;
 const UPDATE_MS = 50;
+const IDLE_SUSPEND_DELAY_MS = 40;
 
 type Voice = {
   padId: string;
@@ -47,6 +55,17 @@ type Voice = {
   fadeStopAt: number | null;
   repeat: PlaybackRepeat;
   stopped: boolean;
+  protected: boolean;
+  reservationKeys: string[];
+};
+
+type PlaybackRequest = {
+  token: number;
+  padId: string;
+  soundId?: string;
+  protected: boolean;
+  cancelled: boolean;
+  reservationKeys: string[];
 };
 
 let ctx: AudioContext | null = null;
@@ -54,16 +73,48 @@ let master: GainNode | null = null;
 let limiter: WaveShaperNode | null = null;
 let masterVolume = 1;
 let requestToken = 0;
-let stopEpoch = 0;
 let lastOverlapMode: boolean | null = null;
-const latestRequestByPad = new Map<string, number>();
+const requests = new Map<number, PlaybackRequest>();
+const protectedReservations = new Map<string, PlaybackRequest | Voice>();
 const voices: Voice[] = [];
 const cache = new Map<string, { buffer: DecodedBuffer; bytes: number; peakBound?: number; clipGain?: number }>();
-const decoding = new Map<string, Promise<DecodedBuffer>>();
+const decoding = new Map<string, { promise: Promise<DecodedBuffer>; requests: Set<number> }>();
 const analyzed = new Map<string, { peak: number; hasNonFinite: boolean }>();
 let processingTail: Promise<void> = Promise.resolve();
+const MAX_CONCURRENT_DECODES = 2;
+let activeDecodes = 0;
+const decodeQueue: Array<{ requests: Set<number>; work: () => Promise<DecodedBuffer>; resolve: (buffer: DecodedBuffer) => void; reject: (error: unknown) => void }> = [];
 const listeners = new Set<(snapshot: PlaybackSnapshot) => void>();
 let updateTimer: ReturnType<typeof setInterval> | null = null;
+let interruptionListenerInstalled = false;
+let audioFocusHeld = false;
+let idleSuspendTimer: ReturnType<typeof setTimeout> | null = null;
+let suspendPromise: Promise<void> | null = null;
+let resumePromise: Promise<void> | null = null;
+
+function observeInterruptions(): void {
+  if (interruptionListenerInstalled) return;
+  AudioManager.addSystemEventListener('interruption', (event) => {
+    if (event.type === 'began') stop();
+  });
+  // AudioManager emits Android's AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK as a
+  // separate `duck` event. Short sound effects follow a stop-on-duck policy.
+  AudioManager.addSystemEventListener('duck', () => stop());
+  interruptionListenerInstalled = true;
+}
+
+function ensureAudioFocus(): void {
+  if (audioFocusHeld) return;
+  observeInterruptions();
+  AudioManager.observeAudioInterruptions('gainTransientMayDuck');
+  audioFocusHeld = true;
+}
+
+function releaseAudioFocusIfIdle(): void {
+  if (!audioFocusHeld || requests.size > 0 || voices.some((voice) => !voice.stopped)) return;
+  audioFocusHeld = false;
+  try { AudioManager.observeAudioInterruptions(false); } catch { /* focus release must not make Stop fail */ }
+}
 
 function audioContext(): AudioContext {
   if (!ctx) {
@@ -81,6 +132,28 @@ function audioContext(): AudioContext {
     limiter.connect(ctx.destination);
   }
   return ctx;
+}
+
+function scheduleIdleSuspend(): void {
+  if (!ctx || requests.size > 0 || voices.length > 0) return;
+  if (idleSuspendTimer !== null) clearTimeout(idleSuspendTimer);
+  idleSuspendTimer = setTimeout(() => {
+    idleSuspendTimer = null;
+    const current = ctx;
+    if (!current || requests.size > 0 || voices.length > 0) return;
+    suspendPromise = (async () => {
+      if (current.state === 'running') await current.suspend();
+    })().catch(() => {}).finally(() => { suspendPromise = null; });
+  }, IDLE_SUSPEND_DELAY_MS);
+}
+
+async function resumeForPlayback(current: AudioContext): Promise<void> {
+  if (idleSuspendTimer !== null) clearTimeout(idleSuspendTimer);
+  idleSuspendTimer = null;
+  if (suspendPromise) await suspendPromise;
+  if (current.state !== 'suspended') return;
+  if (!resumePromise) resumePromise = current.resume().finally(() => { resumePromise = null; });
+  await resumePromise;
 }
 
 function bufferBytes(buffer: DecodedBuffer): number {
@@ -109,7 +182,7 @@ function cacheBuffer(key: string, buffer: DecodedBuffer): void {
   }
 }
 
-function load(uri: string): Promise<DecodedBuffer> {
+function load(uri: string, request: PlaybackRequest): Promise<DecodedBuffer> {
   const cached = cache.get(uri);
   if (cached) {
     cache.delete(uri);
@@ -117,19 +190,90 @@ function load(uri: string): Promise<DecodedBuffer> {
     return Promise.resolve(cached.buffer);
   }
   const pending = decoding.get(uri);
-  if (pending) return pending;
-  const promise = audioContext().decodeAudioData(uri).then((buffer) => {
+  if (pending) {
+    pending.requests.add(request.token);
+    return pending.promise;
+  }
+  const entry = { promise: Promise.resolve(null as unknown as DecodedBuffer), requests: new Set([request.token]) };
+  entry.promise = withDecodeSlot(entry.requests, async () => {
+    const buffer = await audioContext().decodeAudioData(uri);
+    // A native decode cannot be interrupted, but discard its result when all
+    // waiting taps were stopped so cold rapid taps cannot fill the cache.
+    if (![...entry.requests].some((token) => {
+      const current = requests.get(token);
+      return current !== undefined && isCurrentRequest(current);
+    })) throw new Error('Playback request was superseded.');
     cacheBuffer(uri, buffer);
     return buffer;
-  }).finally(() => {
-    if (decoding.get(uri) === promise) decoding.delete(uri);
-  });
-  decoding.set(uri, promise);
-  return promise;
+  }).finally(() => { if (decoding.get(uri) === entry) decoding.delete(uri); });
+  decoding.set(uri, entry);
+  return entry.promise;
 }
 
-function isCurrentRequest(padId: string, token: number, epoch: number): boolean {
-  return epoch === stopEpoch && latestRequestByPad.get(padId) === token;
+function hasCurrentDecodeRequest(tokens: Set<number>): boolean {
+  return [...tokens].some((token) => {
+    const current = requests.get(token);
+    return current !== undefined && isCurrentRequest(current);
+  });
+}
+
+function drainDecodeQueue(): void {
+  while (activeDecodes < MAX_CONCURRENT_DECODES && decodeQueue.length > 0) {
+    const entry = decodeQueue.shift()!;
+    if (!hasCurrentDecodeRequest(entry.requests)) {
+      entry.reject(new Error('Playback request was superseded.'));
+      continue;
+    }
+    activeDecodes += 1;
+    void entry.work().then(entry.resolve, entry.reject).finally(() => {
+      activeDecodes -= 1;
+      drainDecodeQueue();
+    });
+  }
+}
+
+function withDecodeSlot(requestsToKeep: Set<number>, work: () => Promise<DecodedBuffer>): Promise<DecodedBuffer> {
+  return new Promise((resolve, reject) => {
+    decodeQueue.push({ requests: requestsToKeep, work, resolve, reject });
+    drainDecodeQueue();
+  });
+}
+
+function isCurrentRequest(request: PlaybackRequest): boolean {
+  return !request.cancelled && requests.get(request.token) === request;
+}
+
+function reservationKeys(padId: string, soundId?: string): string[] {
+  return [`pad:${padId}`, ...(soundId ? [`sound:${soundId}`] : [])];
+}
+
+function releaseReservations(owner: PlaybackRequest | Voice): void {
+  for (const key of owner.reservationKeys) {
+    if (protectedReservations.get(key) === owner) protectedReservations.delete(key);
+  }
+}
+
+function cancelRequest(request: PlaybackRequest): void {
+  const wasProtected = request.protected;
+  request.cancelled = true;
+  requests.delete(request.token);
+  releaseReservations(request);
+  if (wasProtected) publish();
+  releaseAudioFocusIfIdle();
+  scheduleIdleSuspend();
+}
+
+function protectOwner(owner: PlaybackRequest | Voice): boolean {
+  if (owner.protected) return true;
+  const keys = reservationKeys(owner.padId, owner.soundId);
+  if (keys.some((key) => {
+    const reservation = protectedReservations.get(key);
+    return reservation !== undefined && reservation !== owner;
+  })) return false;
+  owner.protected = true;
+  owner.reservationKeys = keys;
+  for (const key of keys) protectedReservations.set(key, owner);
+  return true;
 }
 
 async function withProcessingSlot<T>(work: () => Promise<T>): Promise<T> {
@@ -155,9 +299,7 @@ async function prepareBuffer(
   uri: string,
   source: DecodedBuffer,
   gain: number,
-  padId: string,
-  token: number,
-  epoch: number,
+  request: PlaybackRequest,
 ): Promise<{ buffer: DecodedBuffer; clipGain: number; peakBound: number }> {
   if (Platform.OS === 'android') assertNativePlaybackPreparationAvailable();
   const key = `${uri}\u0000gain:${gain}`;
@@ -176,9 +318,9 @@ async function prepareBuffer(
       channels,
       gain,
       source.sampleRate,
-      () => !isCurrentRequest(padId, token, epoch),
+      () => !isCurrentRequest(request),
     ));
-    if (!nativeResult || !isCurrentRequest(padId, token, epoch)) {
+    if (!nativeResult || !isCurrentRequest(request)) {
       throw new Error('Playback request was superseded.');
     }
     if (!nativeResult.processed) {
@@ -205,7 +347,7 @@ async function prepareBuffer(
     let hasNonFinite = false;
     for (let frame = 0; frame < source.length; frame += 1) {
       if (frame > 0 && frame % DSP_YIELD_SAMPLES === 0) {
-        if (!isCurrentRequest(padId, token, epoch)) throw new Error('Playback request was superseded.');
+        if (!isCurrentRequest(request)) throw new Error('Playback request was superseded.');
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
       for (const channel of channels) {
@@ -225,9 +367,9 @@ async function prepareBuffer(
   if (!needsProcessing) return { buffer: source, clipGain: gain, peakBound: conservativePeakBound(peakAfterGain) };
 
   const processed = await withProcessingSlot(async () => {
-    if (!isCurrentRequest(padId, token, epoch)) throw new Error('Playback request was superseded.');
-    const pcm = await processClipPcm(channels, gain, source.sampleRate, () => !isCurrentRequest(padId, token, epoch));
-    if (!isCurrentRequest(padId, token, epoch)) throw new Error('Playback request was superseded.');
+    if (!isCurrentRequest(request)) throw new Error('Playback request was superseded.');
+    const pcm = await processClipPcm(channels, gain, source.sampleRate, () => !isCurrentRequest(request));
+    if (!isCurrentRequest(request)) throw new Error('Playback request was superseded.');
     const output = audioContext().createBuffer(source.numberOfChannels, source.length, source.sampleRate);
     pcm.channels.forEach((channel, index) => output.copyToChannel(new Float32Array(channel), index));
     return { ...pcm, buffer: output };
@@ -259,10 +401,13 @@ function startUpdates(): void {
 function removeVoice(voice: Voice): void {
   const index = voices.indexOf(voice);
   if (index >= 0) voices.splice(index, 1);
+  releaseReservations(voice);
   try { voice.source?.disconnect(); } catch { /* already disconnected */ }
   try { voice.gain.disconnect(); } catch { /* already disconnected */ }
   updateHeadroom();
   publish();
+  releaseAudioFocusIfIdle();
+  scheduleIdleSuspend();
 }
 
 /** Bound a worst-case aligned PCM sum before it reaches the soft-knee stage. */
@@ -284,6 +429,7 @@ function latestFadeStopTime(now: number): number {
 function releaseVoice(voice: Voice, at = audioContext().currentTime): void {
   if (voice.stopped) return;
   voice.stopped = true;
+  releaseReservations(voice);
   try {
     voice.fadeStopAt = at + FADE_SECONDS;
     voice.gain.gain.setValueAtTime(voice.gain.gain.value, at);
@@ -334,12 +480,21 @@ function voiceSnapshot(voice: Voice, now: number): PlaybackVoiceSnapshot {
     position,
     duration,
     progress: duration > 0 ? Math.min(1, position / duration) : 0,
+    protected: voice.protected,
   };
 }
 
 export function getPlaybackSnapshot(): PlaybackSnapshot {
   const now = ctx?.currentTime ?? 0;
-  return { voices: voices.filter((voice) => !voice.stopped).map((voice) => voiceSnapshot(voice, now)), active: voices.some((voice) => !voice.stopped) };
+  const activeVoices = voices.filter((voice) => !voice.stopped);
+  const pendingProtected = [...requests.values()]
+    .filter((request) => request.protected && !request.cancelled)
+    .map(({ padId, soundId }) => ({ padId, ...(soundId ? { soundId } : {}) }));
+  return {
+    voices: activeVoices.map((voice) => voiceSnapshot(voice, now)),
+    pendingProtected,
+    active: activeVoices.length > 0 || pendingProtected.length > 0,
+  };
 }
 
 export function subscribePlayback(listener: (snapshot: PlaybackSnapshot) => void): () => void {
@@ -348,82 +503,139 @@ export function subscribePlayback(listener: (snapshot: PlaybackSnapshot) => void
   return () => { listeners.delete(listener); };
 }
 
+/** Promote a pending request or active voice without restarting its source. */
+export function protectPad(padId: string): boolean {
+  const voice = [...voices].reverse().find((candidate) => candidate.padId === padId && !candidate.stopped);
+  if (voice) {
+    const promoted = protectOwner(voice);
+    if (promoted) publish();
+    return promoted;
+  }
+  const request = [...requests.values()].reverse().find((candidate) => candidate.padId === padId && !candidate.cancelled);
+  if (!request) return false;
+  const promoted = protectOwner(request);
+  if (promoted) publish();
+  return promoted;
+}
+
 export async function play(uri: string, padId: string, options: PlaybackOptions = {}): Promise<void> {
   const overlap = options.allowOverlap === true;
+  const isProtected = options.protected === true;
+  const soundId = options.soundId;
+  const keys = isProtected ? reservationKeys(padId, soundId) : [];
+  if (keys.some((key) => protectedReservations.has(key)) || protectedReservations.has(`pad:${padId}`) || (soundId ? protectedReservations.has(`sound:${soundId}`) : false)) return;
   if (lastOverlapMode !== null && lastOverlapMode !== overlap) {
-    stopEpoch += 1;
-    latestRequestByPad.clear();
+    for (const request of [...requests.values()]) if (!request.protected) cancelRequest(request);
   }
   lastOverlapMode = overlap;
-  // A monophonic request supersedes pending decodes. Overlap requests remain
-  // independent across pads and replace only another request for that pad.
-  if (!overlap) stopEpoch += 1;
-  const epoch = stopEpoch;
   const token = ++requestToken;
-  latestRequestByPad.set(padId, token);
-  // Default mode is monophonic. A repeated tap always restarts that pad.
-  for (const voice of [...voices]) {
-    if (!overlap || voice.padId === padId) releaseVoice(voice);
+  const request: PlaybackRequest = { token, padId, soundId, protected: isProtected, cancelled: false, reservationKeys: keys };
+  requests.set(token, request);
+  if (isProtected) for (const key of keys) protectedReservations.set(key, request);
+  if (isProtected) publish();
+  // Monophonic requests supersede pending unprotected requests. Protected
+  // requests and their reservations survive ordinary replacement.
+  for (const pending of [...requests.values()]) {
+    if (pending !== request && !pending.protected && (!overlap || pending.padId === padId)) cancelRequest(pending);
   }
-  const c = audioContext();
+  // A normal repeated tap restarts that pad. A protected voice is immutable
+  // to normal replacement and cannot be retriggered through either identity.
+  for (const voice of [...voices]) {
+    if (voice.protected) continue;
+    if ((!isProtected && !overlap) || voice.padId === padId) releaseVoice(voice);
+  }
+  try { ensureAudioFocus(); }
+  catch (error) { cancelRequest(request); throw error; }
+  let c: AudioContext;
+  try { c = audioContext(); }
+  catch (error) { cancelRequest(request); throw error; }
   // Android can leave the native output stream paused after an interruption
   // or lifecycle transition. Resume in parallel with decoding, then re-check
   // the request token before any source is scheduled.
-  const resume = c.state === 'suspended' ? c.resume() : Promise.resolve();
+  let resume: Promise<void>;
+  try { resume = resumeForPlayback(c); }
+  catch (error) { cancelRequest(request); throw error; }
   let buffer: DecodedBuffer;
   try {
     // Defer load by one microtask so Promise.all attaches rejection handlers
     // to both operations even if starting the decode itself throws.
-    [buffer] = await Promise.all([Promise.resolve().then(() => load(uri)), resume]);
+    [buffer] = await Promise.all([Promise.resolve().then(() => load(uri, request)), resume]);
   } catch (error) {
-    if (epoch !== stopEpoch || latestRequestByPad.get(padId) !== token) return;
+    if (!isCurrentRequest(request)) { scheduleIdleSuspend(); return; }
+    cancelRequest(request);
     throw error;
   }
-  if (!isCurrentRequest(padId, token, epoch)) return;
+  if (!isCurrentRequest(request)) { scheduleIdleSuspend(); return; }
 
   if (bufferBytes(buffer) > MAX_VOICE_BUFFER_BYTES) {
+    cancelRequest(request);
     throw new Error('This audio file is too large to play safely.');
   }
   const requestedGain = playbackGainFromControl(options.gain, PLAYBACK_BOOST_AVAILABLE);
   let prepared: Awaited<ReturnType<typeof prepareBuffer>>;
   try {
-    prepared = await prepareBuffer(uri, buffer, requestedGain, padId, token, epoch);
+    prepared = await prepareBuffer(uri, buffer, requestedGain, request);
   } catch (error) {
-    if (!isCurrentRequest(padId, token, epoch)) return;
+    if (!isCurrentRequest(request)) { scheduleIdleSuspend(); return; }
+    cancelRequest(request);
     throw error;
   }
-  if (!isCurrentRequest(padId, token, epoch)) return;
+  if (!isCurrentRequest(request)) { scheduleIdleSuspend(); return; }
   buffer = prepared.buffer;
   if (bufferBytes(buffer) > MAX_VOICE_BUFFER_BYTES) {
+    cancelRequest(request);
     throw new Error('This audio file is too large to play safely.');
   }
   while (voiceBufferBytes(buffer) > MAX_VOICE_BUFFER_BYTES) {
-    const oldest = voices[0];
-    if (!oldest) throw new Error('There is not enough playback memory for this audio file.');
+    const oldest = voices.find((voice) => !voice.protected);
+    if (!oldest) {
+      cancelRequest(request);
+      throw new Error('There is not enough playback memory for this audio file.');
+    }
     retireVoiceForMemory(oldest);
   }
   const liveVoices = voices.filter((voice) => !voice.stopped);
-  if (liveVoices.length >= MAX_VOICES) releaseVoice(liveVoices[0]);
-  const voiceGain = c.createGain();
-  voiceGain.gain.setValueAtTime(prepared.clipGain, c.currentTime);
-  voiceGain.connect(master!);
+  if (liveVoices.length >= MAX_VOICES) {
+    const oldest = liveVoices.find((voice) => !voice.protected);
+    if (!oldest) {
+      cancelRequest(request);
+      throw new Error('Playback is at its protected voice limit. Stop a protected sound before playing another.');
+    }
+    releaseVoice(oldest);
+  }
+  let voiceGain: GainNode | null = null;
+  try {
+    voiceGain = c.createGain();
+    voiceGain.gain.setValueAtTime(prepared.clipGain, c.currentTime);
+    voiceGain.connect(master!);
+  } catch (error) {
+    try { voiceGain?.disconnect(); } catch { /* partial graph setup */ }
+    cancelRequest(request);
+    throw error;
+  }
   const voice: Voice = {
     padId,
     soundId: options.soundId,
     uri,
     buffer,
     source: null,
-    gain: voiceGain,
+    gain: voiceGain!,
     clipGain: prepared.clipGain,
     peakBound: prepared.peakBound,
     startedAt: c.currentTime,
     fadeStopAt: null,
     repeat: options.repeat ?? 'once',
     stopped: false,
+    // protectPad may promote this request while decode/DSP is awaiting, so
+    // transfer the live request state rather than the original option value.
+    protected: request.protected,
+    reservationKeys: request.reservationKeys,
   };
+  requests.delete(request.token);
+  if (request.protected) for (const key of request.reservationKeys) protectedReservations.set(key, voice);
   voices.push(voice);
-  updateHeadroom();
   try {
+    updateHeadroom();
     makeSource(voice, latestFadeStopTime(c.currentTime));
   } catch (error) {
     removeVoice(voice);
@@ -435,10 +647,20 @@ export async function play(uri: string, padId: string, options: PlaybackOptions 
 
 export function stop(): void {
   requestToken += 1;
-  stopEpoch += 1;
-  latestRequestByPad.clear();
+  for (const request of [...requests.values()]) cancelRequest(request);
   for (const voice of [...voices]) releaseVoice(voice);
   publish();
+  releaseAudioFocusIfIdle();
+  scheduleIdleSuspend();
+}
+
+/** Stop every pending or active playback for one board pad. */
+export function stopPad(padId: string): void {
+  for (const request of [...requests.values()]) if (request.padId === padId) cancelRequest(request);
+  for (const voice of [...voices]) if (voice.padId === padId) releaseVoice(voice);
+  publish();
+  releaseAudioFocusIfIdle();
+  scheduleIdleSuspend();
 }
 
 export function setMasterVolume(value: number): void {

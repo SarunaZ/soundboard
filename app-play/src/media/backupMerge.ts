@@ -31,5 +31,8 @@ export function mergePlayBackup(existing: BackupMergeInput, backup: BackupMergeI
   const boards: BoardCollection = { ...existing.boards, boards: [...existing.boards.boards, ...newBoards] };
   const presentations = { ...backup.presentations, ...existing.presentations };
   const playback = { ...backup.playback, ...existing.playback };
-  return { clips, boards, presentations, playback, preferences: backup.preferences, importedClipIds: imported.map(({ id }) => id) };
+  return { clips, boards, presentations, playback, preferences: {
+    ...backup.preferences,
+    nextPadColorIndex: Math.max(existing.preferences.nextPadColorIndex, backup.preferences.nextPadColorIndex),
+  }, importedClipIds: imported.map(({ id }) => id) };
 }

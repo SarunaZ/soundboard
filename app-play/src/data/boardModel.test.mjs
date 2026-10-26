@@ -5,13 +5,17 @@ import {
   addClipToBoardModel,
   clearPadModel,
   createBoardModel,
+  deleteBoardModel,
   emptyBoardCollection,
   movePadModel,
   parseBoardCollection,
   removeClipAssignmentsModel,
   reorderPadModel,
+  reorderBoardModel,
+  renameBoardModel,
   renamePadModel,
   selectBoardModel,
+  setBoardPreferencesModel,
 } from './boardModel.ts';
 
 const clipA = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -22,7 +26,7 @@ test('Play begins with one stable empty Main board and explicitly empty pads', (
   assert.equal(initial.boards.length, 1);
   assert.equal(initial.activeBoardId, initial.boards[0].id);
   assert.equal(initial.boards[0].name, 'Main');
-  assert.deepEqual({ grid: initial.boards[0].grid, navigation: initial.boards[0].navigation, allowOverlap: initial.boards[0].allowOverlap }, { grid: '4x4', navigation: 'pages', allowOverlap: false });
+  assert.deepEqual({ grid: initial.boards[0].grid, navigation: initial.boards[0].navigation, scrollbarSide: initial.boards[0].scrollbarSide, allowOverlap: initial.boards[0].allowOverlap }, { grid: '4x4', navigation: 'pages', scrollbarSide: 'right', allowOverlap: false });
   assert.equal(initial.boards[0].pads.length, 16);
   assert.ok(initial.boards[0].pads.every((pad) => pad.clipId === null));
   assert.deepEqual(emptyBoardCollection(), initial);
@@ -34,12 +38,47 @@ test('legacy board snapshots migrate to safe layout defaults and preferences sur
   delete legacy.boards[0].grid;
   delete legacy.boards[0].navigation;
   delete legacy.boards[0].allowOverlap;
+  delete legacy.boards[0].scrollbarSide;
   const migrated = parseBoardCollection(legacy);
-  assert.deepEqual({ grid: migrated.boards[0].grid, navigation: migrated.boards[0].navigation, allowOverlap: migrated.boards[0].allowOverlap }, { grid: '4x4', navigation: 'pages', allowOverlap: false });
+  assert.deepEqual({ grid: migrated.boards[0].grid, navigation: migrated.boards[0].navigation, scrollbarSide: migrated.boards[0].scrollbarSide, allowOverlap: migrated.boards[0].allowOverlap }, { grid: '4x4', navigation: 'pages', scrollbarSide: 'right', allowOverlap: false });
   const customized = parseBoardCollection({ ...migrated, boards: [{ ...migrated.boards[0], grid: '3x4', navigation: 'scroll', allowOverlap: true }] });
   const changed = addClipToBoardModel(customized, clipA);
   assert.deepEqual({ grid: changed.boards[0].grid, navigation: changed.boards[0].navigation, allowOverlap: changed.boards[0].allowOverlap }, { grid: '3x4', navigation: 'scroll', allowOverlap: true });
   assert.throws(() => parseBoardCollection({ ...customized, boards: [{ ...customized.boards[0], grid: '5x5' }] }), /grid size/);
+});
+
+test('board page index migrates from legacy snapshots and remains independent across boards and JSON round trips', () => {
+  const legacy = emptyBoardCollection();
+  delete legacy.boards[0].pageIndex;
+  const migrated = parseBoardCollection(legacy);
+  assert.equal(migrated.boards[0].pageIndex, 0);
+
+  const secondBoard = createBoardModel(migrated, 'Second');
+  const firstId = migrated.activeBoardId;
+  const secondId = secondBoard.activeBoardId;
+  const pageState = setBoardPreferencesModel(secondBoard, firstId, { pageIndex: 2 });
+  const independent = setBoardPreferencesModel(pageState, secondId, { pageIndex: 5 });
+  const restored = parseBoardCollection(JSON.parse(JSON.stringify(independent)));
+  assert.equal(restored.boards.find((board) => board.id === firstId).pageIndex, 2);
+  assert.equal(restored.boards.find((board) => board.id === secondId).pageIndex, 5);
+  assert.equal(restored.activeBoardId, secondId);
+  assert.throws(() => setBoardPreferencesModel(independent, firstId, { pageIndex: -1 }), /page index/);
+  assert.throws(() => setBoardPreferencesModel(independent, firstId, { pageIndex: 1.5 }), /page index/);
+});
+
+test('scrollbar side defaults right, persists independently per board, and rejects invalid values', () => {
+  const legacy = emptyBoardCollection();
+  delete legacy.boards[0].scrollbarSide;
+  const migrated = parseBoardCollection(legacy);
+  assert.equal(migrated.boards[0].scrollbarSide, 'right');
+  const second = createBoardModel(migrated, 'Second');
+  const firstId = migrated.activeBoardId;
+  const secondId = second.activeBoardId;
+  const leftFirst = setBoardPreferencesModel(second, firstId, { scrollbarSide: 'left' });
+  const independent = setBoardPreferencesModel(leftFirst, secondId, { scrollbarSide: 'right' });
+  const restored = parseBoardCollection(JSON.parse(JSON.stringify(independent)));
+  assert.deepEqual(restored.boards.map(({ scrollbarSide }) => scrollbarSide), ['left', 'right']);
+  assert.throws(() => parseBoardCollection({ ...independent, boards: [{ ...independent.boards[0], scrollbarSide: 'top' }, independent.boards[1]] }), /scrollbar side/);
 });
 
 test('board create/select and clip assignment preserve the collection and explicit empties', () => {
@@ -54,6 +93,67 @@ test('board create/select and clip assignment preserve the collection and explic
   assert.equal(main.pads[0].clipId, clipA);
   assert.equal(main.pads[1].clipId, null);
   assert.equal(assigned.activeBoardId, initial.activeBoardId);
+});
+
+test('renaming a board trims its name while preserving pads, preferences, other boards, and selection', () => {
+  const initial = emptyBoardCollection();
+  const boardId = initial.activeBoardId;
+  let state = createBoardModel(initial, 'Second');
+  state = parseBoardCollection({ ...state, activeBoardId: boardId, boards: state.boards.map((board) => board.id === boardId ? { ...board, grid: '3x4', navigation: 'scroll', allowOverlap: true } : board) });
+  state = addClipToBoardModel(state, clipA, boardId);
+  state = renamePadModel(state, boardId, state.boards[0].pads[0].id, 'Keep this label');
+  const beforeOtherBoard = structuredClone(state.boards[1]);
+  const renamed = renameBoardModel(state, boardId, '  Main sounds  ');
+  const roundTrip = parseBoardCollection(JSON.parse(JSON.stringify(renamed)));
+
+  assert.equal(roundTrip.activeBoardId, boardId);
+  assert.equal(roundTrip.boards[0].name, 'Main sounds');
+  assert.deepEqual(roundTrip.boards[0].pads, state.boards[0].pads);
+  assert.deepEqual({ grid: roundTrip.boards[0].grid, navigation: roundTrip.boards[0].navigation, allowOverlap: roundTrip.boards[0].allowOverlap }, { grid: '3x4', navigation: 'scroll', allowOverlap: true });
+  assert.deepEqual(roundTrip.boards[1], beforeOtherBoard);
+  assert.equal(state.boards[0].name, 'Main', 'renaming leaves the input collection unchanged');
+});
+
+test('board rename rejects blank, overlong, and missing board names without changing input', () => {
+  const state = emptyBoardCollection();
+  const before = structuredClone(state);
+  assert.throws(() => renameBoardModel(state, state.activeBoardId, '  '), /Give this board a name/);
+  assert.throws(() => renameBoardModel(state, state.activeBoardId, 'x'.repeat(41)), /40 characters or fewer/);
+  assert.throws(() => renameBoardModel(state, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'Renamed'), /board no longer exists/);
+  assert.deepEqual(state, before);
+});
+
+test('board deletion removes only the selected board, retains clips, and selects a neighboring board safely', () => {
+  let state = createBoardModel(emptyBoardCollection(), 'Second');
+  const firstId = state.boards[0].id;
+  const secondId = state.boards[1].id;
+  const clipState = addClipToBoardModel(state, clipA, firstId);
+  const activeSecond = selectBoardModel(clipState, secondId);
+  const deletedActive = deleteBoardModel(activeSecond, secondId);
+  assert.deepEqual(deletedActive.boards.map(({ id }) => id), [firstId]);
+  assert.equal(deletedActive.activeBoardId, firstId);
+  assert.equal(deletedActive.boards[0].pads[0].clipId, clipA);
+  assert.equal(activeSecond.boards.length, 2, 'deletion does not mutate the input');
+  assert.throws(() => deleteBoardModel(deletedActive, firstId), /at least one board/);
+  assert.throws(() => deleteBoardModel(state, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'), /board no longer exists/);
+  assert.deepEqual(deleteBoardModel(state, firstId).boards.map(({ id }) => id), [secondId]);
+});
+
+test('board reorder moves complete records, persists order, and keeps active selection stable', () => {
+  const first = emptyBoardCollection();
+  let state = createBoardModel(first, 'Second');
+  state = createBoardModel(state, 'Third');
+  const [main, second, third] = state.boards;
+  state = addClipToBoardModel(state, clipA, second.id);
+  const active = selectBoardModel(state, third.id);
+  const reordered = reorderBoardModel(active, third.id, main.id);
+  assert.deepEqual(reordered.boards.map(({ id }) => id), [third.id, main.id, second.id]);
+  assert.equal(reordered.activeBoardId, third.id);
+  assert.equal(reordered.boards[2].pads[0].clipId, clipA);
+  assert.deepEqual(parseBoardCollection(JSON.parse(JSON.stringify(reordered))), reordered);
+  assert.deepEqual(reorderBoardModel(reordered, third.id, third.id), reordered);
+  assert.throws(() => reorderBoardModel(reordered, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', main.id), /board no longer exists/);
+  assert.throws(() => reorderBoardModel(reordered, third.id, 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'), /destination board no longer exists/);
 });
 
 test('clear and library deletion remove references while retaining each empty pad', () => {

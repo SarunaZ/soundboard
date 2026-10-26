@@ -1,0 +1,171 @@
+{
+  "summary": {
+    "date": "2026-10-24",
+    "checked": 40,
+    "passed": 40,
+    "failed": [],
+    "errors": []
+  },
+  "checks": [
+    {
+      "name": "Loaded Board and approved transparent logo",
+      "passed": true
+    },
+    {
+      "name": "Board has quick add first",
+      "passed": true
+    },
+    {
+      "name": "Pad colors unique for seeded first page",
+      "passed": true
+    },
+    {
+      "name": "Pad menu hidden until Edit Board",
+      "passed": true
+    },
+    {
+      "name": "Pad menus show in Edit Board",
+      "passed": true
+    },
+    {
+      "name": "Pad menus disappear after Done",
+      "passed": true
+    },
+    {
+      "name": "App navigation only three tabs",
+      "passed": true
+    },
+    {
+      "name": "Global overflow has no direct Choose Theme",
+      "passed": true
+    },
+    {
+      "name": "Global overflow has Settings",
+      "passed": true
+    },
+    {
+      "name": "Appearance remains in global Settings",
+      "passed": true
+    },
+    {
+      "name": "All nine themes in Appearance",
+      "passed": true
+    },
+    {
+      "name": "Dark themes available",
+      "passed": true
+    },
+    {
+      "name": "Vanilla theme background renders",
+      "passed": true
+    },
+    {
+      "name": "Chocolate theme background renders",
+      "passed": true
+    },
+    {
+      "name": "Grape theme background renders",
+      "passed": true
+    },
+    {
+      "name": "Nut theme background renders",
+      "passed": true
+    },
+    {
+      "name": "Blackberry theme background renders",
+      "passed": true
+    },
+    {
+      "name": "Editor redundant page heading and description removed",
+      "passed": true
+    },
+    {
+      "name": "Editor primary device recording still present",
+      "passed": true
+    },
+    {
+      "name": "Library redundant heading and description removed",
+      "passed": true
+    },
+    {
+      "name": "Library capture CTA removed",
+      "passed": true
+    },
+    {
+      "name": "Library bottom add sound CTA removed",
+      "passed": true
+    },
+    {
+      "name": "Library starts with search",
+      "passed": true
+    },
+    {
+      "name": "Artwork details have just Default and Open gallery",
+      "passed": true
+    },
+    {
+      "name": "No remote image-search UI",
+      "passed": true
+    },
+    {
+      "name": "Artwork hints mention local gallery",
+      "passed": true
+    },
+    {
+      "name": "Gallery source changes artwork preview",
+      "passed": true
+    },
+    {
+      "name": "Gallery mode is active",
+      "passed": true
+    },
+    {
+      "name": "New sound saved after picking from gallery",
+      "passed": true
+    },
+    {
+      "name": "New sound gets next pastel color index",
+      "passed": true
+    },
+    {
+      "name": "Second new sound gets distinct persisted color",
+      "passed": true
+    },
+    {
+      "name": "Colors are different",
+      "passed": true
+    },
+    {
+      "name": "New pastel pads rendered on Board",
+      "passed": true
+    },
+    {
+      "name": "No pad menus in normal Board mode",
+      "passed": true
+    },
+    {
+      "name": "Grid and navigation controls exist",
+      "passed": true
+    },
+    {
+      "name": "3x4 mode renders 3 columns",
+      "passed": true
+    },
+    {
+      "name": "Scroll mode selected",
+      "passed": true
+    },
+    {
+      "name": "Mobile Board has visible logo",
+      "passed": true
+    },
+    {
+      "name": "Mobile no horizontal document overflow",
+      "passed": true
+    },
+    {
+      "name": "No uncaught browser JS errors",
+      "passed": true
+    }
+  ]
+}
