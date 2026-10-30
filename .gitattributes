@@ -2,3 +2,4 @@
 /.yarn/patches/*.patch text eol=lf
 /scripts/native-ffmpeg/* text eol=lf
 /scripts/native-tests/ffmpeg_decode_probe.c text eol=lf
+/docs/production/privacy-audit-2026-10-28/evidence/** -text

@@ -1,0 +1,77 @@
+[
+  {
+    "family": "posthog",
+    "marker": "posthog",
+    "present": false
+  },
+  {
+    "family": "firebase",
+    "marker": "com.google.firebase",
+    "present": false
+  },
+  {
+    "family": "sentry",
+    "marker": "io.sentry",
+    "present": false
+  },
+  {
+    "family": "amplitude",
+    "marker": "amplitude",
+    "present": false
+  },
+  {
+    "family": "segment",
+    "marker": "com.segment",
+    "present": false
+  },
+  {
+    "family": "appsflyer",
+    "marker": "appsflyer",
+    "present": false
+  },
+  {
+    "family": "adjust",
+    "marker": "com.adjust",
+    "present": false
+  },
+  {
+    "family": "googleAds",
+    "marker": "com.google.android.gms:play-services-ads",
+    "present": false
+  },
+  {
+    "family": "measurement",
+    "marker": "com.google.android.gms:play-services-measurement",
+    "present": false
+  },
+  {
+    "family": "billing",
+    "marker": "com.android.billingclient",
+    "present": false
+  },
+  {
+    "family": "okhttp",
+    "marker": "com.squareup.okhttp3",
+    "present": true
+  },
+  {
+    "family": "fresco",
+    "marker": "com.facebook.fresco",
+    "present": true
+  },
+  {
+    "family": "workManager",
+    "marker": "androidx.work",
+    "present": false
+  },
+  {
+    "family": "startup",
+    "marker": "androidx.startup",
+    "present": true
+  },
+  {
+    "family": "playServices",
+    "marker": "com.google.android.gms:",
+    "present": false
+  }
+]

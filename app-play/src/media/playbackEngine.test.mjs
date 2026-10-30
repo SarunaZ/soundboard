@@ -29,36 +29,47 @@ function makeBuffer({ duration, length, numberOfChannels, sampleRate, value = 1,
 }
 
 function makeHarness() {
-  const h = { time: 5, sources: [], gains: [], shapers: [], outputBufferCreations: 0, activeDecodes: 0, maxConcurrentDecodes: 0, deferEndedOnStop: false, resumePromise: null, decode: (uri) => Promise.resolve({
+  const h = { time: 5, sources: [], gains: [], shapers: [], contexts: [], outputBufferCreations: 0, activeDecodes: 0, maxConcurrentDecodes: 0, deferEndedOnStop: false, resumePromise: null, closePromise: null, decode: (uri) => Promise.resolve({
     ...makeBuffer({ duration: 2, length: 96_000, numberOfChannels: 2, sampleRate: 48_000 }), uri,
   }) };
-  h.context = {
-    state: 'running',
-    resumeCalls: 0,
-    suspendCalls: 0,
-    async resume() { this.resumeCalls += 1; await h.resumePromise; this.state = 'running'; },
-    async suspend() { this.suspendCalls += 1; this.state = 'suspended'; },
-    get currentTime() { return h.time; },
-    destination: {},
-    decodeAudioData: (uri) => h.decode(uri),
-    createGain: () => {
-      const node = { gain: { value: 1, setValueAtTime(v) { this.value = v; }, linearRampToValueAtTime(v) { this.value = v; } }, connect() {}, disconnect() { this.disconnected = true; } };
-      h.gains.push(node);
-      return node;
-    },
-    createWaveShaper: () => { const node = { curve: null, oversample: 'none', connect() {} }; h.shapers.push(node); return node; },
-    createBuffer: (numberOfChannels, length, sampleRate) => {
-      h.outputBufferCreations += 1;
-      return makeBuffer({ duration: length / sampleRate, length, numberOfChannels, sampleRate, value: 0 });
-    },
-    createBufferSource: () => {
-      const source = { buffer: null, loop: false, onEnded: null, starts: [], stops: [], connect() {},
-        start(when) { this.starts.push(when); }, stop(when) { this.stops.push(when); if (when <= h.time + 0.01) { if (h.deferEndedOnStop) this.pendingEnded = true; else queueMicrotask(() => this.onEnded?.({})); } },
-        disconnect() { this.disconnected = true; }, end() { this.onEnded?.({}); } };
-      h.sources.push(source);
-      return source;
-    },
+  h.makeContext = () => {
+    const context = {
+      state: h.newContextState ?? 'running',
+      resumeCalls: 0,
+      suspendCalls: 0,
+      closeCalls: 0,
+      async resume() {
+        this.resumeCalls += 1;
+        try { await h.resumePromise; this.state = 'running'; }
+        catch (error) { if (h.clearResumePromiseOnReject) h.resumePromise = null; throw error; }
+      },
+      async suspend() { this.suspendCalls += 1; this.state = 'suspended'; },
+      async close() { this.closeCalls += 1; await h.closePromise; this.state = 'closed'; },
+      get currentTime() { return h.time; },
+      destination: {},
+      decodeAudioData: (uri) => h.decode(uri),
+      createGain: () => {
+        const node = { gain: { value: 1, setValueAtTime(v) { this.value = v; }, linearRampToValueAtTime(v) { this.value = v; } }, connect() {}, disconnect() { this.disconnected = true; } };
+        h.gains.push(node);
+        return node;
+      },
+      createWaveShaper: () => { const node = { curve: null, oversample: 'none', connect() {} }; h.shapers.push(node); return node; },
+      createBuffer: (numberOfChannels, length, sampleRate) => {
+        h.outputBufferCreations += 1;
+        return makeBuffer({ duration: length / sampleRate, length, numberOfChannels, sampleRate, value: 0 });
+      },
+      createBufferSource: () => {
+        const source = { buffer: null, loop: false, onEnded: null, starts: [], stops: [], connect() {},
+          start(when) { this.starts.push(when); }, stop(when) { this.stops.push(when); if (when <= h.time + 0.01) { if (h.deferEndedOnStop) this.pendingEnded = true; else queueMicrotask(() => this.onEnded?.({})); } },
+          disconnect() { this.disconnected = true; }, end() { this.onEnded?.({}); } };
+        h.sources.push(source);
+        return source;
+      },
+    };
+    h.contexts.push(context);
+    return context;
   };
+  h.context = h.makeContext();
   return h;
 }
 
@@ -75,7 +86,7 @@ async function loadEngine(t) {
     .replace("from 'react-native';", "from './fakeReactNative.mjs';")
     .replace("from 'react-native-audio-api/lib/module/system/AudioManager';", "from './fakeAudioManager.mjs';")
     .replace("from './nativePlaybackPreparation';", "from './fakePreparation.mjs';");
-  writeFileSync(fakePath, 'export default class FakeAudioContext { constructor() { return globalThis.__playbackHarness.context; } }');
+  writeFileSync(fakePath, 'export default class FakeAudioContext { constructor() { const h = globalThis.__playbackHarness; const index = h.contextIndex ?? 0; const context = h.contexts[index] ?? h.makeContext(); h.contextIndex = index + 1; h.context = context; return context; } }');
   writeFileSync(fakeReactNative, "export const Platform = { get OS() { return globalThis.__playbackHarness.platform; } };");
   writeFileSync(fakeAudioManager, 'export default globalThis.__playbackHarness.audioManager;');
   writeFileSync(fakePreparation, `
@@ -215,20 +226,140 @@ test('a cancelled deferred resume is suspended after it finishes in the backgrou
   assert.equal(harness.sources.length, 0);
 });
 
-test('a rejected context resume rejects play while a pending decode stays inert', async (t) => {
+test('a rejected context resume discards the old decode and retries on a fresh suspended context', async (t) => {
   const { engine, harness } = await loadEngine(t);
   const resume = deferred();
   const decode = deferred();
+  const failedContext = harness.context;
   harness.resumePromise = resume.promise;
   harness.context.state = 'suspended';
-  harness.decode = () => decode.promise;
+  let decodeCalls = 0;
+  harness.decode = () => ++decodeCalls === 1
+    ? decode.promise
+    : Promise.resolve(makeBuffer({ duration: 1, length: 48_000, numberOfChannels: 1, sampleRate: 48_000 }));
+  harness.newContextState = 'suspended';
+  harness.clearResumePromiseOnReject = true;
   const pending = engine.play('decode-pending-on-resume-failure', 'pad-resume-failure');
   await new Promise((resolve) => setTimeout(resolve, 0));
   resume.reject(new Error('resume failed'));
-  await assert.rejects(pending, /resume failed/);
-  assert.equal(harness.sources.length, 0);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failedContext.closeCalls, 1);
   decode.resolve(makeBuffer({ duration: 1, length: 48_000, numberOfChannels: 1, sampleRate: 48_000 }));
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await pending;
+  assert.equal(decodeCalls, 2);
+  assert.equal(harness.contexts.length, 2);
+  assert.equal(harness.context.resumeCalls, 1, 'the replacement context resumes once before scheduling');
+  assert.equal(harness.sources.length, 1);
+  assert.equal(engine.getPlaybackSnapshot().voices[0].padId, 'pad-resume-failure');
+});
+
+test('a failed native resume retries the triggering pad once on a fresh context', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const failedContext = harness.context;
+  harness.context.state = 'suspended';
+  harness.resumePromise = Promise.reject(new Error('Failed to resume audio context.'));
+  harness.newContextState = 'suspended';
+  harness.clearResumePromiseOnReject = true;
+  await engine.play('resume-recovers', 'pad-recovers');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failedContext.closeCalls, 1);
+  assert.equal(harness.contexts.length, 2);
+  assert.notEqual(harness.context, failedContext);
+  assert.equal(harness.sources.length, 1);
+  assert.equal(engine.getPlaybackSnapshot().voices[0].padId, 'pad-recovers');
+  await engine.play('resume-next-tap', 'pad-next');
+  assert.equal(harness.sources.length, 2);
+  assert.equal(engine.getPlaybackSnapshot().voices[0].padId, 'pad-next');
+});
+
+test('persistent resume failure is bounded to one replacement attempt', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const failure = new Error('Failed to resume audio context.');
+  harness.context.state = 'suspended';
+  harness.newContextState = 'suspended';
+  harness.resumePromise = Promise.reject(failure);
+  await assert.rejects(engine.play('persistent-resume-failure', 'pad-persistent'), /Failed to resume audio context/);
+  assert.equal(harness.contexts.length, 2, 'the single recovery attempt must not loop');
+  assert.equal(harness.contexts[0].closeCalls, 1);
+  assert.equal(harness.contexts[1].closeCalls, 1);
+  assert.equal(harness.sources.length, 0);
+});
+
+test('a closed AudioContext is replaced before any source is scheduled', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const closedContext = harness.context;
+  closedContext.state = 'closed';
+  await engine.play('closed-context-recovery', 'pad-closed-context');
+  assert.equal(closedContext.closeCalls, 1);
+  assert.equal(harness.contexts.length, 2);
+  assert.notEqual(harness.context, closedContext);
+  assert.equal(harness.sources.length, 1);
+  assert.equal(engine.getPlaybackSnapshot().voices[0].padId, 'pad-closed-context');
+});
+
+test('concurrent resume failures retire the shared context once and cancel every request', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const failedContext = harness.context;
+  const resume = deferred();
+  harness.context.state = 'suspended';
+  harness.resumePromise = resume.promise;
+  const first = engine.play('resume-concurrent-a', 'pad-a', { protected: true });
+  const second = engine.play('resume-concurrent-b', 'pad-b', { allowOverlap: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  resume.reject(new Error('Failed to resume audio context.'));
+  await Promise.all([first, second]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failedContext.closeCalls, 1);
+  assert.equal(engine.getPlaybackSnapshot().voices.length, 1);
+  assert.equal(harness.audioManager.observeCalls.at(-1), 'gainTransientMayDuck');
+
+  assert.equal(harness.sources.length, 1);
+  assert.equal(harness.contexts.length, 2);
+  assert.equal(engine.getPlaybackSnapshot().voices[0].padId, 'pad-b');
+});
+
+test('stop during failed-context recovery cancels pending playback and releases focus', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const failedContext = harness.context;
+  const resume = deferred();
+  const close = deferred();
+  harness.context.state = 'suspended';
+  harness.resumePromise = resume.promise;
+  harness.closePromise = close.promise;
+  const pending = engine.play('stop-during-recovery', 'pad-stop', { protected: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  resume.reject(new Error('Failed to resume audio context.'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failedContext.closeCalls, 1);
+  const duringRecovery = engine.play('tap-during-recovery', 'pad-during-recovery');
+  engine.stop();
+  close.resolve();
+  await Promise.all([pending, duringRecovery]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failedContext.closeCalls, 1);
+  assert.equal(harness.contexts.length, 1, 'Stop before teardown finishes prevents opening a replacement stream');
+  assert.equal(harness.sources.length, 0);
+  assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
+  assert.equal(harness.audioManager.observeCalls.at(-1), false);
+});
+
+test('stopPad during failed-context close prevents only that pad from retrying', async (t) => {
+  const { engine, harness } = await loadEngine(t);
+  const failedContext = harness.context;
+  const resume = deferred();
+  const close = deferred();
+  harness.context.state = 'suspended';
+  harness.resumePromise = resume.promise;
+  harness.closePromise = close.promise;
+  const pending = engine.play('stop-pad-during-recovery', 'pad-stop-one');
+  await new Promise((resolve) => setImmediate(resolve));
+  resume.reject(new Error('Failed to resume audio context.'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(failedContext.closeCalls, 1);
+  engine.stopPad('pad-stop-one');
+  close.resolve();
+  await pending;
+  assert.equal(harness.contexts.length, 1, 'a pad-specific stop must suppress replacement stream creation for that request');
   assert.equal(harness.sources.length, 0);
   assert.deepEqual(engine.getPlaybackSnapshot(), { voices: [], pendingProtected: [], active: false });
 });

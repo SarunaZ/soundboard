@@ -1,5 +1,30 @@
 # Soundboard — Steps
 
+**Play first-run onboarding (2026-10-30):** [implementation record](docs/play-first-run-onboarding-2026-10-30.md).
+Welcome leads to explicit Share usage analytics / Continue without analytics
+choices. Both enter the app; completion is stored independently. Device analytics
+activation is closed pending the reviewed beta requirements. Existing testers
+without a completion marker see onboarding once. The [Android 36 emulator review](docs/play-onboarding-emulator-2026-10-30.md)
+passes the flow, Vanilla/Grape and large-text/narrow-screen checks after UI fixes;
+physical-device and final release-artifact verification remain open.
+
+**Play optional analytics (2026-10-28):** the [implementation record](docs/play-product-analytics-2026-10-28.md)
+describes consent/identity isolation, sanitized events, privacy UI and default-off
+build wiring. Source tests, TypeScript, staging and production JS exports pass.
+The private 1.0.30/code 31 APK was built and installed; bounded physical consent
+checks and six event types were verified against the actual EU project. See the
+[phone QA record](docs/play-product-analytics-phone-2026-10-28.md). Full traffic
+inspection, retention facts and public disclosure approval remain open. Nothing
+was submitted or publicly released.
+
+**Play creation regression fixes (2026-10-26):** playback context recovery and
+Android naming-screen keyboard layout are patched in source. See the
+[verification record](docs/play-creation-recovery-2026-10-26.md). The signed
+1.0.29/code 30 update was installed on the Samsung phone with its data identity
+preserved and is now superseded by the code 31 analytics testing update. Broader
+physical checks of create → name → save/assign → playback remain pending;
+the corresponding production acceptance gates remain open.
+
 **Google Play release readiness (2026-10-25):** see the [per-item production
 tracker](docs/production/ANDROID_PRODUCTION_READINESS.md) and its [release
 runbook](docs/production/release-runbook.md). The owner-approved final Play

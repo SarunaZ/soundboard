@@ -17,6 +17,9 @@ import { formatTime, Waveform } from './Waveform';
 import { pickGalleryArtwork } from './ArtworkPicker';
 import { Icon } from './Icons';
 import { TrimPreviewController, type TrimPreviewState } from '../media/trimPreview';
+import { getAnalyticsEpoch, trackAnalytics } from '../analytics/productAnalytics';
+import type { CreationSource } from '../analytics/schema';
+import { createCreateFlowAnalytics } from './createFlowAnalytics';
 
 export type AssignmentTarget = { boardId: string; padId?: string; expectedClipId?: string | null } | null;
 export type InitialAction = 'file' | 'record' | 'device-audio';
@@ -52,8 +55,8 @@ function waitForForeground(signal: AbortSignal): Promise<boolean> {
   });
 }
 
-export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: {
-  theme: Theme; target: AssignmentTarget; initialAction?: InitialAction; onCancel: () => void; onSaved: (clip: LocalClip, target: AssignmentTarget, artwork?: DraftArtwork) => Promise<boolean>;
+export function CreateFlow({ theme, target, initialAction, analyticsEpoch, onCancel, onSaved }: {
+  theme: Theme; target: AssignmentTarget; initialAction?: InitialAction; analyticsEpoch: number | null; onCancel: () => void; onSaved: (clip: LocalClip, target: AssignmentTarget, artwork?: DraftArtwork) => Promise<boolean>;
 }) {
   const [step, setStep] = useState<Step>('source');
   const [source, setSource] = useState<LocalAudioSource | null>(null);
@@ -99,6 +102,16 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
   const scrollRef = useRef<ScrollView | null>(null);
   const nameInputRef = useRef<TextInput | null>(null);
   const keyboardReveal = useKeyboardInputReveal(scrollRef, true);
+  const flowAnalyticsRef = useRef<ReturnType<typeof createCreateFlowAnalytics> | null>(null);
+  if (!flowAnalyticsRef.current) flowAnalyticsRef.current = createCreateFlowAnalytics(analyticsEpoch, getAnalyticsEpoch, trackAnalytics);
+  const flowAnalytics = flowAnalyticsRef.current;
+
+  function startAnalyticsFlow(source: CreationSource) { flowAnalytics.start(source); }
+  function trackCreationFailure(stage: 'permission' | 'capture' | 'import' | 'trim' | 'save', errorClass: 'permission_denied' | 'unavailable' | 'invalid_media' | 'limit_exceeded' | 'capture_failed' | 'processing_failed' | 'save_failed' | 'unknown', sourceHint?: CreationSource) {
+    flowAnalytics.failed(stage, errorClass, sourceHint);
+  }
+  function trackTrimViewed() { flowAnalytics.trimViewed(); }
+  function adoptAnalyticsSource(source: CreationSource) { flowAnalytics.adopt(source); }
 
   useEffect(() => {
     sourceRef.current = source;
@@ -220,6 +233,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
 
   async function startRecording() {
     if (busy || recorderRef.current || deviceCaptureRef.current || permissionPendingRef.current) return;
+    startAnalyticsFlow('mic');
     const op = new AbortController(); controller.current = op;
     permissionPendingRef.current = true;
     setBusy(true); setMessage('Allow microphone access to record a sound.');
@@ -230,6 +244,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       permissionPendingRef.current = false;
       if (!mountedRef.current || op.signal.aborted) return;
       if (!permission.granted) {
+        if (permission.status === 'denied') trackCreationFailure('permission', 'permission_denied', 'mic');
         setMessage('Microphone access is off. Allow microphone access in your device settings, then try again.');
         return;
       }
@@ -255,6 +270,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
         await recorder.dispose().catch(() => {});
       }
       const detail = error instanceof Error ? error.message : 'Microphone access was not available.';
+      trackCreationFailure('capture', 'capture_failed', 'mic');
       if (mountedRef.current) setMessage(detail);
     } finally { permissionPendingRef.current = false; if (mountedRef.current) setBusy(false); }
   }
@@ -266,6 +282,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     const op = new AbortController(); controller.current = op;
     try {
       const captured = await recorder.stop(op.signal);
+      flowAnalytics.recordingCompleted('mic', captured.durationMs / 1000);
       await recorder.dispose().catch(() => {});
       pendingCaptureRef.current = captured;
       if (op.signal.aborted) { pendingCaptureRef.current = null; void disposeLocalAudioSource(captured); return; }
@@ -287,6 +304,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       await recorder.cancel().catch(() => {});
       await recorder.dispose().catch(() => {});
       recorderRef.current = null;
+      if (!op.signal.aborted) trackCreationFailure('capture', 'capture_failed', 'mic');
       if (!op.signal.aborted) setMessage(error instanceof Error ? error.message : 'Could not finish this recording. Try again.');
       setBusy(false);
     }
@@ -294,7 +312,8 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
 
   async function startDeviceCapture() {
     if (busy || recorderRef.current || deviceCaptureRef.current || permissionPendingRef.current) return;
-    if (!isDeviceAudioCaptureSupported()) { setMessage('Device audio capture is unavailable in this build or on this device. Import a file or record with the microphone instead.'); return; }
+    startAnalyticsFlow('device');
+    if (!isDeviceAudioCaptureSupported()) { trackCreationFailure('capture', 'unavailable', 'device'); setMessage('Device audio capture is unavailable in this build or on this device. Import a file or record with the microphone instead.'); return; }
     const capture = createDeviceAudioCaptureController();
     deviceCaptureRef.current = capture;
     deviceResultHandledRef.current = false;
@@ -312,6 +331,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
         try { await capture.cancel(); deviceCaptureRef.current = null; setDeviceStatus(null); setMessage('Recording consent was cancelled. Nothing was saved.'); }
         catch (error) { setMessage(error instanceof Error ? error.message : 'Device audio cleanup is still finishing.'); }
       } else if (status.state === 'failed') {
+        trackCreationFailure('capture', 'unavailable', 'device');
         try { await capture.cancel(); deviceCaptureRef.current = null; setDeviceStatus(null); setMessage(status.error || 'Could not start device audio recording.'); }
         catch (error) { setMessage(error instanceof Error ? error.message : 'Device audio cleanup is still finishing.'); }
       } else if (status.state === 'ready') {
@@ -321,6 +341,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       }
     } catch (error) {
       setDeviceStatus(capture.getStatus());
+      trackCreationFailure('capture', 'capture_failed', 'device');
       setMessage(error instanceof Error ? error.message : 'Could not start device audio recording.');
       try { await capture.cancel(); if (deviceCaptureRef.current === capture) deviceCaptureRef.current = null; setDeviceStatus(null); }
       catch (cleanupError) { setDeviceStatus(capture.getStatus()); setMessage(cleanupError instanceof Error ? cleanupError.message : 'Device audio cleanup is still finishing. Use Discard to retry cleanup.'); }
@@ -336,11 +357,14 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       if (!mountedRef.current || capture !== deviceCaptureRef.current) return;
       setDeviceStatus(status);
       if (status.state === 'ready') await finishDeviceCapture(capture);
-      else if (status.state === 'recording') setMessage((current) => current.startsWith('Complete the Android permission') || current.startsWith('Android will ask for audio permission')
-        ? 'Recording device audio. Switch to a compatible app, then return here or use Stop in the notification.' : current);
+      else if (status.state === 'recording') {
+        setMessage((current) => current.startsWith('Complete the Android permission') || current.startsWith('Android will ask for audio permission')
+          ? 'Recording device audio. Switch to a compatible app, then return here or use Stop in the notification.' : current);
+      }
       else if (status.state === 'stopping') setMessage((current) => current.startsWith('Complete the Android permission') || current.startsWith('Recording device audio. Switch')
         ? 'Finishing device audio…' : current);
       else if (status.state === 'failed' || status.state === 'cancelled') {
+        if (status.state === 'failed') trackCreationFailure('capture', 'capture_failed', 'device');
         deviceResultHandledRef.current = true;
         setMessage(status.error || (status.state === 'cancelled' ? 'Device audio recording was cancelled. Nothing was saved.' : 'Device audio recording could not be completed.'));
         try {
@@ -377,6 +401,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       }
     } catch (error) {
       if (!op.signal.aborted && mountedRef.current) {
+        trackCreationFailure('capture', 'capture_failed', 'device');
         setMessage(`${error instanceof Error ? error.message : 'Could not finish device audio recording.'} Try again, record with the microphone, or import a file.`);
         try {
           await capture.cancel();
@@ -403,6 +428,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       await offerDeviceCapturedSource(capture, adopted.source, adopted.quiet);
     } catch (error) {
       if (mountedRef.current && !signal?.aborted) {
+        trackCreationFailure('capture', 'processing_failed', 'device');
         setMessage(`${error instanceof Error ? error.message : 'Could not open the captured audio.'} It may be silence or the source app may limit capture. Try again, use the microphone, or import a file.`);
         try {
           await capture.cancel();
@@ -423,9 +449,10 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       return;
     }
     deviceSourceOfferedRef.current = true;
+    flowAnalytics.recordingCompleted('device', captured.durationMs / 1000);
     if (deviceCaptureRef.current === capture) deviceCaptureRef.current = null;
     setDeviceStatus(null);
-    await offerCapturedSource(captured, 'Device audio recording', quiet);
+    await offerCapturedSource(captured, 'Device audio recording', quiet, 'device');
   }
 
   async function discardDeviceCapture() {
@@ -449,7 +476,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     ]);
   }
 
-  async function offerCapturedSource(captured: LocalAudioSource, title: string, quiet = false) {
+  async function offerCapturedSource(captured: LocalAudioSource, title: string, quiet = false, sourceKind: CreationSource = 'mic') {
     pendingCaptureRef.current = captured;
     if (!mountedRef.current) { pendingCaptureRef.current = null; await disposeLocalAudioSource(captured); return; }
     if (quiet) {
@@ -463,7 +490,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
           if (pendingCaptureRef.current === captured) pendingCaptureRef.current = null;
           void disposeLocalAudioSource(captured); setBusy(false); setMessage('The quiet recording was discarded. Your existing draft is ready.');
         } }] : []),
-        { text: sourceRef.current ? 'Replace and review' : 'Review recording', onPress: () => { void adoptRecording(captured, title, true); } },
+        { text: sourceRef.current ? 'Replace and review' : 'Review recording', onPress: () => { void adoptRecording(captured, title, true, sourceKind); } },
       ]);
       return;
     }
@@ -474,19 +501,21 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
           void disposeLocalAudioSource(captured);
           setBusy(false); setMessage('Recording discarded. Your existing draft is ready.');
         } },
-        { text: 'Review recording', onPress: () => { void adoptRecording(captured, title, quiet); } },
+        { text: 'Review recording', onPress: () => { void adoptRecording(captured, title, quiet, sourceKind); } },
       ]);
-    } else await adoptRecording(captured, title, quiet);
+    } else await adoptRecording(captured, title, quiet, sourceKind);
   }
 
-  async function adoptRecording(captured: LocalAudioSource, title = 'My recording', quiet = false) {
+  async function adoptRecording(captured: LocalAudioSource, title = 'My recording', quiet = false, sourceKind: CreationSource = 'mic') {
     if (pendingCaptureRef.current === captured) pendingCaptureRef.current = null;
     if (!mountedRef.current) { await disposeLocalAudioSource(captured); return; }
     const current = sourceRef.current;
     if (current) await disposeLocalAudioSource(current);
     if (!mountedRef.current) { await disposeLocalAudioSource(captured); return; }
     clearArtwork();
+    adoptAnalyticsSource(sourceKind);
     sourceRef.current = captured; setSource(captured); setName(title); setStartMs(0); setEndMs(Math.min(60_000, captured.durationMs)); setRender(null); setFineTune(false); setStep('trim'); setMessage(quiet ? 'This capture is very quiet. Review the waveform and preview it; retry if you hear no useful audio.' : ''); setBusy(false); setRecordingElapsedMs(0);
+    trackTrimViewed();
   }
 
   function requestCancel() {
@@ -526,6 +555,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
     controller.current?.abort();
     const previous = sourceRef.current;
     const previousStep = step;
+    startAnalyticsFlow('file');
     setBusy(true); setMessage('Choose one audio file to begin.'); setStep('source');
     const op = new AbortController(); controller.current = op;
     try {
@@ -535,8 +565,13 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       if (previous) await disposeLocalAudioSource(previous);
       if (op.signal.aborted) { void disposeLocalAudioSource(picked); return; }
       clearArtwork();
+      adoptAnalyticsSource('file');
       sourceRef.current = picked; setSource(picked); setName(picked.title.slice(0, 100)); setStartMs(0); setEndMs(Math.min(60_000, picked.durationMs)); setRender(null); setFineTune(false); setStep('trim'); setMessage('');
-    } catch (error) { if (!op.signal.aborted) { setStep(previousStep); setMessage(error instanceof Error ? error.message : 'Could not open that audio file.'); } }
+      trackTrimViewed();
+    } catch (error) { if (!op.signal.aborted) {
+      trackCreationFailure('import', 'unknown', 'file');
+      setStep(previousStep); setMessage(error instanceof Error ? error.message : 'Could not open that audio file.');
+    } }
     finally { if (!op.signal.aborted) setBusy(false); }
   }
 
@@ -613,7 +648,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       if (op.signal.aborted) return;
       setRender(rendered); setStep('customize'); setMessage('');
     } catch (error) {
-      if (!op.signal.aborted) setMessage(error instanceof Error ? error.message : 'Could not render this range.');
+      if (!op.signal.aborted) { trackCreationFailure('trim', 'processing_failed'); setMessage(error instanceof Error ? error.message : 'Could not render this range.'); }
     } finally { if (!op.signal.aborted) setBusy(false); }
   }
 
@@ -630,6 +665,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       const [color, colorEnd] = padGradientStops(colorIndex);
       const clip = await saveLocalAudioRender(source, render, cleanName, op.signal);
       if (op.signal.aborted) return;
+      flowAnalytics.saved((endMs - startMs) / 1000, artworkRef.current ? 'gallery' : 'default');
       try {
         const assigned = await onSaved({ ...clip, icon, color, colorEnd, colorIndex }, target, artworkRef.current ?? undefined);
         // The app callback owns the local artwork after it copies it into library storage.
@@ -642,6 +678,7 @@ export function CreateFlow({ theme, target, initialAction, onCancel, onSaved }: 
       onCancel();
     } catch (error) {
       if (!op.signal.aborted) {
+        trackCreationFailure('save', 'save_failed');
         setMessage(error instanceof Error ? error.message : 'Could not save this sound. You can retry.');
         saveLocked.current = false;
       }

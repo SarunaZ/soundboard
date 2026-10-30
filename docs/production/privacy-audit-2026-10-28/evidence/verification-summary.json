@@ -1,0 +1,29 @@
+{
+  "assessmentDate": "2026-10-28",
+  "playTests": {
+    "pass": 206,
+    "log": "data/privacy-audit-20261028-play-tests.log",
+    "fail": 0
+  },
+  "boundaryTests": {
+    "pass": 14,
+    "log": "data/privacy-audit-20261028-boundary-tests.log",
+    "fail": 0
+  },
+  "typeScript": {
+    "log": "data/privacy-audit-20261028-typecheck.log",
+    "exitCode": 0
+  },
+  "stageOnly": {
+    "exitCode": 0,
+    "log": "data/privacy-audit-20261028-stage-current.log",
+    "sourceFiles": 64,
+    "files": 105
+  },
+  "environment": {
+    "dockerEngine": "stopped/unreachable",
+    "adb": "available outside sandbox; zero devices attached",
+    "freshNativeBuild": "not run",
+    "runtimeTrafficCapture": "not run"
+  }
+}

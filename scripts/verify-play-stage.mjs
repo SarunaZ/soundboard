@@ -13,7 +13,7 @@ const allowedAppPlayFiles = new Set([
   'assets/stimyz/android-icon-monochrome.png',
   'assets/stimyz/stimmyz-logo-transparent.png',
 ]);
-const allowedAppPlayTrees = new Set(['src/ui', 'src/types', 'src/data', 'src/media', 'plugins', 'modules-empty']);
+const allowedAppPlayTrees = new Set(['src/ui', 'src/types', 'src/data', 'src/media', 'src/analytics', 'src/onboarding', 'plugins', 'modules-empty']);
 const allowedDevLeaves = new Set([
   'app-client/src/audio/engine.ts',
   'app-client/src/audio/playbackState.ts',

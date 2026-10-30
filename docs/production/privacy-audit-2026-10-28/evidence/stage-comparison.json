@@ -1,0 +1,626 @@
+[
+  {
+    "path": ".yarn/patches/metro-npm-0.84.4-security.patch",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": ".yarn/patches/node-forge-npm-1.4.0-security.patch",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": ".yarnrc.yml",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/package.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/audio/engine.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/audio/playbackState.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/board/reorderGeometry.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/editor/catalog.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/editor/importValidation.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/editor/localAudioPcm.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/keyboard/keyboardGeometry.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/keyboard/useKeyboardInputReveal.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/limits.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/transfer/folderTransfer.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-client/src/types/react-native-audio-api.d.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/.gitignore",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/app.config.js",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/app.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/App.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/assets/stimyz/android-icon-foreground.png",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/assets/stimyz/android-icon-monochrome.png",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/assets/stimyz/icon.png",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/assets/stimyz/stimmyz-logo-transparent.png",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/index.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/package.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/build.gradle",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/CMakeLists.txt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp_jni.cpp",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp.cpp",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp.h",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/CaptureStatus.kt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioCaptureService.kt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioConsentActivity.kt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/NativePlaybackDsp.kt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/PcmWavWriter.kt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparation.kt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/SoundboardDeviceAudioModule.kt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/android/src/test/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparationTest.kt",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/expo-module.config.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/index.d.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/index.js",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/play-native-modules/soundboard-device-audio/package.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/plugins/withDeviceAudioCapture.js",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/plugins/withPlayRelease.js",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/README.md",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/boardModel.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/boards.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/catalog.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/clipPlayback.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/importValidation.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/library.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/openSourceNoticeOverrides.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/openSourceNotices.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/padColors.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/preferences.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/presentation.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/protocol.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/data/snapshot.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/artwork.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/backup.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/backupMerge.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/backupValidation.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/cacheMaintenance.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/deviceAudioCapture.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/localAudio.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/nativePlaybackPreparation.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/playbackDsp.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/playbackEngine.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/recording.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/soundbiteTransfer.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/media/trimPreview.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/types/audioManagerDeepImport.d.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/ArtworkPicker.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/boardHold.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/boardLayout.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/boardNavigation.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/BoardScreen.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/boardScrollRail.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/BrandHeader.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/ClipPlaybackOptionsModal.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/contrast.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/controls.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/CreateFlow.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/EditorScreen.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/Icons.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/LibraryScreen.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/PadGradient.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/quickAddGrid.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/SettingsModal.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/theme.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/Waveform.tsx",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/src/ui/waveformLayout.ts",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "app-play/tsconfig.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "package.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "scripts/assert-play-gradle-security-versions.cjs",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "scripts/check-elf-page-alignment.py",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "scripts/native-ffmpeg/build-android.sh",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "scripts/native-ffmpeg/LICENSE",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "scripts/native-ffmpeg/README.md",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "scripts/native-tests/ffmpeg_decode_probe.c",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "service/package.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "shared/package.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "worker/package.json",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  },
+  {
+    "path": "yarn.lock",
+    "sourceExists": true,
+    "sourceMatches": true,
+    "stageMatches": true
+  }
+]

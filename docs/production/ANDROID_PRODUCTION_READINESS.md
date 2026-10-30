@@ -1,5 +1,13 @@
 # Stimmyz Android production readiness tracker
 
+**Analytics follow-up (30 October 2026):** private 1.0.30/code 31 testing APK
+installed; bounded physical consent checks and EU-project ingestion verified.
+See the [phone QA record](../play-product-analytics-phone-2026-10-28.md).
+This updates the earlier source-only status; public policy, retention facts,
+full traffic inspection and broader release gates remain open.
+
+**Privacy audit update (28 October 2026):** the [dated audit](privacy-audit-2026-10-28/README.md) inspects current source, retained 1.0.29/code 30 packages and the live public policy. App/backup artifact checks and source tests pass, but policy/contact/audience, vendor facts and runtime traffic/device evidence remain release gaps. No production checkbox or release approval is closed by this audit.
+
 **Source checklist:** copied from `C:/Users/Sarunas/Downloads/Stimmyz_Android_Production_Readiness.md` (reviewed 24 Oct 2026). Every source checklist item is retained below with an explicit status and evidence/next step. Checkboxes intentionally remain open until the stated evidence exists.
 
 ## Current release boundary

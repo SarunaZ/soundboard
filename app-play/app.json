@@ -2,13 +2,13 @@
   "expo": {
     "name": "Stimmyz",
     "slug": "stimmyz-play",
-    "version": "1.0.28",
+    "version": "1.0.31",
     "icon": "./assets/stimyz/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "dev.sarunas.soundboard.play",
-      "versionCode": 29,
+      "versionCode": 32,
       "minSdkVersion": 24,
       "targetSdkVersion": 36,
       "compileSdkVersion": 36,

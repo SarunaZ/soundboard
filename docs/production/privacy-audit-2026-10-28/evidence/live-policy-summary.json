@@ -1,0 +1,29 @@
+{
+  "htmlEqualsLocalDist": true,
+  "hasDraft": true,
+  "hasNoindex": true,
+  "hasIdentityPlaceholder": true,
+  "hasEmailPlaceholder": true,
+  "declaredResources": [
+    "/",
+    "/_astro/SiteLayout.B-iTOZG3.css",
+    "/#features",
+    "/#how-it-works",
+    "/#themes",
+    "/assets/app-icon.png",
+    "/assets/logo.png",
+    "/privacy/",
+    "#access",
+    "#changes",
+    "#children",
+    "#controller",
+    "#main",
+    "#overview",
+    "#purposes",
+    "#retention",
+    "#rights",
+    "#sharing",
+    "#storage",
+    "#website"
+  ]
+}

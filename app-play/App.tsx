@@ -24,6 +24,10 @@ import { BrandHeader } from './src/ui/BrandHeader';
 import { useTheme, type ThemeName } from './src/ui/theme';
 import { SettingsModal } from './src/ui/SettingsModal';
 import { ClipPlaybackOptionsModal } from './src/ui/ClipPlaybackOptionsModal';
+import { getAnalyticsEpoch, getAnalyticsStatus, initializeProductAnalytics, recordPlaybackForSummary, setAnalyticsConsent, trackAnalytics, trackUsageSummary } from './src/analytics/productAnalytics';
+import { createDeviceOnboardingStorage } from './src/onboarding/storage';
+import { OnboardingCoordinator } from './src/onboarding/finalize';
+import { OnboardingFlow } from './src/ui/OnboardingFlow';
 
 type Page = 'board' | 'editor' | 'library';
 const stopDockGeometry = boardStopDockGeometry();
@@ -37,8 +41,12 @@ export default function App() {
   const [boards, setBoards] = useState<BoardCollection>(() => emptyBoardCollection());
   const [clips, setClips] = useState<LocalClip[]>([]);
   const [dataReady, setDataReady] = useState(false);
+  const [onboardingState, setOnboardingState] = useState<'loading' | 'welcome' | 'ready'>('loading');
   const [playback, setPlayback] = useState<PlaybackSnapshot>(() => getPlaybackSnapshot());
-  const [flow, setFlow] = useState<{ target: AssignmentTarget; key: number; initialAction?: InitialAction } | null>(null);
+  const [flow, setFlow] = useState<{ target: AssignmentTarget; key: number; initialAction?: InitialAction; analyticsEpoch: number | null } | null>(null);
+  const protectedReported = useRef(new Set<string>());
+  const usageSummaryCounts = useRef({ ready: dataReady, soundCount: clips.length, boardCount: boards.boards.length });
+  usageSummaryCounts.current = { ready: dataReady, soundCount: clips.length, boardCount: boards.boards.length };
   const [assignmentTarget, setAssignmentTarget] = useState<AssignmentTarget>(null);
   const [retry, setRetry] = useState<{ clip: LocalClip; target: AssignmentTarget } | null>(null);
   const [error, setError] = useState('');
@@ -51,8 +59,29 @@ export default function App() {
   const [newBoardRequest, setNewBoardRequest] = useState(0);
   const [pendingNewBoard, setPendingNewBoard] = useState(false);
   const appOptionsButton = useRef<View>(null);
+  const onboardingCoordinator = useRef<OnboardingCoordinator | null>(null);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const closePlaybackOptions = useCallback(() => setPlaybackSoundId(null), []);
+
+  const finishOnboarding = useCallback(async (share: boolean) => {
+    let coordinator = onboardingCoordinator.current;
+    if (!coordinator) {
+      try {
+        coordinator = new OnboardingCoordinator({ storage: await createDeviceOnboardingStorage(), analytics: {
+          initializeProductAnalytics,
+          getAnalyticsStatus,
+          setAnalyticsConsent,
+        } });
+        onboardingCoordinator.current = coordinator;
+      } catch {
+        setError('Your choice applies for this session, but onboarding could not be saved and may appear again after restart.');
+        setOnboardingState('ready'); return;
+      }
+    }
+    const result = await coordinator.finishOnboardingChoice(share);
+    if (result.message) setError(result.message);
+    setOnboardingState('ready');
+  }, []);
 
   const refresh = useCallback(() => {
     try { cleanupStalePlayCache(); initializeLocalLibrary(); setBoards(loadBoards()); setClips(loadLocalClips()); setDataReady(true); }
@@ -61,6 +90,22 @@ export default function App() {
 
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => {
+    let current = true;
+    void (async () => {
+      try {
+        const coordinator = new OnboardingCoordinator({ storage: await createDeviceOnboardingStorage(), analytics: {
+          initializeProductAnalytics,
+          getAnalyticsStatus,
+          setAnalyticsConsent,
+        } });
+        onboardingCoordinator.current = coordinator;
+        const state = await coordinator.resolveStartup();
+        if (current) setOnboardingState(state);
+      } catch { if (current) setOnboardingState('welcome'); }
+    })();
+    return () => { current = false; };
+  }, []);
+  useEffect(() => {
     if (!dataReady || page !== 'board' || !pendingNewBoard) return;
     setNewBoardRequest((request) => request + 1);
     setPendingNewBoard(false);
@@ -68,7 +113,21 @@ export default function App() {
   useEffect(() => { try { setMasterVolume(loadPlayPreferences(isDeviceAudioCaptureSupported()).masterVolume); } catch { setMasterVolume(1); } }, []);
   useEffect(() => subscribePlayback(setPlayback), []);
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => { if (state !== 'active') stop(); });
+    const activeProtected = new Set([
+      ...playback.voices.filter((voice) => voice.protected && voice.soundId).map((voice) => voice.soundId!),
+      ...playback.pendingProtected.filter((voice) => voice.soundId).map((voice) => voice.soundId!),
+    ]);
+    for (const soundId of protectedReported.current) if (!activeProtected.has(soundId)) protectedReported.current.delete(soundId);
+  }, [playback]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') stop();
+      if (state === 'background' && usageSummaryCounts.current.ready) {
+        // Samples successful plays since opt-in or the last accepted summary in this process; a process death may lose unsummarized plays.
+        const counts = usageSummaryCounts.current;
+        void trackUsageSummary({ soundCount: counts.soundCount, boardCount: counts.boardCount }).catch(() => {});
+      }
+    });
     return () => subscription.remove();
   }, []);
   useEffect(() => () => stop(), []);
@@ -94,21 +153,39 @@ export default function App() {
   const startCreation = useCallback((target: AssignmentTarget, initialAction?: InitialAction) => {
     if (!dataReady) { setError('Load your Play data before creating a sound.'); return; }
     stop();
-    setFlow({ target, key: Date.now(), initialAction });
+    setFlow({ target, key: Date.now(), initialAction, analyticsEpoch: getAnalyticsEpoch() });
   }, [dataReady]);
   const cancelCreation = useCallback(() => { setFlow(null); refresh(); }, [refresh]);
+
+  const recordProtectedPlayback = useCallback((clip: LocalClip) => {
+    const snapshot = getPlaybackSnapshot();
+    const protectedActive = snapshot.voices.some((voice) => voice.protected && voice.soundId === clip.id);
+    if (!protectedActive || protectedReported.current.has(clip.id)) return;
+    protectedReported.current.add(clip.id);
+    const repeat = getClipPlaybackPreference(clip.id).repeat;
+    trackAnalytics('protected_playback_used', { repeat_mode: repeat === 'loop' ? 'loop' : repeat === 'three' ? 'count' : 'once' });
+  }, []);
 
   const playClip = useCallback(async (clip: LocalClip, padId?: string, boardId?: string, protectedPlayback = false): Promise<void> => {
     try {
       if (clip.missing) throw new Error('This sound file is unavailable. Remove it from Library and import it again.');
       const preference = getClipPlaybackPreference(clip.id);
       const board = boardId ? boards.boards.find((item) => item.id === boardId) : undefined;
-      await play(clip.uri, padId ?? clip.id, { soundId: clip.id, gain: preference.gain, repeat: preference.repeat, allowOverlap: board?.allowOverlap, protected: protectedPlayback });
+      const protectedAlreadyActive = (() => {
+        const snapshot = getPlaybackSnapshot();
+        return snapshot.voices.some((voice) => voice.protected && voice.soundId === clip.id)
+          || snapshot.pendingProtected.some((voice) => voice.soundId === clip.id);
+      })();
+      const runtimePadId = padId ?? clip.id;
+      await play(clip.uri, runtimePadId, { soundId: clip.id, gain: preference.gain, repeat: preference.repeat, allowOverlap: board?.allowOverlap, protected: protectedPlayback });
+      const activeVoice = getPlaybackSnapshot().voices.find((voice) => voice.padId === runtimePadId && voice.soundId === clip.id);
+      if (!protectedAlreadyActive && activeVoice) recordPlaybackForSummary();
+      if (protectedPlayback && activeVoice?.protected) recordProtectedPlayback(clip);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not play this sound.');
       throw cause;
     }
-  }, [boards]);
+  }, [boards, recordProtectedPlayback]);
 
   const applyRestoredSettings = useCallback(() => {
     refresh();
@@ -162,11 +239,20 @@ export default function App() {
     assign();
   }, [retry]);
 
+  if (onboardingState !== 'ready') return <SafeAreaProvider><SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
+    <StatusBar style={isDark ? 'light' : 'dark'} />
+    {onboardingState === 'welcome' ? <OnboardingFlow theme={theme} onFinish={finishOnboarding} /> : null}
+  </SafeAreaView></SafeAreaProvider>;
+
   if (flow) return <SafeAreaProvider><SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
     <StatusBar style={isDark ? 'light' : 'dark'} />
-    <KeyboardAvoidingView style={styles.flow} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <CreateFlow key={flow.key} theme={theme} target={flow.target} initialAction={flow.initialAction} onCancel={cancelCreation} onSaved={completeSave} />
-    </KeyboardAvoidingView>
+    {Platform.OS === 'ios'
+      ? <KeyboardAvoidingView style={styles.flow} behavior="padding">
+          <CreateFlow key={flow.key} theme={theme} target={flow.target} initialAction={flow.initialAction} analyticsEpoch={flow.analyticsEpoch} onCancel={cancelCreation} onSaved={completeSave} />
+        </KeyboardAvoidingView>
+      : <View style={styles.flow}>
+          <CreateFlow key={flow.key} theme={theme} target={flow.target} initialAction={flow.initialAction} analyticsEpoch={flow.analyticsEpoch} onCancel={cancelCreation} onSaved={completeSave} />
+        </View>}
   </SafeAreaView></SafeAreaProvider>;
 
   return <SafeAreaProvider><SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>
@@ -185,7 +271,7 @@ export default function App() {
       {!dataReady ? <View style={styles.loadError}><Text style={{ color: theme.text, fontSize: 17, fontWeight: '800' }}>Your local library could not be opened.</Text>
         <Text style={{ color: theme.muted }}>{error || 'Try loading your Play data again.'} Your saved files have not been cleared.</Text><ActionButton label="Retry loading" onPress={refresh} theme={theme} variant="primary" /><ActionButton label="Open backup & restore" onPress={() => setSettingsVisible(true)} theme={theme} variant="secondary" /></View>
         : page === 'board' ? <BoardScreen key={dataRevision} theme={theme} collection={boards} clips={clips} onChange={updateBoards} newBoardRequest={newBoardRequest}
-        onPlay={playClip} onCreate={(boardId, padId, initialAction) => {
+        onPlay={playClip} onProtectedPlaybackUsed={recordProtectedPlayback} onCreate={(boardId, padId, initialAction) => {
           const expectedClipId = padId === undefined ? undefined : boards.boards.find((board) => board.id === boardId)?.pads.find((pad) => pad.id === padId)?.clipId;
           startCreation({ boardId, padId, expectedClipId }, initialAction);
         }} onAddClip={() => startCreation(null)} onAppearance={() => setSettingsVisible(true)} onPlaybackOptions={(soundId) => setPlaybackSoundId(soundId)}

@@ -2,6 +2,9 @@ param(
   [switch] $StageOnly,
   [switch] $EnableDeviceAudioCapture,
   [switch] $DisableDeviceAudioCapture,
+  [switch] $EnableProductAnalytics,
+  [switch] $AnalyticsDiagnostics,
+  [string] $PostHogProjectToken = '',
   [string] $StagePath = '',
   [ValidatePattern('^(arm64-v8a|x86_64|armeabi-v7a|x86)(,(arm64-v8a|x86_64|armeabi-v7a|x86))*$')]
   [string] $ReactNativeArchitectures = 'arm64-v8a'
@@ -14,6 +17,16 @@ if ($EnableDeviceAudioCapture -and $DisableDeviceAudioCapture) {
   throw 'Use only one of -EnableDeviceAudioCapture and -DisableDeviceAudioCapture.'
 }
 $deviceAudioCaptureEnabled = -not $DisableDeviceAudioCapture
+$analyticsEnabled = [bool]$EnableProductAnalytics
+$analyticsDiagnosticsEnabled = [bool]$AnalyticsDiagnostics
+$postHogSdkVersion = '1.61.2'
+$postHogHost = 'https://eu.i.posthog.com'
+if ($analyticsDiagnosticsEnabled -and -not $analyticsEnabled) {
+  throw 'Use -AnalyticsDiagnostics only together with -EnableProductAnalytics.'
+}
+if (-not $analyticsEnabled -and $PostHogProjectToken) {
+  throw 'A PostHog project token requires -EnableProductAnalytics.'
+}
 
 $repo = (& git rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $repo) { throw 'Run this script from inside the soundboard Git worktree.' }
@@ -37,6 +50,30 @@ if (-not $stage.StartsWith($dataRoot + [IO.Path]::DirectorySeparatorChar, [Strin
 
 $appPlay = Join-Path $repo 'app-play'
 if (-not (Test-Path -LiteralPath $appPlay -PathType Container)) { throw 'app-play/ is missing.' }
+$playPackageManifest = Get-Content -LiteralPath (Join-Path $appPlay 'package.json') -Raw | ConvertFrom-Json
+$postHogSdkVersion = $playPackageManifest.dependencies.'@posthog/core'
+if ($postHogSdkVersion -ne '1.61.2') { throw 'The reviewed Play analytics SDK version must remain pinned to @posthog/core 1.61.2.' }
+if ($analyticsEnabled -and -not $PostHogProjectToken) {
+  $PostHogProjectToken = [Environment]::GetEnvironmentVariable('EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN', 'Process')
+  if (-not $PostHogProjectToken) {
+    $analyticsEnvPath = Join-Path $appPlay '.env.local'
+    if (Test-Path -LiteralPath $analyticsEnvPath -PathType Leaf) {
+      $tokenAssignments = @(
+        foreach ($line in Get-Content -LiteralPath $analyticsEnvPath) {
+          if ($line -match '^\s*EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN\s*=\s*(.*?)\s*$') { $Matches[1] }
+        }
+      )
+      if ($tokenAssignments.Count -ne 1) { throw 'Set exactly one EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN entry in app-play/.env.local or pass -PostHogProjectToken.' }
+      $PostHogProjectToken = $tokenAssignments[0]
+      if ($PostHogProjectToken.Length -ge 2 -and (($PostHogProjectToken[0] -eq '"' -and $PostHogProjectToken[-1] -eq '"') -or ($PostHogProjectToken[0] -eq "'" -and $PostHogProjectToken[-1] -eq "'"))) {
+        $PostHogProjectToken = $PostHogProjectToken.Substring(1, $PostHogProjectToken.Length - 2)
+      }
+    }
+  }
+}
+if ($analyticsEnabled -and $PostHogProjectToken -notmatch '^phc_[A-Za-z0-9_-]{8,196}$') {
+  throw 'Product analytics requires a valid public PostHog project token (phc_...). Set it in app-play/.env.local or pass -PostHogProjectToken; do not use a secret or personal API key.'
+}
 
 $appPlayFiles = @('index.ts', 'App.tsx', 'app.json', 'app.config.js', 'package.json', 'tsconfig.json', '.gitignore', 'README.md')
 $appPlayAssetFiles = @(
@@ -45,7 +82,7 @@ $appPlayAssetFiles = @(
   'assets/stimyz/android-icon-monochrome.png',
   'assets/stimyz/stimmyz-logo-transparent.png'
 )
-$appPlayTrees = @('src/ui', 'src/data', 'src/media')
+$appPlayTrees = @('src/ui', 'src/data', 'src/media', 'src/analytics', 'src/onboarding')
 $optionalAppPlayTrees = @('src/types', 'plugins')
 $deviceAudioNativeFiles = @(
   'package.json',
@@ -195,12 +232,17 @@ $record = [ordered]@{
   profile = 'play'
   stageOnly = [bool]$StageOnly
   deviceAudioCaptureEnabled = [bool]$deviceAudioCaptureEnabled
+  analyticsEnabled = [bool]$analyticsEnabled
+  analyticsHost = $postHogHost
+  productAnalyticsSdk = '@posthog/core'
+  productAnalyticsSdkVersion = $postHogSdkVersion
   stagedAtUtc = [DateTime]::UtcNow.ToString('o')
   sourceRoot = $repo
   sourceCommit = $sourceCommit
   workingTreeDirty = $workingTreeDirty
   files = @($inventory)
 }
+if ($analyticsEnabled) { $record['productAnalyticsDiagnosticsEnabled'] = [bool]$analyticsDiagnosticsEnabled }
 $inventoryPath = Join-Path $stage 'play-stage-inventory.json'
 $record | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $inventoryPath -Encoding utf8
 
@@ -412,7 +454,8 @@ mv "/workspace/artifacts/$apk_filename.unverified" "/workspace/artifacts/$apk_fi
 mv /workspace/artifacts/soundboard-play-unsigned.aab.unverified /workspace/artifacts/soundboard-play-unsigned.aab
 sha256sum "/workspace/artifacts/$apk_filename" /workspace/artifacts/soundboard-play-unsigned.aab > /workspace/artifacts/SHA256SUMS
 stat -c 'sizeBytes=%s' "/workspace/artifacts/$apk_filename" > /workspace/artifacts/release-info.txt
-printf 'applicationId=%s\nversionName=%s\nversionCode=%s\nminSdk=%s\ntargetSdk=%s\narchitectures=%s\nminifyEnabled=true\nshrinkResources=true\nmappingFile=mapping.txt\nsigned=false\nallowBackup=false\nusesCleartextTraffic=false\nrecordAudioPermission=true\nprojectionCaptureEnabled=%s\nsourceCommit=%s\nworkingTreeDirty=%s\nbuildImageId=%s\nnodeVersion=%s\nyarnVersion=%s\n' "$expected_application_id" "$manifest_version_name" "$manifest_version_code" "$expected_min_sdk" "$expected_target_sdk" "$SOUNDBOARD_RN_ARCH" "$capture_enabled" "$SOUNDBOARD_SOURCE_COMMIT" "$SOUNDBOARD_SOURCE_DIRTY" "$SOUNDBOARD_BUILD_IMAGE_ID" "$(node --version)" "$(yarn --version)" >> /workspace/artifacts/release-info.txt
+printf 'applicationId=%s\nversionName=%s\nversionCode=%s\nminSdk=%s\ntargetSdk=%s\narchitectures=%s\nminifyEnabled=true\nshrinkResources=true\nmappingFile=mapping.txt\nsigned=false\nallowBackup=false\nusesCleartextTraffic=false\nrecordAudioPermission=true\nprojectionCaptureEnabled=%s\nproductAnalyticsEnabled=%s\nproductAnalyticsHost=https://eu.i.posthog.com\nproductAnalyticsSdk=@posthog/core\nproductAnalyticsSdkVersion=%s\nsourceCommit=%s\nworkingTreeDirty=%s\nbuildImageId=%s\nnodeVersion=%s\nyarnVersion=%s\n' "$expected_application_id" "$manifest_version_name" "$manifest_version_code" "$expected_min_sdk" "$expected_target_sdk" "$SOUNDBOARD_RN_ARCH" "$capture_enabled" "$EXPO_PUBLIC_PRODUCT_ANALYTICS_ENABLED" "$SOUNDBOARD_POSTHOG_SDK_VERSION" "$SOUNDBOARD_SOURCE_COMMIT" "$SOUNDBOARD_SOURCE_DIRTY" "$SOUNDBOARD_BUILD_IMAGE_ID" "$(node --version)" "$(yarn --version)" >> /workspace/artifacts/release-info.txt
+if [ "$EXPO_PUBLIC_PRODUCT_ANALYTICS_ENABLED" = true ]; then printf 'productAnalyticsDiagnosticsEnabled=%s\n' "${EXPO_PUBLIC_PRODUCT_ANALYTICS_DIAGNOSTICS:-false}" >> /workspace/artifacts/release-info.txt; fi
 printf 'sourceStageVerified=true\nextractorSourceOrBinaryMarkers=absent\nnativeModuleAutolinking=device-audio-only\n' >> /workspace/artifacts/release-info.txt
 sha256sum /workspace/artifacts/apk-badging.txt /workspace/artifacts/permissions.txt /workspace/artifacts/merged-AndroidManifest.xml /workspace/artifacts/apk-elf-page-alignment.txt /workspace/artifacts/aab-elf-page-alignment.txt /workspace/artifacts/zipalign-report.txt /workspace/artifacts/native-autolinking-files.txt /workspace/artifacts/native-autolinking-sha256.txt /workspace/artifacts/release-info.txt /workspace/artifacts/mapping.txt /workspace/artifacts/gradle-release-runtime-dependencies.txt /workspace/artifacts/packaged-native-ffmpeg-sha256.txt >> /workspace/artifacts/SHA256SUMS
 find /workspace/artifacts/native-ffmpeg -type f -print0 | sort -z | xargs -0 sha256sum >> /workspace/artifacts/SHA256SUMS
@@ -422,18 +465,32 @@ $dockerArgs = @(
   'run', '--rm',
   '-e', 'EXPO_NO_DOTENV=1',
   '-e', ('EXPO_PUBLIC_DEVICE_AUDIO_CAPTURE_ENABLED=' + ($(if ($deviceAudioCaptureEnabled) { 'true' } else { 'false' }))),
+  '-e', ('EXPO_PUBLIC_PRODUCT_ANALYTICS_ENABLED=' + ($(if ($analyticsEnabled) { 'true' } else { 'false' }))),
+  '-e', 'EXPO_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com',
+  '-e', 'EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN',
   '-e', 'COREPACK_ENABLE_DOWNLOAD_PROMPT=0',
   '-e', "SOUNDBOARD_BUILD_IMAGE_ID=$buildImageId",
   '-e', "SOUNDBOARD_SOURCE_COMMIT=$sourceCommit",
   '-e', "SOUNDBOARD_SOURCE_DIRTY=$workingTreeDirty",
   '-e', "SOUNDBOARD_RN_ARCH=$ReactNativeArchitectures",
+  '-e', "SOUNDBOARD_POSTHOG_SDK_VERSION=$postHogSdkVersion",
   '-v', "${stage}:/workspace",
   '-v', 'soundboard_gradle:/gradle',
   '-v', 'soundboard_yarn-cache:/root/.yarn/berry/cache',
-  '-w', '/workspace',
-  'soundboard-android:local', 'bash', '-lc', $containerBuild
+  '-w', '/workspace'
 )
-& docker @dockerArgs
+if ($analyticsDiagnosticsEnabled) { $dockerArgs += @('-e', 'EXPO_PUBLIC_PRODUCT_ANALYTICS_DIAGNOSTICS=true') }
+$dockerArgs += @('soundboard-android:local', 'bash', '-lc', $containerBuild)
+$priorPostHogToken = [Environment]::GetEnvironmentVariable('EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN', 'Process')
+$hadPriorPostHogToken = Test-Path Env:EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN
+try {
+  if ($analyticsEnabled) { $env:EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN = $PostHogProjectToken }
+  else { $env:EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN = '' }
+  & docker @dockerArgs
+} finally {
+  if ($hadPriorPostHogToken) { $env:EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN = $priorPostHogToken }
+  else { Remove-Item Env:EXPO_PUBLIC_POSTHOG_PROJECT_TOKEN -ErrorAction SilentlyContinue }
+}
 if ($LASTEXITCODE -ne 0) { throw "Play build or artifact checks failed. Staged sources are preserved at $stage" }
 
 $apkFilename = if ($deviceAudioCaptureEnabled) { 'soundboard-play-testing-capture-unsigned.apk' } else { 'soundboard-play-testing-unsigned.apk' }

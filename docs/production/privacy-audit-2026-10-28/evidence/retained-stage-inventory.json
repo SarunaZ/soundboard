@@ -1,0 +1,531 @@
+{
+  "profile": "play",
+  "stageOnly": false,
+  "deviceAudioCaptureEnabled": true,
+  "stagedAtUtc": "2026-10-26T15:18:21.6857748Z",
+  "sourceRoot": "E:\\Work\\dev\\soundboard",
+  "sourceCommit": "b6d89ad30881022a12581f97a032ca311b0f35ab",
+  "workingTreeDirty": true,
+  "files": [
+    {
+      "path": ".yarn/patches/metro-npm-0.84.4-security.patch",
+      "sizeBytes": 1605,
+      "sha256": "37d98e433105f341e41c06972389b8f551e65ed7c85e9dee770c22493eb131f0"
+    },
+    {
+      "path": ".yarn/patches/node-forge-npm-1.4.0-security.patch",
+      "sizeBytes": 810,
+      "sha256": "61370a7c0f2ee74e29b3b60ee14a1645270f914b584f1f1c59d3e693cf736280"
+    },
+    {
+      "path": ".yarnrc.yml",
+      "sizeBytes": 883,
+      "sha256": "5009a60ddd448c6a74c57360a513f893690b602e2ddd282861c0e66ad4cbd6dd"
+    },
+    {
+      "path": "app-client/package.json",
+      "sizeBytes": 1547,
+      "sha256": "1de68c537e2719aa6fb5a0a30764d434780eadb5d111c05904d0c01a8b92a94d"
+    },
+    {
+      "path": "app-client/src/audio/engine.ts",
+      "sizeBytes": 6071,
+      "sha256": "03cedac26efef258fed7ba9a113f8b91d6f296c21a81cbc89ecb250767b674bf"
+    },
+    {
+      "path": "app-client/src/audio/playbackState.ts",
+      "sizeBytes": 2547,
+      "sha256": "91c79f22b5ad7bf71fd056661c871289df4d57eac4456a1949b9be8c40087cac"
+    },
+    {
+      "path": "app-client/src/board/reorderGeometry.ts",
+      "sizeBytes": 3138,
+      "sha256": "01ee230393cccba3e21411db841bc539897921bf20d457920c1c230fb78f4f65"
+    },
+    {
+      "path": "app-client/src/editor/catalog.ts",
+      "sizeBytes": 3872,
+      "sha256": "000769977ddbdbe9fe57ef2043f5bf1f2f698f30981dc6643701f965c7348642"
+    },
+    {
+      "path": "app-client/src/editor/importValidation.ts",
+      "sizeBytes": 2116,
+      "sha256": "fb55b53621e3c41dbaa5d1f7b8db04b772732afc026233e163dd701704503d4e"
+    },
+    {
+      "path": "app-client/src/editor/localAudioPcm.ts",
+      "sizeBytes": 4550,
+      "sha256": "b5cf30cfc4087308e6702222e72933703d5721d7dd5364aac379cb5241031311"
+    },
+    {
+      "path": "app-client/src/keyboard/keyboardGeometry.ts",
+      "sizeBytes": 1730,
+      "sha256": "e69ed6d4e733bc7988c6144eeffb2ba7e055a96e499fbc0f54f3c208ba3603f4"
+    },
+    {
+      "path": "app-client/src/keyboard/useKeyboardInputReveal.ts",
+      "sizeBytes": 4585,
+      "sha256": "5c092819a47c93c4f53364c5b7c8334e32434839820636fdffdd36ed0c00c559"
+    },
+    {
+      "path": "app-client/src/limits.ts",
+      "sizeBytes": 72,
+      "sha256": "a5ca3f7a00e4dd5abb7d4826beb95a506ccf0fe779a5e0e652d145875ea5976e"
+    },
+    {
+      "path": "app-client/src/transfer/folderTransfer.ts",
+      "sizeBytes": 16385,
+      "sha256": "94f160204b191d8e52d486e3f1bb5a7478f89247d3ebd16c1077e3d98b182841"
+    },
+    {
+      "path": "app-client/src/types/react-native-audio-api.d.ts",
+      "sizeBytes": 753,
+      "sha256": "282108a2e45db609ec5f9abe1c06835792c2367d9828d900d56420af7f02f1ec"
+    },
+    {
+      "path": "app-play/.gitignore",
+      "sizeBytes": 452,
+      "sha256": "0b52decb9d4b7ba08c2531aa430e3ae0765dfa624af40b16b97c6bae35a2cdc5"
+    },
+    {
+      "path": "app-play/app.config.js",
+      "sizeBytes": 412,
+      "sha256": "f96240c422172a83985ae058fb5ffdd5149ea9db402393595f098ecc6dfbff72"
+    },
+    {
+      "path": "app-play/app.json",
+      "sizeBytes": 1799,
+      "sha256": "cfe7357db2bfa8b39ff65e9361e806c1cdc56ccfe2aaaf30ddb4b4b802700787"
+    },
+    {
+      "path": "app-play/App.tsx",
+      "sizeBytes": 22401,
+      "sha256": "fbbc24cfb8c773f69259714e60720d46dede5f7db319587cd2e5fd691eb444ad"
+    },
+    {
+      "path": "app-play/assets/stimyz/android-icon-foreground.png",
+      "sizeBytes": 174408,
+      "sha256": "f83e1f7850e75b99eae561bbdb787e851fea5a388432bb6a33632c3c2ae118d7"
+    },
+    {
+      "path": "app-play/assets/stimyz/android-icon-monochrome.png",
+      "sizeBytes": 36408,
+      "sha256": "460e8b46c63ce5b4690d1dcbe6f699ac26055b0f1c8b6677c8063f7ba24ad0b4"
+    },
+    {
+      "path": "app-play/assets/stimyz/icon.png",
+      "sizeBytes": 354290,
+      "sha256": "2e78bfd90b6aed2aabe9b6dbd46f5f12e2d8c13e9a16e67dcb9e233a114d9fb2"
+    },
+    {
+      "path": "app-play/assets/stimyz/stimmyz-logo-transparent.png",
+      "sizeBytes": 666742,
+      "sha256": "921187aa7c61eaa8633e1fbec3a4b9557176a373ff56db715eb5907d6889da7f"
+    },
+    {
+      "path": "app-play/index.ts",
+      "sizeBytes": 101,
+      "sha256": "9feb78c747e7c526cb3ab8f57210053654d966ba71aa24328088c3ebcc5ff76f"
+    },
+    {
+      "path": "app-play/package.json",
+      "sizeBytes": 1262,
+      "sha256": "0a4dbdabe18cb9e7fe7e15ee9a5ec972efa498a5deb1b3547e7c6d78a5177117"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/build.gradle",
+      "sizeBytes": 1114,
+      "sha256": "35e6900c75ae5f981152ecd56759f3f1f0587a803713535eff3ff84a882c7e62"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/CMakeLists.txt",
+      "sizeBytes": 515,
+      "sha256": "4d990efbda24ab8039678f0565463f454d9467f9f5ac5cc666ebd6bcf9788c82"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp_jni.cpp",
+      "sizeBytes": 7576,
+      "sha256": "1495d7218e318db7f7729e78790a3c3ea81a13b651e986a993573f78bd1e5d61"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp.cpp",
+      "sizeBytes": 12065,
+      "sha256": "06d47dee20e037a0d2e67b2832abe917d66f377b63170124c41cd4542a3af66d"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/cpp/playback_dsp.h",
+      "sizeBytes": 1900,
+      "sha256": "d328835a1cdfa2a590f244106c4cde19316f04bc4f64a8f7502a2e6574607542"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/CaptureStatus.kt",
+      "sizeBytes": 9123,
+      "sha256": "669e2d5872eaff1b6c403ea39b60d92e4227a3f9e3d5332b4502d54432866e2e"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioCaptureService.kt",
+      "sizeBytes": 15247,
+      "sha256": "3c62c77077a022bf4f88cbe6f39f2b7aae8d5ae8eb05cda42e3af50142abb855"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/DeviceAudioConsentActivity.kt",
+      "sizeBytes": 5168,
+      "sha256": "5631077b37f2535a0c0fe4b4cd2d9e1a1a1eb7f6988c0f2e7e091f0a57d87d28"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/NativePlaybackDsp.kt",
+      "sizeBytes": 673,
+      "sha256": "ff442dc192e28f9a225c21f485a145e79784d63b12fdce7f9614da1076db86f6"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/PcmWavWriter.kt",
+      "sizeBytes": 3132,
+      "sha256": "28c43f26b39c029272c60b486f9a815963848b9174c88cd2c2fbb02148efb734"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparation.kt",
+      "sizeBytes": 11819,
+      "sha256": "f780476ee38d30b3ac55d5bb13383d186f515bb810ad7db2c452871e7d90b2b2"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/main/java/dev/sarunas/soundboard/deviceaudio/SoundboardDeviceAudioModule.kt",
+      "sizeBytes": 5331,
+      "sha256": "f3d184519ca74e633018377b54758a4f24c87dfd6695d33d66c31eba1702dac2"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/android/src/test/java/dev/sarunas/soundboard/deviceaudio/PlaybackPreparationTest.kt",
+      "sizeBytes": 2234,
+      "sha256": "2280763198c88218018807906ce38fed8bc580124e9a03d14a60a4f8a721dd0a"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/expo-module.config.json",
+      "sizeBytes": 139,
+      "sha256": "4789ecad88afaa12cef724ada92152cbeff8972693b60bc32421a7eaf3695e02"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/index.d.ts",
+      "sizeBytes": 791,
+      "sha256": "c654c2a839efa246c9108b5d71e682027fed83a7167c69617bc88d1d482cd7f3"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/index.js",
+      "sizeBytes": 467,
+      "sha256": "1c82e442e1bfec78183c995713057e49a33f5b719f82e893fb48cc5988223f48"
+    },
+    {
+      "path": "app-play/play-native-modules/soundboard-device-audio/package.json",
+      "sizeBytes": 135,
+      "sha256": "7f5e5681f26bd1e839b9fa8579b671d4bbcdd3bf4f1a1e2b1d6fe5e74ea8498e"
+    },
+    {
+      "path": "app-play/plugins/withDeviceAudioCapture.js",
+      "sizeBytes": 2666,
+      "sha256": "f7e1d8273688f0848f65e2a813b97473d495c959a26a7741f957d9030ceb0fa3"
+    },
+    {
+      "path": "app-play/plugins/withPlayRelease.js",
+      "sizeBytes": 7211,
+      "sha256": "65838e8ac69e4b02dfc0c8453119490e54a5b3e618ce57cd5c7f63564a656c49"
+    },
+    {
+      "path": "app-play/README.md",
+      "sizeBytes": 15085,
+      "sha256": "15b6a723cd96191106c1c8c30d1789a81a8c58e25be93a4788a5a824e06ed128"
+    },
+    {
+      "path": "app-play/src/data/boardModel.ts",
+      "sizeBytes": 15207,
+      "sha256": "978a3b508addf37d461e7e5b4d8ae805436c555f69300f233529997ffc8caae7"
+    },
+    {
+      "path": "app-play/src/data/boards.ts",
+      "sizeBytes": 3457,
+      "sha256": "ad39eb8391ce263b321094a3bda3611c9a772d64eb94f0574914a4afaa94a87f"
+    },
+    {
+      "path": "app-play/src/data/catalog.ts",
+      "sizeBytes": 429,
+      "sha256": "3d2074bf41ea5962eed74ba95d37ae21b321bc217efdd80941b3c6c9c51eafa7"
+    },
+    {
+      "path": "app-play/src/data/clipPlayback.ts",
+      "sizeBytes": 3592,
+      "sha256": "40badb497926683c7de17b51276dd4646a5b8e841e1d065d4cd8511b96e43f6e"
+    },
+    {
+      "path": "app-play/src/data/importValidation.ts",
+      "sizeBytes": 976,
+      "sha256": "28d6862eec83da49e8f689c39d6a27ce9194b008ac4ab6a86a64f811d7cefebd"
+    },
+    {
+      "path": "app-play/src/data/library.ts",
+      "sizeBytes": 12014,
+      "sha256": "eae3cc9098a4c2b05cddfd0ad3e410e7af37863ecac273bc81d22a9ceb516d76"
+    },
+    {
+      "path": "app-play/src/data/openSourceNoticeOverrides.json",
+      "sizeBytes": 1432,
+      "sha256": "797caa45b600960d968172c13dcaf92af9e63a34dbcf252f9afad684e2f3e636"
+    },
+    {
+      "path": "app-play/src/data/openSourceNotices.json",
+      "sizeBytes": 801284,
+      "sha256": "4f5fb34bc14f7270164a3027a6f6049d4f2e942bb5c2d0463c0931d52521f94f"
+    },
+    {
+      "path": "app-play/src/data/padColors.ts",
+      "sizeBytes": 2542,
+      "sha256": "1836ab9f4a1bded5a48e61d9303fabf49076623082f9ef66e008358ef0c8a1e6"
+    },
+    {
+      "path": "app-play/src/data/preferences.ts",
+      "sizeBytes": 4773,
+      "sha256": "2de102e8c08e6754839dcb3b7e6069b6d8e4cdb27057ad973fbc6971a788c8e2"
+    },
+    {
+      "path": "app-play/src/data/presentation.ts",
+      "sizeBytes": 9799,
+      "sha256": "60144203d7ee84980b77d3a8954f7509b91a52e381a014bd8b9c0a188e3f8758"
+    },
+    {
+      "path": "app-play/src/data/protocol.ts",
+      "sizeBytes": 279,
+      "sha256": "85bc4cab3459698a9ccc6580eb02be6e942ded87a4e1d71937345f6f0c662496"
+    },
+    {
+      "path": "app-play/src/data/snapshot.ts",
+      "sizeBytes": 10370,
+      "sha256": "e692dbc082cfddc75c765f808af5824359e61d2bd83ae8fc1d661c1dd01adf7e"
+    },
+    {
+      "path": "app-play/src/media/artwork.ts",
+      "sizeBytes": 8164,
+      "sha256": "fb1631d969c9bdda0815a659743228a8bc9d759bb7673fcb33533fc55f2104ac"
+    },
+    {
+      "path": "app-play/src/media/backup.ts",
+      "sizeBytes": 34970,
+      "sha256": "84860373a423280e0d641a2d371a7a1de410384af79b1955008fa077fc56420b"
+    },
+    {
+      "path": "app-play/src/media/backupMerge.ts",
+      "sizeBytes": 2165,
+      "sha256": "b230038de746f8d79b96a1f22eee93a7d4abc79ed8521a8e7c86a79bb427931c"
+    },
+    {
+      "path": "app-play/src/media/backupValidation.ts",
+      "sizeBytes": 5400,
+      "sha256": "c6122931aa321510fcb1e2c981befec6f4b301be2460d0cb89ccceedc8008219"
+    },
+    {
+      "path": "app-play/src/media/cacheMaintenance.ts",
+      "sizeBytes": 2790,
+      "sha256": "df2233b1e20850e8bf99e682403c5b1accf0d6b47629fe39704d9fff5285d839"
+    },
+    {
+      "path": "app-play/src/media/deviceAudioCapture.ts",
+      "sizeBytes": 9571,
+      "sha256": "d14d5d94768022d35974bd014ab5435148a408b0ee7afc363c290afc7be70666"
+    },
+    {
+      "path": "app-play/src/media/localAudio.ts",
+      "sizeBytes": 22151,
+      "sha256": "59de9dda01701f6cde41dc76e34f793e7ba24bb0650ea18136bb53a7234f75df"
+    },
+    {
+      "path": "app-play/src/media/nativePlaybackPreparation.ts",
+      "sizeBytes": 5658,
+      "sha256": "8d5a6f0a7cefa15994ad5c60d2651ac452c70d0f766b139275ffc9bb53d5141e"
+    },
+    {
+      "path": "app-play/src/media/playbackDsp.ts",
+      "sizeBytes": 11394,
+      "sha256": "00c0c1f63579074eca24c879d09bd2422aa85f23173fa1ea930f5d6b60c9ea77"
+    },
+    {
+      "path": "app-play/src/media/playbackEngine.ts",
+      "sizeBytes": 30475,
+      "sha256": "2895893496f3a5fc3ce5abde4f402abf4d4751d956179c3f65151f3fc1c67a8c"
+    },
+    {
+      "path": "app-play/src/media/recording.ts",
+      "sizeBytes": 12265,
+      "sha256": "96e2f9cfc0bc3df0a550201240a54fa450b726725507b1980042594e5f4a0934"
+    },
+    {
+      "path": "app-play/src/media/soundbiteTransfer.ts",
+      "sizeBytes": 2442,
+      "sha256": "759880888172722931b661f9c7864c064ef2dd7a328aaffc9ccbf6784d826ebb"
+    },
+    {
+      "path": "app-play/src/media/trimPreview.ts",
+      "sizeBytes": 4366,
+      "sha256": "12bbc82f378b190dd80a247c0d5635d106d96872a6de7397cb7b866c6e45ba1d"
+    },
+    {
+      "path": "app-play/src/types/audioManagerDeepImport.d.ts",
+      "sizeBytes": 234,
+      "sha256": "d8f01b0a75593d566916ed9a8bed4a717b84c637cde14569d6f55b29ed7025a5"
+    },
+    {
+      "path": "app-play/src/ui/ArtworkPicker.tsx",
+      "sizeBytes": 1586,
+      "sha256": "0e77b7f5981e9aa43b1423e9a9c2043b11c8359020801a250544935b528e2b74"
+    },
+    {
+      "path": "app-play/src/ui/boardHold.ts",
+      "sizeBytes": 969,
+      "sha256": "9daef44fb6818f5f73519000dfcd5c5f26e81c37b131fe274f03b0a23e0d7102"
+    },
+    {
+      "path": "app-play/src/ui/boardLayout.ts",
+      "sizeBytes": 1754,
+      "sha256": "cedd130152214cc363b673dc78e04402d284a72b0c5843f0e130894acbeab2a0"
+    },
+    {
+      "path": "app-play/src/ui/boardNavigation.ts",
+      "sizeBytes": 1407,
+      "sha256": "80b0ebd128b70531a7a16f6ccce188dfef5847e70a557844bc7dcc74b5ffe7cc"
+    },
+    {
+      "path": "app-play/src/ui/BoardScreen.tsx",
+      "sizeBytes": 77761,
+      "sha256": "7fb9af3fecf95f31c13e9601d0fd223543e0c4c8330763908578e92d78d65cd3"
+    },
+    {
+      "path": "app-play/src/ui/boardScrollRail.ts",
+      "sizeBytes": 2913,
+      "sha256": "23025784660544245a73fb3840cc74bbd07166dc9eba5b93c99492d185e53773"
+    },
+    {
+      "path": "app-play/src/ui/BrandHeader.tsx",
+      "sizeBytes": 2160,
+      "sha256": "84a3f3fcf2bf78b3d3a3060c5432ca64ff10d8d6ae98405fbfd12389259ad27a"
+    },
+    {
+      "path": "app-play/src/ui/ClipPlaybackOptionsModal.tsx",
+      "sizeBytes": 10584,
+      "sha256": "5d64434f671c337e206981ea49312bd55f44fc8ac8b2174df6fe3b899af34400"
+    },
+    {
+      "path": "app-play/src/ui/contrast.ts",
+      "sizeBytes": 609,
+      "sha256": "77ce87075ec8b8adf8d0636bad684973403de486caa31db7f2e41587eafcef0e"
+    },
+    {
+      "path": "app-play/src/ui/controls.tsx",
+      "sizeBytes": 4415,
+      "sha256": "339098edd470d3a36e94b1e779e9e0e5205276f0d189ac807d916e4f27aea6d5"
+    },
+    {
+      "path": "app-play/src/ui/CreateFlow.tsx",
+      "sizeBytes": 58724,
+      "sha256": "1cb6a9ca7a46fb3f22238c3e1b253b6bc4152f8d656cd5d2e56a25a42a04e740"
+    },
+    {
+      "path": "app-play/src/ui/EditorScreen.tsx",
+      "sizeBytes": 5896,
+      "sha256": "e3bfc435bf7f3c78f8856898c8a55cff4ec7e112a0ea940c8284b85dc5e3a7e3"
+    },
+    {
+      "path": "app-play/src/ui/Icons.tsx",
+      "sizeBytes": 15983,
+      "sha256": "b37e2b813c21edbe7f13b0a1e0ffdc127e0d0cecd2172b9d05b7bb761e551da8"
+    },
+    {
+      "path": "app-play/src/ui/LibraryScreen.tsx",
+      "sizeBytes": 20597,
+      "sha256": "b1aab842e0748e8d5cfdc02ee5911c9b26e838eb8a52dd982fbc52228c2ef050"
+    },
+    {
+      "path": "app-play/src/ui/PadGradient.tsx",
+      "sizeBytes": 574,
+      "sha256": "19a5f5de3b27968903c204756dbaa58e5e3c7ad7917761bf5e6ab61b83bb853c"
+    },
+    {
+      "path": "app-play/src/ui/quickAddGrid.ts",
+      "sizeBytes": 407,
+      "sha256": "459418585bef89767bdc8c8d62ed93f71a64f39037dd4ca2924c85f4bd24357d"
+    },
+    {
+      "path": "app-play/src/ui/SettingsModal.tsx",
+      "sizeBytes": 23007,
+      "sha256": "e08fbcdad3c96f58e1488256636f1529536f23464085605dc446e7c4689238ab"
+    },
+    {
+      "path": "app-play/src/ui/theme.ts",
+      "sizeBytes": 5587,
+      "sha256": "027eb65b97830fc1791b2c159529e120f1d64493af33553ca03100c783110e85"
+    },
+    {
+      "path": "app-play/src/ui/Waveform.tsx",
+      "sizeBytes": 6778,
+      "sha256": "34455f5b13e8dff369bb93787b3e78e3ec13e2228d1c0854291d60525429c0ea"
+    },
+    {
+      "path": "app-play/src/ui/waveformLayout.ts",
+      "sizeBytes": 1596,
+      "sha256": "6f2e4625feb2fe1be7e3b90a545897b972944e00966a40a76290fdf7be473a15"
+    },
+    {
+      "path": "app-play/tsconfig.json",
+      "sizeBytes": 200,
+      "sha256": "d090907ffc5ea808d64e3803bb7341e6179bfa80b451c01578636ea432e836a5"
+    },
+    {
+      "path": "package.json",
+      "sizeBytes": 1671,
+      "sha256": "5904c774cf317a69b7d813f1ead48a27ad75f01f5d4ddef20ee5be5bff0310f7"
+    },
+    {
+      "path": "scripts/assert-play-gradle-security-versions.cjs",
+      "sizeBytes": 2049,
+      "sha256": "352fa2fac4be70bb1c5ac8e96c4a80df2ce2f7860ed29b8faecbdab9f8c8e31a"
+    },
+    {
+      "path": "scripts/check-elf-page-alignment.py",
+      "sizeBytes": 2251,
+      "sha256": "5f21ca9433774bff2a568bf40989b36cd82d777d9f152a2735d1f7aa0a19961a"
+    },
+    {
+      "path": "scripts/native-ffmpeg/build-android.sh",
+      "sizeBytes": 9535,
+      "sha256": "7372c0d83a2c620b8715b92feb8f5aa6c61965675f822b3dce0136da05d47eaf"
+    },
+    {
+      "path": "scripts/native-ffmpeg/LICENSE",
+      "sizeBytes": 377,
+      "sha256": "fb9896011e0e484c2e2c800a19164f179e832fe46d77370eca7f8e6ef2cd6340"
+    },
+    {
+      "path": "scripts/native-ffmpeg/README.md",
+      "sizeBytes": 1992,
+      "sha256": "4c52ed74a99a165b99e0cd0f6af4ecae092abf0514fd79112c84834b3eaff0c5"
+    },
+    {
+      "path": "scripts/native-tests/ffmpeg_decode_probe.c",
+      "sizeBytes": 4617,
+      "sha256": "2432caa13662e7b247d06a231030e54eb85567d90fe792058477bffb17f4be1c"
+    },
+    {
+      "path": "service/package.json",
+      "sizeBytes": 704,
+      "sha256": "a8fefcdaaee69ad43e785090948a6f6fb685119158660f6d8edfa9f7428ce126"
+    },
+    {
+      "path": "shared/package.json",
+      "sizeBytes": 405,
+      "sha256": "28052cd3466bab8cd54d2d9dfc83bfaa3d3fd9ebe83b2a8063f6e886154a209c"
+    },
+    {
+      "path": "worker/package.json",
+      "sizeBytes": 333,
+      "sha256": "1c1091b826471e8566edabc0ef636e57e26e5385b22c488acdb2682e70e54ef0"
+    },
+    {
+      "path": "yarn.lock",
+      "sizeBytes": 260686,
+      "sha256": "3356914ae68d173f7b718b502cda0a75cfb66b0d2c0d6ad4c5818200a605cf30"
+    }
+  ]
+}

@@ -1,5 +1,15 @@
 # Privacy, data-flow, and permissions worksheet
 
+**Later analytics implementation:** the optional consent-gated `@posthog/core`
+integration and private 1.0.30/code 31 testing APK are documented in the
+[implementation record](../play-product-analytics-2026-10-28.md) and
+[physical QA follow-up](../play-product-analytics-phone-2026-10-28.md).
+The no-analytics inventory below describes older artifacts; it must not be used
+as the current Data safety declaration. The new event/identity flow sends only
+reviewed pseudonymous events to the fixed EU ingestion endpoint after consent.
+
+**Current audit (28 October 2026):** see the [dated evidence and data-flow audit](privacy-audit-2026-10-28/EVIDENCE_AND_DATA_FLOW.md) for the capture-enabled 1.0.29/code 30 APK/AAB, packaged backup exclusions, resolved dependencies and live privacy page. Runtime traffic and owner/publication gaps remain open in its [question tracker](privacy-audit-2026-10-28/OPEN_QUESTIONS.md). The r3/r4 observations below are retained as historical evidence; they are not the current release declaration.
+
 Complete this with an artifact-backed audit before Play submission. The r3 unsigned APK/AAB and merged manifest are available; source observations below still require network inspection of that build and owner review.
 
 ## Data inventory

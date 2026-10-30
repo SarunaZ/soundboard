@@ -1,0 +1,12 @@
+{
+  "checkedAt": "2026-10-28T15:37:48.0609097Z",
+  "mx": [
+    "route1.mx.cloudflare.net",
+    "route2.mx.cloudflare.net",
+    "route3.mx.cloudflare.net"
+  ],
+  "spf": "v=spf1 include:_spf.mx.cloudflare.net ~all",
+  "brevoDomainVerificationRecordPresent": true,
+  "dmarc": "v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com",
+  "mailboxDeliveryAndReplyTests": "not performed"
+}

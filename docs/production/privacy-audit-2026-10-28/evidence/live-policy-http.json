@@ -1,0 +1,47 @@
+{
+  "requestedUrl": "https://stimmyz.vercel.app/privacy/",
+  "statusCode": 200,
+  "finalUri": "https://stimmyz.vercel.app/privacy/",
+  "headers": {
+    "Access-Control-Allow-Origin": [
+      "*"
+    ],
+    "Age": [
+      "243664"
+    ],
+    "Cache-Control": [
+      "public, must-revalidate, max-age=0"
+    ],
+    "Date": [
+      "Wed, 28 Oct 2026 15:37:06 GMT"
+    ],
+    "ETag": [
+      "W/\"ea14339e1a99b0d176be4811d0b99dc5\""
+    ],
+    "Server": [
+      "Vercel"
+    ],
+    "Strict-Transport-Security": [
+      "max-age=63072000; includeSubDomains; preload"
+    ],
+    "X-Vercel-Cache": [
+      "HIT"
+    ],
+    "X-Vercel-Id": [
+      "arn1::l5cwb-1793201826415-9ac3decd7e16"
+    ],
+    "Transfer-Encoding": [
+      "chunked"
+    ],
+    "Content-Disposition": [
+      "inline; filename=\"privacy\""
+    ],
+    "Content-Type": [
+      "text/html; charset=utf-8"
+    ],
+    "Last-Modified": [
+      "Sun, 25 Oct 2026 19:56:01 GMT"
+    ]
+  },
+  "htmlEqualsLocalDist": true
+}

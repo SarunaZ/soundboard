@@ -2,6 +2,7 @@ node_modules/
 .expo/
 dist/
 web-build/
+.env*.local
 android/
 ios/
 play-native-modules/*

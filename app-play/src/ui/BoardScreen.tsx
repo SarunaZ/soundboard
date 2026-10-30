@@ -17,6 +17,7 @@ import type { Theme } from './theme';
 import { contrastForeground, iconChoices } from './theme';
 import { PROTECTED_HOLD_MS, holdProgress, movedBeyondHoldThreshold, runBoardHold } from './boardHold';
 import { PadGradient } from './PadGradient';
+import { trackAnalytics } from '../analytics/productAnalytics';
 
 type Props = {
   theme: Theme;
@@ -24,6 +25,7 @@ type Props = {
   clips: LocalClip[];
   onChange: (collection: BoardCollection) => void;
   onPlay: (clip: LocalClip, padId: string, boardId: string, protectedPlayback?: boolean) => Promise<void> | void;
+  onProtectedPlaybackUsed?: (clip: LocalClip) => void;
   onCreate: (boardId: string, padId?: string, initialAction?: 'file' | 'record' | 'device-audio') => void;
   onAddClip: () => void;
   onOpenLibrary: (target?: { boardId: string; padId?: string }) => void;
@@ -32,7 +34,7 @@ type Props = {
   newBoardRequest?: number;
 };
 
-type PopupKind = 'boards' | 'quick' | 'pad' | 'replace' | 'move';
+type PopupKind = 'quick' | 'pad' | 'replace' | 'move';
 type BoardGridItem = { kind: 'quick'; key: 'quick-add' } | { kind: 'pad'; key: string; pad: BoardPad };
 type PopupRect = { x: number; y: number; width: number; height: number };
 type PopupState = { kind: PopupKind; rect: PopupRect; pad?: { boardId: string; pad: BoardPad } };
@@ -43,7 +45,7 @@ function blendTowardWhite(hex: string, amount: number): string {
   return `#${channels.map((channel) => Math.round(channel + (255 - channel) * amount).toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCreate, onAddClip, onOpenLibrary, onPlaybackOptions, newBoardRequest }: Props) {
+export function BoardScreen({ theme, collection, clips, onChange, onPlay, onProtectedPlaybackUsed, onCreate, onAddClip, onOpenLibrary, onPlaybackOptions, newBoardRequest }: Props) {
   const [editing, setEditing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [charge, setCharge] = useState<{ padId: string; progress: number } | null>(null);
@@ -62,6 +64,8 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const [rename, setRename] = useState('');
   const [renameOpen, setRenameOpen] = useState(false);
   const [popup, setPopup] = useState<PopupState | null>(null);
+  const [boardSelectorOpen, setBoardSelectorOpen] = useState(false);
+  const [boardSelectorSearch, setBoardSelectorSearch] = useState('');
   const [search, setSearch] = useState('');
   const [availableWidth, setAvailableWidth] = useState(0);
   const [drag, setDrag] = useState<{ sourcePadId: string; targetPadId: string } | null>(null);
@@ -69,7 +73,6 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const [failedArtworkUris, setFailedArtworkUris] = useState<Set<string>>(() => new Set());
   const scrollRef = useRef<FlatList<BoardGridItem>>(null);
   const viewportRef = useRef<View>(null);
-  const selectorAnchor = useRef<View>(null);
   const quickAnchor = useRef<View>(null);
   const padAnchors = useRef(new Map<string, View>());
   const viewport = useRef({ x: 0, y: 0, width: 0, height: 0 });
@@ -84,7 +87,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   const userScrolled = useRef(false);
   const lastAutoLoadedCount = useRef(-1);
   const touchStartY = useRef<number | null>(null);
-  const hold = useRef<{ padId: string; runtimePadId: string; soundId: string; startedAt: number; x: number; y: number; timer: ReturnType<typeof setTimeout> | null; progressTimer: ReturnType<typeof setInterval> | null; cancelled: boolean; fired: boolean } | null>(null);
+  const hold = useRef<{ padId: string; runtimePadId: string; soundId: string; startedAt: number; x: number; y: number; timer: ReturnType<typeof setTimeout> | null; progressTimer: ReturnType<typeof setInterval> | null; cancelled: boolean; fired: boolean; playPromise?: Promise<void> } | null>(null);
   const touchPressLatch = useRef(new Map<string, ReturnType<typeof setTimeout> | null>());
   const padAnimations = useRef(new Map<string, { scale: Animated.Value; opacity: Animated.Value; highlight: Animated.Value }>());
   const [quickAction, setQuickAction] = useState<QuickAction>(() => {
@@ -108,17 +111,20 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   };
   const layout = calculateBoardGrid(availableWidth, fontScale, 8, PixelRatio.get(), collection.boards.find((board) => board.id === collection.activeBoardId)?.grid === '3x4' ? 3 : 4);
   const tileHeight = calculateBoardTileHeight(layout.tileWidth, fontScale);
-  const basePopupWidth = popup?.kind === 'boards' ? Math.max(210, Math.min(238, popup.rect.width)) : popup?.kind === 'quick' ? 204 : 176;
+  const basePopupWidth = popup?.kind === 'quick' ? 204 : 176;
   const popupScale = fontScale > 1.2 && (popup?.kind === 'quick' || popup?.kind === 'pad') ? Math.min(fontScale, 1.5) : 1;
   const popupWidth = Math.min(basePopupWidth * popupScale, Math.max(0, windowWidth - insets.left - insets.right - 20));
   const popupMaxHeight = Math.max(180, Math.min(420, windowHeight - insets.top - insets.bottom - 24));
-  const popupEstimatedHeight = popup?.kind === 'boards' ? Math.min(48 * (collection.boards.length + 3), popupMaxHeight)
-    : popup?.kind === 'pad' ? 48 * 5 : popup?.kind === 'move' ? Math.min(48 * Math.max(1, collection.boards.length - 1), popupMaxHeight)
+  const popupEstimatedHeight = popup?.kind === 'pad' ? 48 * 5 : popup?.kind === 'move' ? Math.min(48 * Math.max(1, collection.boards.length - 1), popupMaxHeight)
       : popup?.kind === 'replace' ? 48 * 2 : popup?.kind === 'quick' ? 48 * 4 : 48 * 3;
   const popupLeft = popup ? Math.min(Math.max(insets.left + 10, popup.rect.x), windowWidth - insets.right - popupWidth - 10) : 0;
   const popupBelow = popup ? popup.rect.y + popup.rect.height + 6 : 0;
   const popupTop = popup ? (popupBelow + popupEstimatedHeight <= windowHeight - insets.bottom - 10 ? popupBelow : Math.max(insets.top + 10, popup.rect.y - popupEstimatedHeight - 6)) : 0;
   const active = collection.boards.find((board) => board.id === collection.activeBoardId) ?? collection.boards[0] ?? { id: '', name: '', pads: [], pageIndex: 0 };
+  const matchingBoards = useMemo(() => {
+    const query = boardSelectorSearch.trim().toLocaleLowerCase();
+    return collection.boards.filter((board) => board.name.trim().toLocaleLowerCase().includes(query));
+  }, [collection.boards, boardSelectorSearch]);
   const viewScope = `${active.id}:${active.grid}:${active.navigation}:${search}`;
   const viewScopeRef = useRef(viewScope);
   viewScopeRef.current = viewScope;
@@ -218,14 +224,15 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     if (editing || playback.voices.some((voice) => voice.protected && voice.soundId === clip.id)
       || playback.pendingProtected.some((voice) => voice.soundId === clip.id)) return;
     cancelPadHold();
-    const activeHold = { padId: pad.id, runtimePadId: `${active.id}:${pad.id}`, soundId: clip.id, startedAt: Date.now(), x: event.nativeEvent.pageX, y: event.nativeEvent.pageY,
+    const activeHold: NonNullable<typeof hold.current> = { padId: pad.id, runtimePadId: `${active.id}:${pad.id}`, soundId: clip.id, startedAt: Date.now(), x: event.nativeEvent.pageX, y: event.nativeEvent.pageY,
       timer: null as ReturnType<typeof setTimeout> | null, progressTimer: null as ReturnType<typeof setInterval> | null, cancelled: false, fired: false };
     hold.current = activeHold;
     setCharge({ padId: pad.id, progress: 0 });
     const oldLatchTimer = touchPressLatch.current.get(activeHold.runtimePadId);
     if (oldLatchTimer) clearTimeout(oldLatchTimer);
     touchPressLatch.current.set(activeHold.runtimePadId, null);
-    void Promise.resolve(onPlay(clip, activeHold.runtimePadId, active.id)).catch((error) => Alert.alert('Could not play sound', error instanceof Error ? error.message : 'Playback could not start.'));
+    activeHold.playPromise = Promise.resolve(onPlay(clip, activeHold.runtimePadId, active.id));
+    void activeHold.playPromise.catch((error) => Alert.alert('Could not play sound', error instanceof Error ? error.message : 'Playback could not start.'));
     const animation = padAnimation(pad.id);
     animation.scale.stopAnimation();
     animation.opacity.stopAnimation();
@@ -261,7 +268,9 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     const resolution = runBoardHold(Date.now() - activeHold.startedAt, cancelled || activeHold.cancelled, {
       tap: () => {},
       protect: () => {
-        if (!protectPad(activeHold.runtimePadId)) {
+        if (protectPad(activeHold.runtimePadId)) {
+          void activeHold.playPromise?.then(() => onProtectedPlaybackUsed?.(clip)).catch(() => {});
+        } else {
           const snapshot = getPlaybackSnapshot();
           const alreadyProtected = snapshot.voices.some((voice) => voice.protected && voice.soundId === clip.id)
             || snapshot.pendingProtected.some((voice) => voice.soundId === clip.id);
@@ -505,6 +514,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
   useEffect(() => {
     if (newBoardRequest === undefined || newBoardRequest === lastNewBoardRequest.current) return;
     lastNewBoardRequest.current = newBoardRequest;
+    setBoardSelectorOpen(false);
     setPopup(null);
     setBoardName('');
     setNewBoard(true);
@@ -520,6 +530,20 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     setEditing(false);
     onChange(selectBoard(board.id));
     setPopup(null);
+  }
+
+  function openBoardSelector() {
+    cancelPadHold();
+    cancelDragAndSelection();
+    setPopup(null);
+    setBoardSelectorSearch('');
+    Keyboard.dismiss();
+    setBoardSelectorOpen(true);
+  }
+
+  function closeBoardSelector() {
+    Keyboard.dismiss();
+    setBoardSelectorOpen(false);
   }
 
   function chooseQuickAction(action: QuickAction) {
@@ -558,7 +582,8 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
     const name = boardName.trim().slice(0, 40);
     if (!name) return;
     try {
-      persistBoard(name);
+      const created = persistBoard(name);
+      trackAnalytics('board_created', { grid: created.grid, navigation: created.navigation });
       onChange(loadBoards());
     } catch (error) {
       Alert.alert('Could not create board', error instanceof Error ? error.message : 'Try another board name.');
@@ -658,7 +683,7 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
 
   return <View style={styles.root}>
     <View style={styles.boardControls}>
-      <Pressable ref={selectorAnchor} onPress={() => openPopupFromRef('boards', selectorAnchor.current)} accessibilityRole="button" accessibilityLabel={`Choose board, current board ${active.name}`} style={[styles.boardButton, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
+      <Pressable onPress={openBoardSelector} accessibilityRole="button" accessibilityLabel={`Choose board, current board ${active.name}`} style={[styles.boardButton, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
         <Icon name="controller" size={25} color={theme.accent} cutColor={theme.background} />
         <Text numberOfLines={1} style={[styles.boardName, { color: theme.text }]}>{active.name}</Text><Icon name="chevron" size={18} color={theme.accent} />
       </Pressable>
@@ -875,17 +900,50 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
       </View>
     </Modal>
 
+    <Modal visible={boardSelectorOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={closeBoardSelector}>
+      <View style={[styles.boardSelectorRoot, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeBoardSelector} accessibilityRole="button" accessibilityLabel="Close board selector" />
+        <KeyboardAvoidingView pointerEvents="box-none" behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.boardSelectorKeyboard}>
+          <View accessibilityViewIsModal style={[styles.boardSelector, { height: Math.min(560, Math.max(0, windowHeight - insets.top - insets.bottom - 32)), maxHeight: '100%', width: Math.min(520, Math.max(0, windowWidth - insets.left - insets.right - 32)), backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.boardSelectorHeader}>
+              <Text accessibilityRole="header" style={[styles.boardSelectorTitle, { color: theme.text }]}>Choose a board</Text>
+              <Pressable onPress={closeBoardSelector} accessibilityRole="button" accessibilityLabel="Close board selector" hitSlop={8} style={styles.boardSelectorClose}>
+                <Icon name="close" size={20} color={theme.text} />
+              </Pressable>
+            </View>
+            <View style={[styles.boardSelectorSearch, { backgroundColor: theme.raised, borderColor: theme.border }]}>
+              <Icon name="search" size={19} color={theme.muted} />
+              <TextInput value={boardSelectorSearch} onChangeText={setBoardSelectorSearch} placeholder="Search boards…" placeholderTextColor={theme.muted} accessibilityLabel="Search boards" returnKeyType="search" selectionColor={theme.focus} style={[styles.boardSelectorSearchInput, { color: theme.text }]} />
+              {boardSelectorSearch ? <Pressable onPress={() => setBoardSelectorSearch('')} accessibilityRole="button" accessibilityLabel="Clear board search" hitSlop={8}><Icon name="close" size={17} color={theme.muted} /></Pressable> : null}
+            </View>
+            <ScrollView style={styles.boardSelectorList} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+              {matchingBoards.map((board) => {
+                const selected = board.id === active.id;
+                return <Pressable key={board.id} onPress={() => { closeBoardSelector(); switchBoard(board); }} accessibilityRole="button" accessibilityLabel={board.name} accessibilityState={{ selected }} style={({ pressed }) => [styles.boardSelectorRow, { backgroundColor: selected ? theme.raised : pressed ? theme.surfaceAlt : 'transparent' }]}>
+                  <Icon name="controller" size={18} color={selected ? theme.accent : theme.muted} cutColor={theme.surface} />
+                  <Text numberOfLines={2} style={[styles.boardSelectorLabel, { color: selected ? theme.accent : theme.text }]}>{board.name}</Text>
+                  {selected ? <Icon name="check" size={18} color={theme.accent} /> : null}
+                </Pressable>;
+              })}
+              {matchingBoards.length === 0 ? <View style={styles.boardSelectorEmpty}><Text style={[styles.boardSelectorEmptyText, { color: theme.muted }]}>{boardSelectorSearch.trim() ? 'No boards match your search.' : 'No boards yet.'}</Text></View> : null}
+            </ScrollView>
+            <View style={[styles.boardSelectorDivider, { backgroundColor: theme.border }]} />
+            <Pressable onPress={() => { closeBoardSelector(); setBoardName(''); setNewBoard(true); }} accessibilityRole="button" style={({ pressed }) => [styles.boardSelectorAction, { backgroundColor: pressed ? theme.surfaceAlt : 'transparent' }]}>
+              <Icon name="plus" size={18} color={theme.accent} /><Text style={[styles.boardSelectorActionText, { color: theme.accent }]}>Create new board</Text>
+            </Pressable>
+            {playback.active ? <Pressable onPress={() => { stop(); closeBoardSelector(); }} accessibilityRole="button" style={({ pressed }) => [styles.boardSelectorAction, { backgroundColor: pressed ? theme.surfaceAlt : 'transparent' }]}>
+              <Icon name="stop" size={18} color={theme.danger} /><Text style={[styles.boardSelectorActionText, { color: theme.danger }]}>Stop playback</Text>
+            </Pressable> : null}
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+
     <Modal visible={Boolean(popup)} transparent animationType="none" statusBarTranslucent onRequestClose={() => { setPopup(null); setSelectedPad(null); }}>
       <View style={styles.popupRoot}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => { setPopup(null); setSelectedPad(null); }} accessibilityRole="button" accessibilityLabel="Close menu" />
         {popup ? <View style={[styles.popup, { left: popupLeft, top: popupTop, width: popupWidth, maxHeight: popupMaxHeight, backgroundColor: theme.surface, borderColor: theme.border }]}>
           <ScrollView style={{ maxHeight: popupMaxHeight - 8 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {popup.kind === 'boards' ? <>
-              {collection.boards.map((board) => popupRow(board.name, 'controller', () => switchBoard(board), false, board.id === active.id))}
-              <View style={[styles.popupDivider, { backgroundColor: theme.border }]} />
-              {popupRow('Create new board', 'plus', () => { setPopup(null); setNewBoard(true); setBoardName(''); })}
-              {playback.active ? popupRow('Stop playback', 'stop', () => { stop(); setPopup(null); }) : null}
-            </> : null}
             {popup.kind === 'quick' ? <>
               {popupRow('Record device audio', 'music', () => chooseQuickAction('device-audio'), false, quickAction === 'device-audio')}
               {popupRow('Record microphone', 'mic', () => chooseQuickAction('record'), false, quickAction === 'record')}
@@ -945,6 +1003,12 @@ export function BoardScreen({ theme, collection, clips, onChange, onPlay, onCrea
 
 const styles = StyleSheet.create({
   root: { flex: 1, gap: 12 }, boardControls: { flexDirection: 'row', alignItems: 'center', gap: 10 }, actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }, boardViewportRow: { flex: 1, flexDirection: 'row', gap: 4, alignItems: 'stretch' },
+  boardSelectorRoot: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16, backgroundColor: 'rgba(0,0,0,0.58)' }, boardSelectorKeyboard: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' },
+  boardSelector: { flexShrink: 1, alignSelf: 'center', borderWidth: 1, borderRadius: 20, padding: 16, gap: 12, elevation: 16, shadowColor: '#000000', shadowOpacity: 0.24, shadowRadius: 14, shadowOffset: { width: 0, height: 7 } },
+  boardSelectorHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, boardSelectorTitle: { flex: 1, fontSize: 20, lineHeight: 26, fontWeight: '800' }, boardSelectorClose: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  boardSelectorSearch: { minHeight: 48, borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, boardSelectorSearchInput: { flex: 1, minWidth: 0, padding: 0, fontSize: 16 },
+  boardSelectorList: { flex: 1, flexShrink: 1, minHeight: 0 }, boardSelectorRow: { minHeight: 52, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 10 }, boardSelectorLabel: { flex: 1, minWidth: 0, fontSize: 15, lineHeight: 20, fontWeight: '700' }, boardSelectorEmpty: { minHeight: 84, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }, boardSelectorEmptyText: { fontSize: 14, textAlign: 'center' },
+  boardSelectorDivider: { height: StyleSheet.hairlineWidth, marginTop: 1 }, boardSelectorAction: { minHeight: 48, borderRadius: 12, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }, boardSelectorActionText: { fontSize: 15, fontWeight: '800' },
   boardButton: { flex: 1, minWidth: 0, height: 49, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1, flexDirection: 'row', gap: 9, alignItems: 'center' },
   boardName: { flex: 1, fontSize: 14, fontWeight: '700' }, editButton: { width: 138, minHeight: 49, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 14, borderWidth: 1.5, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
   editButtonLabel: { flexShrink: 1, textAlign: 'center', fontSize: 13, fontWeight: '700' },
@@ -961,7 +1025,7 @@ const styles = StyleSheet.create({
   scrollRailTarget: { width: 48, minWidth: 48, alignSelf: 'stretch', alignItems: 'center' }, scrollRailVisual: { width: 24, flex: 1, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }, scrollRailArrow: { fontSize: 14, fontWeight: '900', lineHeight: 18 }, scrollRailTrack: { flex: 1, width: 6, marginVertical: 4, borderRadius: 4, position: 'relative', alignItems: 'center' }, scrollRailThumb: { position: 'absolute', left: -4, width: 14, minHeight: 42, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }, scrollRailGrip: { color: '#ffffff', fontSize: 11, fontWeight: '900' },
   protectedDisabledOverlay: { ...StyleSheet.absoluteFill, borderRadius: 14, backgroundColor: 'rgba(62,66,76,0.24)' }, stopProtected: { position: 'absolute', top: 0, right: 0, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }, stopProtectedBadge: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#251b39' },
   popupRoot: { flex: 1 }, popup: { position: 'absolute', borderWidth: 1, borderRadius: 14, paddingVertical: 4, overflow: 'hidden', elevation: 14, shadowColor: '#000000', shadowOpacity: 0.22, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } },
-  popupRow: { minHeight: 48, height: 48, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, popupLabel: { flex: 1, fontSize: 12, fontWeight: '600' }, popupDivider: { height: StyleSheet.hairlineWidth, marginVertical: 3, marginHorizontal: 10 },
+  popupRow: { minHeight: 48, height: 48, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }, popupLabel: { flex: 1, fontSize: 12, fontWeight: '600' },
   dialogScrim: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.58)' }, dialog: { width: '100%', maxWidth: 400, alignSelf: 'center', gap: 16 },
   boardSettingsAvoid: { flex: 1, justifyContent: 'center' }, boardSettingsScroll: { flexGrow: 1, justifyContent: 'center', paddingVertical: 8 }, boardSettingsDialog: { width: '100%', maxWidth: 400, alignSelf: 'center', gap: 12 }, boardSettingsHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 }, settingsIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, settingsEyebrow: { fontSize: 10, lineHeight: 15, letterSpacing: 1.1, fontWeight: '900' }, settingsTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800' }, settingsClose: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, settingsIntro: { fontSize: 11, lineHeight: 16 }, settingsDivider: { height: StyleSheet.hairlineWidth, width: '100%' }, settingsFootnote: { borderRadius: 13, paddingHorizontal: 12, paddingVertical: 9 }, renameBoardButton: { minHeight: 40, paddingHorizontal: 12, borderRadius: 12, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8 }, boardRenameForm: { gap: 10 }, boardNameInput: { minHeight: 45, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontSize: 15 }, boardOrderRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, boardOrderActions: { flexDirection: 'row', gap: 7 }, boardOrderButton: { minHeight: 44, borderRadius: 12, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' }, deleteBoardButton: { minHeight: 48, borderWidth: 1, borderRadius: 13, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   nameInput: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, fontSize: 16 },

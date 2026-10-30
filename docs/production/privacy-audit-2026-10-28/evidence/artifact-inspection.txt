@@ -1,0 +1,124 @@
+ARTIFACT soundboard-play-testing-capture-unsigned.apk
+SHA256 4ab4c2e066c9d6de517104cd310c3418fd8a99a0d6efe38da5ca466efb748c5d
+BYTES 28542249
+MANIFEST AndroidManifest.xml
+PERMISSIONS ["android.permission.ACCESS_NETWORK_STATE","android.permission.ACCESS_WIFI_STATE","android.permission.FOREGROUND_SERVICE","android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION","android.permission.INTERNET","android.permission.MODIFY_AUDIO_SETTINGS","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.VIBRATE","android.permission.WAKE_LOCK","dev.sarunas.soundboard.play.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"]
+APPLICATION_FLAGS {"label":"@0x7f13001d","name":"dev.sarunas.soundboard.play.MainApplication","allowBackup":false,"fullBackupContent":"@0x7f160000","usesCleartextTraffic":false,"dataExtractionRules":"@0x7f160002"}
+COMPONENTS [{"type":"activity","name":"dev.sarunas.soundboard.play.MainActivity","exported":true,"permission":null,"authorities":null},{"type":"activity","name":"dev.sarunas.soundboard.deviceaudio.DeviceAudioConsentActivity","exported":false,"permission":null,"authorities":null},{"type":"activity","name":"com.canhub.cropper.CropImageActivity","exported":false,"permission":null,"authorities":null},{"type":"activity","name":"expo.modules.imagepicker.ExpoCropImageActivity","exported":false,"permission":null,"authorities":null},{"type":"service","name":"dev.sarunas.soundboard.deviceaudio.DeviceAudioCaptureService","exported":false,"permission":null,"authorities":null},{"type":"service","name":"com.google.android.gms.metadata.ModuleDependencies","exported":false,"permission":null,"authorities":null},{"type":"receiver","name":"androidx.profileinstaller.ProfileInstallReceiver","exported":true,"permission":"android.permission.DUMP","authorities":null},{"type":"provider","name":"expo.modules.filesystem.FileSystemFileProvider","exported":false,"permission":null,"authorities":"dev.sarunas.soundboard.play.FileSystemFileProvider"},{"type":"provider","name":"expo.modules.imagepicker.fileprovider.ImagePickerFileProvider","exported":false,"permission":null,"authorities":"dev.sarunas.soundboard.play.ImagePickerFileProvider"},{"type":"provider","name":"com.canhub.cropper.CropFileProvider","exported":false,"permission":null,"authorities":"dev.sarunas.soundboard.play.cropper.fileprovider"},{"type":"provider","name":"androidx.startup.InitializationProvider","exported":false,"permission":null,"authorities":"dev.sarunas.soundboard.play.androidx-startup"}]
+DEX_COUNT 1
+TELEMETRY_NAMESPACE_HITS []
+NATIVE_LIBS ["lib/arm64-v8a/libappmodules.so","lib/arm64-v8a/libavcodec.so","lib/arm64-v8a/libavformat.so","lib/arm64-v8a/libavutil.so","lib/arm64-v8a/libc++_shared.so","lib/arm64-v8a/libexpo-modules-core.so","lib/arm64-v8a/libfbjni.so","lib/arm64-v8a/libgifimage.so","lib/arm64-v8a/libhermestooling.so","lib/arm64-v8a/libhermesvm.so","lib/arm64-v8a/libimagepipeline.so","lib/arm64-v8a/libjsi.so","lib/arm64-v8a/libnative-filters.so","lib/arm64-v8a/libnative-imagetranscoder.so","lib/arm64-v8a/liboboe.so","lib/arm64-v8a/libreact-native-audio-api.so","lib/arm64-v8a/libreact_codegen_safeareacontext.so","lib/arm64-v8a/libreactnative.so","lib/arm64-v8a/libsoundboard_playback_dsp.so","lib/arm64-v8a/libstatic-webp.so","lib/arm64-v8a/libswresample.so","lib/arm64-v8a/libzstd-kmp.so"]
+  res/xml/backup_rules.xml [APK path res/Qq.xml]:
+    <full-backup-content>
+      <exclude domain="root" path="."/>
+      <exclude domain="file" path="."/>
+      <exclude domain="database" path="."/>
+      <exclude domain="sharedpref" path="."/>
+      <exclude domain="external" path="."/>
+    </full-backup-content>
+  res/xml/data_extraction_rules.xml [APK path res/4j.xml]:
+    <data-extraction-rules>
+      <cloud-backup>
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
+      </cloud-backup>
+      <device-transfer>
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
+      </device-transfer>
+    </data-extraction-rules>
+ARTIFACT soundboard-play-unsigned.aab
+SHA256 a7cce5ec2c6e42f819b98d2e411545097d374c4e3161377d201a2eb4af1d823c
+BYTES 24534540
+MANIFEST base/manifest/AndroidManifest.xml
+MANIFEST_FORMAT protobuf-bundle (manifest decode not implemented; APK is authoritative for binary AndroidManifest)
+DEX_COUNT 1
+TELEMETRY_NAMESPACE_HITS []
+NATIVE_LIBS ["base/lib/arm64-v8a/libappmodules.so","base/lib/arm64-v8a/libavcodec.so","base/lib/arm64-v8a/libavformat.so","base/lib/arm64-v8a/libavutil.so","base/lib/arm64-v8a/libc++_shared.so","base/lib/arm64-v8a/libexpo-modules-core.so","base/lib/arm64-v8a/libfbjni.so","base/lib/arm64-v8a/libgifimage.so","base/lib/arm64-v8a/libhermestooling.so","base/lib/arm64-v8a/libhermesvm.so","base/lib/arm64-v8a/libimagepipeline.so","base/lib/arm64-v8a/libjsi.so","base/lib/arm64-v8a/libnative-filters.so","base/lib/arm64-v8a/libnative-imagetranscoder.so","base/lib/arm64-v8a/liboboe.so","base/lib/arm64-v8a/libreact-native-audio-api.so","base/lib/arm64-v8a/libreact_codegen_safeareacontext.so","base/lib/arm64-v8a/libreactnative.so","base/lib/arm64-v8a/libsoundboard_playback_dsp.so","base/lib/arm64-v8a/libstatic-webp.so","base/lib/arm64-v8a/libswresample.so","base/lib/arm64-v8a/libzstd-kmp.so"]
+  base/res/xml/backup_rules.xml:
+    <full-backup-content>
+      <exclude path="." domain="root"/>
+      <exclude path="." domain="file"/>
+      <exclude path="." domain="database"/>
+      <exclude path="." domain="sharedpref"/>
+      <exclude path="." domain="external"/>
+    </full-backup-content>
+  base/res/xml/data_extraction_rules.xml:
+    <data-extraction-rules>
+      <cloud-backup>
+        <exclude path="." domain="root"/>
+        <exclude path="." domain="file"/>
+        <exclude path="." domain="database"/>
+        <exclude path="." domain="sharedpref"/>
+        <exclude path="." domain="external"/>
+      </cloud-backup>
+      <device-transfer>
+        <exclude path="." domain="root"/>
+        <exclude path="." domain="file"/>
+        <exclude path="." domain="database"/>
+        <exclude path="." domain="sharedpref"/>
+        <exclude path="." domain="external"/>
+      </device-transfer>
+    </data-extraction-rules>
+ARTIFACT stimmyz-1.0.29-testing.apk
+SHA256 c838cc558b307164c29979daa7447a32a1690ee42e362deb1945a6485b3e4544
+BYTES 28622188
+MANIFEST AndroidManifest.xml
+PERMISSIONS ["android.permission.ACCESS_NETWORK_STATE","android.permission.ACCESS_WIFI_STATE","android.permission.FOREGROUND_SERVICE","android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION","android.permission.INTERNET","android.permission.MODIFY_AUDIO_SETTINGS","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.VIBRATE","android.permission.WAKE_LOCK","dev.sarunas.soundboard.play.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"]
+APPLICATION_FLAGS {"label":"@0x7f13001d","name":"dev.sarunas.soundboard.play.MainApplication","allowBackup":false,"fullBackupContent":"@0x7f160000","usesCleartextTraffic":false,"dataExtractionRules":"@0x7f160002"}
+COMPONENTS [{"type":"activity","name":"dev.sarunas.soundboard.play.MainActivity","exported":true,"permission":null,"authorities":null},{"type":"activity","name":"dev.sarunas.soundboard.deviceaudio.DeviceAudioConsentActivity","exported":false,"permission":null,"authorities":null},{"type":"activity","name":"com.canhub.cropper.CropImageActivity","exported":false,"permission":null,"authorities":null},{"type":"activity","name":"expo.modules.imagepicker.ExpoCropImageActivity","exported":false,"permission":null,"authorities":null},{"type":"service","name":"dev.sarunas.soundboard.deviceaudio.DeviceAudioCaptureService","exported":false,"permission":null,"authorities":null},{"type":"service","name":"com.google.android.gms.metadata.ModuleDependencies","exported":false,"permission":null,"authorities":null},{"type":"receiver","name":"androidx.profileinstaller.ProfileInstallReceiver","exported":true,"permission":"android.permission.DUMP","authorities":null},{"type":"provider","name":"expo.modules.filesystem.FileSystemFileProvider","exported":false,"permission":null,"authorities":"dev.sarunas.soundboard.play.FileSystemFileProvider"},{"type":"provider","name":"expo.modules.imagepicker.fileprovider.ImagePickerFileProvider","exported":false,"permission":null,"authorities":"dev.sarunas.soundboard.play.ImagePickerFileProvider"},{"type":"provider","name":"com.canhub.cropper.CropFileProvider","exported":false,"permission":null,"authorities":"dev.sarunas.soundboard.play.cropper.fileprovider"},{"type":"provider","name":"androidx.startup.InitializationProvider","exported":false,"permission":null,"authorities":"dev.sarunas.soundboard.play.androidx-startup"}]
+DEX_COUNT 1
+TELEMETRY_NAMESPACE_HITS []
+NATIVE_LIBS ["lib/arm64-v8a/libappmodules.so","lib/arm64-v8a/libavcodec.so","lib/arm64-v8a/libavformat.so","lib/arm64-v8a/libavutil.so","lib/arm64-v8a/libc++_shared.so","lib/arm64-v8a/libexpo-modules-core.so","lib/arm64-v8a/libfbjni.so","lib/arm64-v8a/libgifimage.so","lib/arm64-v8a/libhermestooling.so","lib/arm64-v8a/libhermesvm.so","lib/arm64-v8a/libimagepipeline.so","lib/arm64-v8a/libjsi.so","lib/arm64-v8a/libnative-filters.so","lib/arm64-v8a/libnative-imagetranscoder.so","lib/arm64-v8a/liboboe.so","lib/arm64-v8a/libreact-native-audio-api.so","lib/arm64-v8a/libreact_codegen_safeareacontext.so","lib/arm64-v8a/libreactnative.so","lib/arm64-v8a/libsoundboard_playback_dsp.so","lib/arm64-v8a/libstatic-webp.so","lib/arm64-v8a/libswresample.so","lib/arm64-v8a/libzstd-kmp.so"]
+  res/xml/backup_rules.xml [APK path res/Qq.xml]:
+    <full-backup-content>
+      <exclude domain="root" path="."/>
+      <exclude domain="file" path="."/>
+      <exclude domain="database" path="."/>
+      <exclude domain="sharedpref" path="."/>
+      <exclude domain="external" path="."/>
+    </full-backup-content>
+  res/xml/data_extraction_rules.xml [APK path res/4j.xml]:
+    <data-extraction-rules>
+      <cloud-backup>
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
+      </cloud-backup>
+      <device-transfer>
+        <exclude domain="root" path="."/>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
+      </device-transfer>
+    </data-extraction-rules>
+SIGNED_UNSIGNED_ENTRY_COMPARISON comparable=934 identical=934 changed=0 missingFromSigned=0 extraInSigned=0
+AAB_APK_BUNDLE identical=true AAB_SHA256=f8820d5b88b06fdcdc0dcd870dc0eddbdd5a2df1f516aacc5c0e8a3b75e328d5 APK_SHA256=f8820d5b88b06fdcdc0dcd870dc0eddbdd5a2df1f516aacc5c0e8a3b75e328d5
+AAB_SIGNED_APK_BUNDLE identical=true AAB_SHA256=f8820d5b88b06fdcdc0dcd870dc0eddbdd5a2df1f516aacc5c0e8a3b75e328d5 APK_SHA256=f8820d5b88b06fdcdc0dcd870dc0eddbdd5a2df1f516aacc5c0e8a3b75e328d5
+AAB_APK_DEX base/dex/classes.dex identical=true AAB_SHA256=6b0fdf11d7de29a19237644fc98f645a0cde3c7901051ebac9b16d1802a95bf2 APK_SHA256=6b0fdf11d7de29a19237644fc98f645a0cde3c7901051ebac9b16d1802a95bf2
+AAB_SIGNED_APK_DEX base/dex/classes.dex identical=true AAB_SHA256=6b0fdf11d7de29a19237644fc98f645a0cde3c7901051ebac9b16d1802a95bf2 APK_SHA256=6b0fdf11d7de29a19237644fc98f645a0cde3c7901051ebac9b16d1802a95bf2
+MERGED_MANIFEST merged-AndroidManifest.xml
+MERGED_PERMISSIONS ["android.permission.ACCESS_NETWORK_STATE","android.permission.ACCESS_WIFI_STATE","android.permission.FOREGROUND_SERVICE","android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION","android.permission.INTERNET","android.permission.MODIFY_AUDIO_SETTINGS","android.permission.POST_NOTIFICATIONS","android.permission.RECORD_AUDIO","android.permission.VIBRATE","android.permission.WAKE_LOCK","dev.sarunas.soundboard.play.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"]
+MERGED_APPLICATION <application
+        android:theme="@ref/0x7f14000d"
+        android:label="@ref/0x7f13001d"
+        android:icon="@ref/0x7f100000"
+        android:name="dev.sarunas.soundboard.play.MainApplication"
+        android:allowBackup="false"
+        android:supportsRtl="true"
+        android:extractNativeLibs="false"
+        android:fullBackupContent="@ref/0x7f160000"
+        android:usesCleartextTraffic="false"
+        android:roundIcon="@ref/0x7f100003"
+        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+        android:dataExtractionRules="@ref/0x7f160002"
+        android:enableOnBackInvokedCallback="true">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, BackHandler, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, BackHandler, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import appConfig from '../../app.json';
 import openSourceNotices from '../data/openSourceNotices.json';
 import { loadPlayPreferences, savePlayPreferences } from '../data/preferences';
@@ -10,6 +10,9 @@ import { ActionButton } from './controls';
 import { Icon } from './Icons';
 import type { Theme, ThemeName } from './theme';
 import { themeNames, themes } from './theme';
+import { getAnalyticsStatus, setAnalyticsConsent, subscribeAnalyticsStatus, type AnalyticsStatus } from '../analytics/productAnalytics';
+import { ANALYTICS_DISCLOSURE } from '../onboarding/privacy';
+import { openPrivacyPolicy as launchPrivacyPolicy } from '../onboarding/privacyLink';
 
 export function SettingsModal({ visible, theme, appearance, bottomInset = 78, onAppearanceChange, onDataChanged, onBusyChange, onClose }: {
   visible: boolean; theme: Theme; appearance: ThemeName; bottomInset?: number; onAppearanceChange: (value: ThemeName) => void; onDataChanged: () => void; onBusyChange: (busy: boolean) => void; onClose: () => void;
@@ -24,6 +27,11 @@ export function SettingsModal({ visible, theme, appearance, bottomInset = 78, on
   const [noticeSearch, setNoticeSearch] = useState('');
   const [noticePage, setNoticePage] = useState(0);
   const [selectedNoticeKey, setSelectedNoticeKey] = useState('');
+  const [analyticsStatus, setAnalyticsStatus] = useState<AnalyticsStatus>(() => getAnalyticsStatus());
+  const [analyticsBusy, setAnalyticsBusy] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState('');
+
+  useEffect(() => subscribeAnalyticsStatus(setAnalyticsStatus), []);
 
   useEffect(() => {
     if (!visible) return;
@@ -68,6 +76,19 @@ export function SettingsModal({ visible, theme, appearance, bottomInset = 78, on
     } catch (error) {
       Alert.alert('Could not open sharing options', error instanceof Error ? error.message : 'Try again.');
     }
+  }
+
+  async function changeAnalyticsConsent(enabled: boolean) {
+    if (analyticsBusy || !analyticsStatus.configured) return;
+    setAnalyticsBusy(true);
+    setAnalyticsError('');
+    try { await setAnalyticsConsent(enabled); }
+    catch { setAnalyticsError('Your choice could not be saved. Please try again.'); }
+    finally { setAnalyticsBusy(false); }
+  }
+
+  async function openPrivacyPolicy() {
+    if (!(await launchPrivacyPolicy())) Alert.alert('Could not open privacy policy', 'Try opening the policy from your browser.');
   }
 
   const percent = Math.round(masterVolume * 100);
@@ -143,6 +164,26 @@ export function SettingsModal({ visible, theme, appearance, bottomInset = 78, on
           <ActionButton label={busy ? 'Working…' : 'Export backup'} onPress={() => void backup('export')} theme={theme} variant="secondary" disabled={busy} icon="↥" buttonStyle={styles.backupButton} />
           <ActionButton label={busy ? 'Working…' : 'Import backup'} onPress={() => void backup('import')} theme={theme} variant="secondary" disabled={busy} icon="↧" buttonStyle={styles.backupButton} />
         </View>
+      </View>
+
+      <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <CardHeading icon="spark" title="Privacy" subtitle="Choose whether to share app usage" theme={theme} />
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <View style={styles.analyticsRow}>
+          <View style={styles.analyticsCopy}>
+            <Text style={[styles.label, { color: theme.text }]}>Share app usage data</Text>
+            <Text style={[styles.helper, { color: theme.muted }]}>{ANALYTICS_DISCLOSURE}</Text>
+          </View>
+          <Switch accessibilityLabel="Share app usage data" value={analyticsStatus.consent === 'on'} disabled={analyticsBusy || !analyticsStatus.configured}
+            onValueChange={(value) => void changeAnalyticsConsent(value)} trackColor={{ false: theme.border, true: theme.accent }} thumbColor={theme.surface} />
+        </View>
+        {!analyticsStatus.configured ? <Text style={[styles.helper, { color: theme.muted }]}>Usage sharing is currently unavailable.</Text> : null}
+        {analyticsBusy ? <Text accessibilityLiveRegion="polite" style={[styles.helper, { color: theme.muted }]}>Saving your choice…</Text> : null}
+        {analyticsError ? <Text accessibilityLiveRegion="assertive" style={[styles.helper, { color: theme.danger }]}>{analyticsError}</Text> : null}
+        <Pressable accessibilityRole="link" accessibilityLabel="Open Stimmyz privacy policy" onPress={() => void openPrivacyPolicy()} style={styles.policyLink}>
+          <Text style={{ color: theme.accent, fontSize: 14, fontWeight: '800' }}>Read the privacy policy</Text>
+          <Text style={{ color: theme.accent, fontSize: 18 }}>↗</Text>
+        </Pressable>
       </View>
 
       <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -246,6 +287,9 @@ const styles = StyleSheet.create({
   railFill: { position: 'absolute', left: 0, top: 20, height: 8, borderRadius: 4 },
   thumb: { position: 'absolute', top: 13, marginLeft: -12, width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#FFFFFF' },
   helper: { fontSize: 12, lineHeight: 17 },
+  analyticsRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  analyticsCopy: { flex: 1, gap: 5 },
+  policyLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2 },
   rowButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 2 },
   rowTitle: { fontSize: 14, fontWeight: '800', flexShrink: 1 },
   currentTheme: { fontSize: 12, marginLeft: 'auto' },

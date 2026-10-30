@@ -1984,6 +1984,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@posthog/core@npm:1.61.2":
+  version: 1.61.2
+  resolution: "@posthog/core@npm:1.61.2"
+  dependencies:
+    "@posthog/types": "npm:^1.418.0"
+  checksum: 10c0/ac6e6b25672356d8ff173df19bc0ba47eca4a1dd17eb38b97e7ee22cd131066382702af1db0767fc3bf24aace02b1bc00959f9930866ee7f915b36fef136a468
+  languageName: node
+  linkType: hard
+
+"@posthog/types@npm:^1.418.0":
+  version: 1.418.0
+  resolution: "@posthog/types@npm:1.418.0"
+  checksum: 10c0/da758637983f0027ffd118097619abacde4d4b0a3c06433319ffa5440b920a91c5f220a52b9c651f7b2408a9cb39dfe87168a115e4d16ac5e951e806ed879b99
+  languageName: node
+  linkType: hard
+
 "@react-native-community/netinfo@npm:12.0.1":
   version: 12.0.1
   resolution: "@react-native-community/netinfo@npm:12.0.1"
@@ -2636,6 +2652,7 @@ __metadata:
   resolution: "app-play@workspace:app-play"
   dependencies:
     "@expo/metro-runtime": "npm:^57.0.12"
+    "@posthog/core": "npm:1.61.2"
     "@react-native-community/netinfo": "npm:12.0.1"
     "@types/react": "npm:~19.2.2"
     "@types/react-dom": "npm:^19"

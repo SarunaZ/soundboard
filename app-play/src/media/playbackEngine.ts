@@ -65,6 +65,8 @@ type PlaybackRequest = {
   soundId?: string;
   protected: boolean;
   cancelled: boolean;
+  failure?: unknown;
+  retryCancelled?: boolean;
   reservationKeys: string[];
 };
 
@@ -75,6 +77,7 @@ let masterVolume = 1;
 let requestToken = 0;
 let lastOverlapMode: boolean | null = null;
 const requests = new Map<number, PlaybackRequest>();
+const contextRetryRequests = new Set<PlaybackRequest>();
 const protectedReservations = new Map<string, PlaybackRequest | Voice>();
 const voices: Voice[] = [];
 const cache = new Map<string, { buffer: DecodedBuffer; bytes: number; peakBound?: number; clipGain?: number }>();
@@ -91,6 +94,7 @@ let audioFocusHeld = false;
 let idleSuspendTimer: ReturnType<typeof setTimeout> | null = null;
 let suspendPromise: Promise<void> | null = null;
 let resumePromise: Promise<void> | null = null;
+let contextRecoveryPromise: Promise<void> | null = null;
 
 function observeInterruptions(): void {
   if (interruptionListenerInstalled) return;
@@ -119,19 +123,25 @@ function releaseAudioFocusIfIdle(): void {
 function audioContext(): AudioContext {
   if (!ctx) {
     ctx = new AudioContext();
-    master = ctx.createGain();
-    limiter = ctx.createWaveShaper();
-    limiter.curve = createSoftLimiterCurve();
-    // The protected PCM path already reserves intersample margin. A shared
-    // oversampled WaveShaper retains resampler state when the graph goes idle,
-    // so its previous clip's buffered tail can reappear on the next trigger.
-    // The stateless curve remains a final fail-safe without that stale state.
-    limiter.oversample = 'none';
-    master.gain.setValueAtTime(masterVolume, ctx.currentTime);
-    master.connect(limiter);
-    limiter.connect(ctx.destination);
+    if (ctx.state !== 'closed') {
+      master = ctx.createGain();
+      limiter = ctx.createWaveShaper();
+      limiter.curve = createSoftLimiterCurve();
+      // The protected PCM path already reserves intersample margin. A shared
+      // oversampled WaveShaper retains resampler state when the graph goes idle,
+      // so its previous clip's buffered tail can reappear on the next trigger.
+      // The stateless curve remains a final fail-safe without that stale state.
+      limiter.oversample = 'none';
+      master.gain.setValueAtTime(masterVolume, ctx.currentTime);
+      master.connect(limiter);
+      limiter.connect(ctx.destination);
+    }
   }
   return ctx;
+}
+
+function isContextClosed(current: AudioContext): boolean {
+  return current.state === 'closed';
 }
 
 function scheduleIdleSuspend(): void {
@@ -148,12 +158,68 @@ function scheduleIdleSuspend(): void {
 }
 
 async function resumeForPlayback(current: AudioContext): Promise<void> {
+  if (contextRecoveryPromise) await contextRecoveryPromise;
+  if (ctx !== current) throw new Error('Playback audio context was replaced.');
   if (idleSuspendTimer !== null) clearTimeout(idleSuspendTimer);
   idleSuspendTimer = null;
   if (suspendPromise) await suspendPromise;
+  if (current.state === 'closed') {
+    const error = new Error('Playback audio context was closed.');
+    await recoverAudioContext(current, error);
+    throw error;
+  }
   if (current.state !== 'suspended') return;
   if (!resumePromise) resumePromise = current.resume().finally(() => { resumePromise = null; });
-  await resumePromise;
+  try {
+    await resumePromise;
+    if (isContextClosed(current)) throw new Error('Playback audio context was closed.');
+  } catch (error) {
+    await recoverAudioContext(current, error);
+    throw error;
+  }
+}
+
+/** Retire a context whose native output stream can no longer be resumed. */
+function recoverAudioContext(failed: AudioContext, error: unknown): Promise<void> {
+  if (ctx !== failed) return contextRecoveryPromise ?? Promise.resolve();
+  if (contextRecoveryPromise) return contextRecoveryPromise;
+
+  // Invalidate synchronously so concurrent taps cannot keep using a context
+  // whose native stream has failed. AudioBuffers are runtime-owned, so drop
+  // decoded and prepared entries along with it.
+  ctx = null;
+  master = null;
+  limiter = null;
+  cache.clear();
+  decoding.clear();
+  analyzed.clear();
+  if (idleSuspendTimer !== null) clearTimeout(idleSuspendTimer);
+  idleSuspendTimer = null;
+
+  for (const request of [...requests.values()]) {
+    request.failure = error;
+    contextRetryRequests.add(request);
+    cancelRequest(request);
+  }
+  for (const voice of [...voices]) {
+    voice.stopped = true;
+    releaseReservations(voice);
+    try { voice.source?.stop(failed.currentTime); } catch { /* native stream already failed */ }
+    try { voice.source?.disconnect(); } catch { /* already disconnected */ }
+    try { voice.gain.disconnect(); } catch { /* already disconnected */ }
+  }
+  voices.length = 0;
+  if (updateTimer !== null) clearInterval(updateTimer);
+  updateTimer = null;
+  publish();
+  releaseAudioFocusIfIdle();
+
+  // Closing is serialized before a later attempt resumes a newly constructed
+  // context, avoiding an overlap between the dead and replacement Oboe streams.
+  contextRecoveryPromise = Promise.resolve().then(() => failed.close()).catch(() => {}).finally(() => {
+    contextRecoveryPromise = null;
+  });
+  return contextRecoveryPromise;
 }
 
 function bufferBytes(buffer: DecodedBuffer): number {
@@ -518,7 +584,7 @@ export function protectPad(padId: string): boolean {
   return promoted;
 }
 
-export async function play(uri: string, padId: string, options: PlaybackOptions = {}): Promise<void> {
+async function playInternal(uri: string, padId: string, options: PlaybackOptions, allowContextRetry: boolean): Promise<void> {
   const overlap = options.allowOverlap === true;
   const isProtected = options.protected === true;
   const soundId = options.soundId;
@@ -547,7 +613,40 @@ export async function play(uri: string, padId: string, options: PlaybackOptions 
   try { ensureAudioFocus(); }
   catch (error) { cancelRequest(request); throw error; }
   let c: AudioContext;
-  try { c = audioContext(); }
+  try {
+    // A new native AudioContext opens its Oboe stream during construction.
+    // Wait for teardown of a failed stream before constructing its replacement.
+    if (contextRecoveryPromise) await contextRecoveryPromise;
+    if (!isCurrentRequest(request)) { scheduleIdleSuspend(); return; }
+    if (ctx?.state === 'closed') {
+      await recoverAudioContext(ctx, new Error('Playback audio context was closed.'));
+      if (!isCurrentRequest(request)) {
+        if (allowContextRetry && request.failure !== undefined && !request.retryCancelled && request.token === requestToken) {
+          contextRetryRequests.delete(request);
+          return playInternal(uri, padId, { ...options, protected: request.protected }, false);
+        }
+        contextRetryRequests.delete(request);
+        scheduleIdleSuspend();
+        if (request.failure !== undefined && !request.retryCancelled && request.token === requestToken) throw request.failure;
+        return;
+      }
+    }
+    c = audioContext();
+    if (c.state === 'closed') {
+      await recoverAudioContext(c, new Error('Playback audio context was closed.'));
+      if (!isCurrentRequest(request)) {
+        if (allowContextRetry && request.failure !== undefined && !request.retryCancelled && request.token === requestToken) {
+          contextRetryRequests.delete(request);
+          return playInternal(uri, padId, { ...options, protected: request.protected }, false);
+        }
+        contextRetryRequests.delete(request);
+        scheduleIdleSuspend();
+        if (request.failure !== undefined && !request.retryCancelled && request.token === requestToken) throw request.failure;
+        return;
+      }
+      c = audioContext();
+    }
+  }
   catch (error) { cancelRequest(request); throw error; }
   // Android can leave the native output stream paused after an interruption
   // or lifecycle transition. Resume in parallel with decoding, then re-check
@@ -561,7 +660,16 @@ export async function play(uri: string, padId: string, options: PlaybackOptions 
     // to both operations even if starting the decode itself throws.
     [buffer] = await Promise.all([Promise.resolve().then(() => load(uri, request)), resume]);
   } catch (error) {
-    if (!isCurrentRequest(request)) { scheduleIdleSuspend(); return; }
+    if (!isCurrentRequest(request)) {
+      scheduleIdleSuspend();
+      if (request.failure !== undefined && !request.retryCancelled && request.token === requestToken) {
+        contextRetryRequests.delete(request);
+        if (allowContextRetry) return playInternal(uri, padId, { ...options, protected: request.protected }, false);
+        throw request.failure;
+      }
+      contextRetryRequests.delete(request);
+      return;
+    }
     cancelRequest(request);
     throw error;
   }
@@ -645,6 +753,10 @@ export async function play(uri: string, padId: string, options: PlaybackOptions 
   publish();
 }
 
+export function play(uri: string, padId: string, options: PlaybackOptions = {}): Promise<void> {
+  return playInternal(uri, padId, options, true);
+}
+
 export function stop(): void {
   requestToken += 1;
   for (const request of [...requests.values()]) cancelRequest(request);
@@ -656,6 +768,7 @@ export function stop(): void {
 
 /** Stop every pending or active playback for one board pad. */
 export function stopPad(padId: string): void {
+  for (const request of contextRetryRequests) if (request.padId === padId) request.retryCancelled = true;
   for (const request of [...requests.values()]) if (request.padId === padId) cancelRequest(request);
   for (const voice of [...voices]) if (voice.padId === padId) releaseVoice(voice);
   publish();

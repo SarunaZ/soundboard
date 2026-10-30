@@ -1,5 +1,26 @@
 # Soundboard
 
+The [October 30 first-run onboarding](docs/play-first-run-onboarding-2026-10-30.md)
+adds Welcome and an explicit two-button privacy choice to Play. Completion is
+stored separately from consent and portable backups. Analytics activation is
+currently closed in the device service pending the reviewed beta requirements;
+both choices allow full app use. The [Android 36 emulator review](docs/play-onboarding-emulator-2026-10-30.md)
+checks the flow, Vanilla/Grape designs and large-text layouts, and records UI fixes
+and screenshots. See the records for the remaining verification limits.
+
+The [October 28 product analytics implementation](docs/play-product-analytics-2026-10-28.md)
+adds optional, consent-gated Play usage events and a Settings privacy control.
+Standard builds keep analytics disabled. The private 1.0.30/code 31 testing update
+was installed and six consented event types were verified in the EU project;
+see the [physical analytics QA record](docs/play-product-analytics-phone-2026-10-28.md).
+Public disclosures, retention facts and broader release verification remain open.
+
+The [October 26 creation fixes](docs/play-creation-recovery-2026-10-26.md)
+add recovery from an unusable playback context and remove duplicate Android
+keyboard resizing from the Play naming screen. The 1.0.29/code 30 testing update
+was installed on the Samsung phone and is now superseded by the 1.0.30/code 31
+analytics testing update. Broader physical regression validation remains pending.
+
 The latest Play design work follows the [October 24 board-modal and protected-playback handoff](docs/design/StimmyzApp_Astra_Board_Modal_Protected_Hold_2026-10-24/BOARD_MODAL_AND_PROTECTED_PLAYBACK_HANDOFF.md)
 and the owner's later requirements for immediate touch playback, a visible animated
 scroll rail, and board renaming. See the [implementation and verification record](docs/play-board-modal-protected-2026-10-24.md)
