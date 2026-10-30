@@ -1,0 +1,11 @@
+name: stimmyz-website
+
+services:
+  website:
+    build:
+      context: .
+      args:
+        SITE_BASE: ${SITE_BASE:-/}
+    ports:
+      - "127.0.0.1:${WEBSITE_PORT:-4321}:8080"
+    restart: unless-stopped

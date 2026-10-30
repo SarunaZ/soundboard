@@ -1,0 +1,331 @@
+---
+import SiteLayout from "../layouts/SiteLayout.astro";
+import { themes } from "../content/themes.js";
+const base = import.meta.env.BASE_URL;
+---
+
+<SiteLayout
+  title="Stimmyz — Your soundboard, your rules"
+  description="Stimmyz turns the sounds you love into colorful soundboard buttons. Record compatible device audio, trim clips, and build your own boards on Android."
+>
+  <main id="main">
+    <section class="hero container" aria-labelledby="hero-heading">
+      <div class="hero-copy">
+        <div class="eyebrow">
+          <span class="eyebrow-star">✦</span> YOUR OWN POCKET SOUNDBOARD
+        </div>
+        <h1 id="hero-heading">
+          Every moment
+          <br />
+          deserves a <span class="highlight">replay.</span>
+        </h1>
+        <p class="hero-description">
+          Hear something worth keeping? Capture audio from compatible apps, trim
+          the best bit, and turn it into a colorful button you can play whenever
+          you want.
+        </p>
+        <div class="hero-ctas">
+          <a class="button button-primary" href="#how-it-works">
+            Discover Stimmyz <span aria-hidden="true">↗</span>
+          </a>
+          <a class="button button-secondary" href="#features">
+            Explore features <span aria-hidden="true">↓</span>
+          </a>
+        </div>
+        <div class="hero-notes">
+          <span>✦ Made for Android</span>
+          <span>✦ Your sounds, your boards</span>
+          <span>✦ Designed for offline playback</span>
+        </div>
+      </div>
+      <div class="hero-art" aria-label="Screenshot of Stimmyz soundboard">
+        <div class="hero-orbit" aria-hidden="true"></div>
+        <span class="float-sparkle sparkle-one" aria-hidden="true">
+          ✦
+        </span>
+        <span class="float-sparkle sparkle-two" aria-hidden="true">
+          ✳
+        </span>
+        <div class="floating-label floating-label--top">
+          <span class="label-emoji">🎛️</span>
+          <span>Make it yours</span>
+        </div>
+        <div class="phone phone--hero">
+          <img
+            src={`${base}assets/screens/board-vanilla.webp`}
+            width="430"
+            height="900"
+            alt="Stimmyz soundboard with a colorful grid of individual sound pads"
+            fetchpriority="high"
+          />
+        </div>
+        <div class="floating-label floating-label--bottom">
+          <span class="label-emoji">🔊</span>
+          <span>Tap. Play. Repeat.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="trust-strip" aria-label="Key highlights">
+      <div class="container strip-inner">
+        <span>CAPTURE THE MOMENT</span>
+        <span class="strip-star" aria-hidden="true">
+          ✦
+        </span>
+        <span>MAKE IT A BUTTON</span>
+        <span class="strip-star" aria-hidden="true">
+          ✦
+        </span>
+        <span>BRING THE VIBE</span>
+        <span class="strip-star" aria-hidden="true">
+          ✦
+        </span>
+        <span>PLAY IT AGAIN</span>
+      </div>
+    </section>
+
+    <section
+      class="section container"
+      id="features"
+      aria-labelledby="features-heading"
+    >
+      <div class="section-head center">
+        <div class="eyebrow">THE GOOD STUFF</div>
+        <h2 id="features-heading">
+          Small clips. <span class="ink-accent">Big energy.</span>
+        </h2>
+        <p>
+          Everything you need to collect your favorite moments and put them
+          right at your fingertips.
+        </p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card feature-card--peach">
+          <div class="feature-icon">◉</div>
+          <h3>Capture what's playing</h3>
+          <p>
+            Record audio from compatible apps with Android's permission flow. No
+            messy links to paste.
+          </p>
+          <span class="feature-tag">DEVICE AUDIO</span>
+        </article>
+        <article class="feature-card feature-card--purple">
+          <div class="feature-icon">⌁</div>
+          <h3>Trim it just right</h3>
+          <p>
+            Cut out the boring parts, preview your clip, and customize the sound
+            before saving.
+          </p>
+          <span class="feature-tag">SOUND EDITOR</span>
+        </article>
+        <article class="feature-card feature-card--aqua">
+          <div class="feature-icon">▦</div>
+          <h3>Boards for every mood</h3>
+          <p>
+            Build multiple boards, choose 3 × 4 or 4 × 4 pads, and navigate by
+            pages or scrolling.
+          </p>
+          <span class="feature-tag">CUSTOM BOARDS</span>
+        </article>
+        <article class="feature-card feature-card--lime">
+          <div class="feature-icon">⟳</div>
+          <h3>Play it your way</h3>
+          <p>
+            Set repeats, adjust each sound's volume, and hold a pad for one
+            second to protect its playback.
+          </p>
+          <span class="feature-tag">PLAYBACK CONTROLS</span>
+        </article>
+        <article class="feature-card feature-card--pink">
+          <div class="feature-icon">✿</div>
+          <h3>Colors that pop</h3>
+          <p>
+            Every new pad gets its own colorful look. Add optional artwork from
+            your device gallery.
+          </p>
+          <span class="feature-tag">PAD PERSONALIZATION</span>
+        </article>
+        <article class="feature-card feature-card--cream">
+          <div class="feature-icon">♫</div>
+          <h3>Your sound collection</h3>
+          <p>
+            Find and reuse saved clips in your library, even when you're
+            offline.
+          </p>
+          <span class="feature-tag">LOCAL LIBRARY</span>
+        </article>
+      </div>
+    </section>
+
+    <section
+      class="how-section"
+      id="how-it-works"
+      aria-labelledby="how-heading"
+    >
+      <div class="container how-layout">
+        <div class="how-visual">
+          <div class="how-blob" aria-hidden="true"></div>
+          <div class="phone phone--how">
+            <img
+              src={`${base}assets/screens/editor-vanilla.webp`}
+              width="430"
+              height="900"
+              loading="lazy"
+              alt="Stimmyz Editor screen showing device audio capture, voice recording and file import"
+            />
+          </div>
+          <div class="how-sticker">✦ YOUR NEXT FAVORITE SOUND</div>
+        </div>
+        <div class="how-copy">
+          <div class="eyebrow">THREE LITTLE STEPS</div>
+          <h2 id="how-heading">
+            From “wait, that's funny” to{" "}
+            <span class="ink-accent">play it again.</span>
+          </h2>
+          <ol class="steps">
+            <li>
+              <span class="step-number">01</span>
+              <div>
+                <h3>Grab the sound</h3>
+                <p>
+                  Start a device-audio recording with permission, record your
+                  voice, or import an audio or video file.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">02</span>
+              <div>
+                <h3>Make it yours</h3>
+                <p>
+                  Trim to the good part, choose a name, set the artwork, and
+                  tweak playback.
+                </p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">03</span>
+              <div>
+                <h3>Tap for instant joy</h3>
+                <p>
+                  Save it to your library and add it to a board. One tap brings
+                  it back.
+                </p>
+              </div>
+            </li>
+          </ol>
+          <p class="subtle-disclaimer">
+            Device-audio recording depends on Android, the source app's capture
+            settings, and device compatibility.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section
+      class="section container themes-section"
+      id="themes"
+      aria-labelledby="themes-heading"
+    >
+      <div class="section-head center">
+        <div class="eyebrow">PICK YOUR VIBE</div>
+        <h2 id="themes-heading">
+          Your board. <span class="ink-accent">Your colors.</span>
+        </h2>
+        <p>
+          Bright, cozy, or moody. Nine themes make Stimmyz feel like yours,
+          without changing your sound pads.
+        </p>
+      </div>
+      <div class="theme-stage" id="theme-stage" data-theme="vanilla">
+        <div class="theme-stage-copy">
+          <span class="theme-overline">A LOOK FOR EVERY MOOD</span>
+          <h3 id="active-theme-name">Vanilla</h3>
+          <p id="active-theme-caption">Warm, soft, and full of color.</p>
+          <div class="theme-picker" role="group" aria-label="Preview a theme">
+            {themes.map((theme, index) => (
+              <button
+                type="button"
+                class:list={["theme-dot", { selected: index === 0 }]}
+                data-theme={theme.key}
+                aria-pressed={String(index === 0)}
+              >
+                <span
+                  class="theme-swatch"
+                  style={`background:${theme.swatch}`}
+                ></span>{" "}
+                {theme.name}
+              </button>
+            ))}
+          </div>
+          <p class="more-themes">
+            Plus <strong>Peach, Mint, Snow, and Ice.</strong>
+          </p>
+        </div>
+        <div class="theme-phone-wrap">
+          <img
+            id="active-theme-image"
+            src={`${base}assets/screens/board-vanilla.webp`}
+            width="430"
+            height="900"
+            loading="lazy"
+            alt="Stimmyz soundboard in Vanilla theme"
+          />
+        </div>
+      </div>
+    </section>
+
+    <section
+      class="container library-section"
+      aria-labelledby="library-heading"
+    >
+      <div class="library-panel">
+        <div class="library-text">
+          <div class="eyebrow">KEEP THE GOOD ONES</div>
+          <h2 id="library-heading">
+            A little library of <span class="ink-accent">your favorites.</span>
+          </h2>
+          <p>
+            Saved clips stay together in one easy-to-browse library, ready for
+            the next board, next laugh, or next perfectly timed sound.
+          </p>
+          <a class="text-link" href="#features">
+            See what else Stimmyz can do <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+        <div class="library-visual">
+          <img
+            src={`${base}assets/screens/library-vanilla.webp`}
+            width="430"
+            height="900"
+            loading="lazy"
+            alt="Stimmyz Library screen with saved audio clips and playback controls"
+          />
+        </div>
+      </div>
+    </section>
+
+    <section class="container close-cta" aria-labelledby="close-heading">
+      <div class="close-content">
+        <div class="eyebrow">A LITTLE CHAOS, A LOT OF FUN</div>
+        <h2 id="close-heading">
+          Ready to <span>make some noise?</span>
+        </h2>
+        <p>
+          Stimmyz is getting ready for Google Play. The download link will
+          appear here when the app is published.
+        </p>
+        <div class="coming-soon">
+          <span aria-hidden="true">▶</span>
+          <div>
+            <strong>Google Play</strong>
+            <small>Coming soon</small>
+          </div>
+        </div>
+      </div>
+      <div class="close-decoration" aria-hidden="true">
+        ✦<span>♫</span>✳
+      </div>
+    </section>
+  </main>
+</SiteLayout>

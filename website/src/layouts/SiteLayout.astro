@@ -1,0 +1,64 @@
+---
+import "../styles/site.css";
+import SiteHeader from "../components/SiteHeader.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  themeColor?: string;
+  noIndex?: boolean;
+  page?: "home" | "privacy";
+}
+
+const {
+  title,
+  description,
+  themeColor = "#f8fbf7",
+  noIndex = false,
+  page = "home",
+} = Astro.props;
+const base = import.meta.env.BASE_URL;
+const pageTitle = title;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content={themeColor} />
+    {noIndex && <meta name="robots" content="noindex, nofollow" />}
+    <meta name="description" content={description} />
+    {page === "home" && <meta property="og:type" content="website" />}
+    {page === "home" && <meta property="og:title" content={pageTitle} />}
+    {page === "home" && (
+      <meta
+        property="og:description"
+        content="Your favorite sounds, one tap away. Meet Stimmyz for Android."
+      />
+    )}
+    {page === "home" && (
+      <meta property="og:image" content={`${base}assets/app-icon.png`} />
+    )}
+    <title>{pageTitle}</title>
+    <link rel="icon" href={`${base}assets/app-icon.png`} type="image/png" />
+  </head>
+  <body class:list={{ "policy-body": page === "privacy" }}>
+    <a class="skip-link" href="#main">
+      Skip to content
+    </a>
+    {page === "home" && (
+      <>
+        <div class="ambient ambient--mint" aria-hidden="true"></div>
+        <div class="ambient ambient--violet" aria-hidden="true"></div>
+      </>
+    )}
+    <SiteHeader page={page} base={base} />
+    <slot />
+    <SiteFooter page={page} base={base} />
+    <script>
+      import "../scripts/site.js";
+    </script>
+  </body>
+</html>

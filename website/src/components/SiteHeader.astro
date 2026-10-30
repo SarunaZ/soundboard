@@ -1,0 +1,46 @@
+---
+interface Props {
+  page: "home" | "privacy";
+  base: string;
+}
+const { page, base } = Astro.props;
+const privacyPage = page === "privacy";
+---
+
+<header class:list={["site-header", { "policy-header": privacyPage }]}>
+  <nav class="container nav" aria-label="Main navigation">
+    <a class="brand" href={base} aria-label="Stimmyz homepage">
+      <img
+        src={`${base}assets/logo.png`}
+        width="202"
+        height="66"
+        alt="Stimmyz"
+      />
+    </a>
+    <button
+      class="mobile-nav-toggle"
+      type="button"
+      aria-expanded="false"
+      aria-controls="nav-links"
+      aria-label="Open menu"
+    >
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+    <div class="nav-links" id="nav-links">
+      <a href={`${base}#features`}>Features</a>
+      <a href={`${base}#how-it-works`}>How it works</a>
+      <a href={`${base}#themes`}>Themes</a>
+      <a
+        href={`${base}privacy/`}
+        aria-current={privacyPage ? "page" : undefined}
+      >
+        Privacy
+      </a>
+    </div>
+    <span class="launch-pill">
+      <span class="live-dot" aria-hidden="true"></span> Android · Launching soon
+    </span>
+  </nav>
+</header>

@@ -1,0 +1,15 @@
+**
+!Dockerfile
+!.dockerignore
+!compose.yaml
+!nginx.conf
+!README.md
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!astro.config.mjs
+!tsconfig.json
+!src/
+!src/**
+!public/
+!public/**

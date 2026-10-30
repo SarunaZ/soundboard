@@ -1,0 +1,39 @@
+---
+interface Props {
+  page: "home" | "privacy";
+  base: string;
+}
+const { page, base } = Astro.props;
+const privacyPage = page === "privacy";
+---
+
+<footer class="footer">
+  <div class="container footer-main">
+    <div>
+      <a class="brand footer-brand" href={base} aria-label="Stimmyz home">
+        <img
+          src={`${base}assets/logo.png`}
+          alt="Stimmyz"
+          width="170"
+          height="56"
+        />
+      </a>
+      <p>The soundboard for moments worth repeating.</p>
+    </div>
+    <nav aria-label="Footer navigation">
+      {privacyPage ? <a href={base}>Home</a> : <a href="#features">Features</a>}
+      {!privacyPage && <a href="#themes">Themes</a>}
+      {privacyPage ? <a href={`${base}#features`}>Features</a> : null}
+      <a
+        href={`${base}privacy/`}
+        aria-current={privacyPage ? "page" : undefined}
+      >
+        Privacy policy
+      </a>
+    </nav>
+  </div>
+  <div class="container footer-bottom">
+    <span>© {new Date().getFullYear()} Stimmyz. All rights reserved.</span>
+    <span>Made for Android · Made for fun ✦</span>
+  </div>
+</footer>
