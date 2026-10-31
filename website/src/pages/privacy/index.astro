@@ -1,276 +1,336 @@
 ---
 import SiteLayout from "../../layouts/SiteLayout.astro";
-const base = import.meta.env.BASE_URL;
+// REVIEW DRAFT: Keep noIndex=true until the publication gates in PRIVACY_REVIEW.md are closed.
 ---
 
 <SiteLayout
   page="privacy"
   title="Privacy Policy — Stimmyz"
-  description="Draft privacy policy for Stimmyz, the Android soundboard app. Learn how the app accesses, stores, and handles user-created audio and artwork."
+  description="How Stimmyz handles audio, local soundboards, optional services, and privacy choices in the Android beta."
   themeColor="#fbfaf7"
   noIndex={true}
 >
   <main id="main">
     <div class="container policy-top">
       <div class="eyebrow">YOUR PRIVACY MATTERS</div>
-      <h1>
-        Privacy Policy<span class="ink-accent">.</span>
-      </h1>
+      <h1>Privacy Policy<span class="ink-accent">.</span></h1>
       <p>
-        How Stimmyz handles recordings, imported sounds, artwork, and your
-        choices.
+        How Stimmyz handles recordings, imported sounds, artwork, and your choices.
       </p>
       <div class="policy-timestamp">
-        Draft prepared: October 25, 2026 · Applies to the Stimmyz Android app
-        and this website
+        Draft for approval · October 31, 2026 · Android beta and this website
       </div>
     </div>
     <div class="container policy-content">
       <aside class="policy-toc">
         <strong>ON THIS PAGE</strong>
         <a href="#overview">Overview</a>
-        <a href="#controller">Who we are</a>
-        <a href="#access">Information and permissions</a>
-        <a href="#purposes">How information is used</a>
-        <a href="#storage">Storage and security</a>
-        <a href="#sharing">Third parties and sharing</a>
-        <a href="#retention">Retention and deletion</a>
-        <a href="#rights">Your rights</a>
-        <a href="#children">Children</a>
-        <a href="#website">Website and cookies</a>
-        <a href="#changes">Changes and contact</a>
+        <a href="#controller">Who is responsible for your information?</a>
+        <a href="#access">Information used by the Android app</a>
+        <a href="#analytics">Analytics in this beta</a>
+        <a href="#storage">Where content is stored and how it can be shared</a>
+        <a href="#retention">Backups, retention, and deletion</a>
+        <a href="#website">Our website</a>
+        <a href="#contacts">Email, feedback, and service providers</a>
+        <a href="#purposes">Purposes and legal bases</a>
+        <a href="#rights">Your choices and privacy rights</a>
+        <a href="#children">Age audience</a>
+        <a href="#changes">Changes to this policy</a>
       </aside>
       <article class="policy-article">
         <div class="draft-banner" role="note">
-          <strong>Draft — do not submit to Google Play yet</strong>The developer
-          name and privacy contact have been supplied; release-build SDKs, data
-          transmission, advertising, and backup behavior have not been audited.
-          Complete the companion <code>PRIVACY_REVIEW.md</code> checklist,
-          update this document, and remove this notice and the noindex directive
-          before publishing.
+          <strong>Review draft — not yet approved for Google Play.</strong>
+          Verify the owner and provider facts and complete the release checks in
+          <code>website/PRIVACY_REVIEW.md</code> before publication.
         </div>
         <div class="policy-summary">
           <p>
-            <strong>In short:</strong> Stimmyz is designed around sound clips
-            and boards stored locally on your Android device. Audio recording
-            and media import begin only when you choose those features. This
-            description assumes the launch app has no analytics, advertising, or
-            cloud uploads; that assumption must be verified against the actual
-            release build.
+            <strong>In short:</strong> The current Stimmyz Android beta keeps
+            recordings, imported sounds, artwork, and boards locally. Usage analytics
+            are disabled. Manual ZIP backups are user-controlled; website visits and
+            contact messages are processed by service providers as explained below.
           </p>
         </div>
+        <p>
+          <strong>Last updated:</strong> October 31, 2026 (draft for owner approval;
+          update to actual publication date).
+        </p>
         <section aria-labelledby="overview">
           <h2 id="overview">1. Overview</h2>
           <p>
-            Stimmyz (“the App”) is an Android soundboard application that lets
-            you record audio, import sound clips, trim recordings, customize
-            sound pads, and organize them into boards. This policy describes
-            what the App may access and how that information is handled. The
-            features and processing described below must reflect the version
-            distributed on Google Play.
+            Stimmyz is an Android soundboard app for recording, importing, trimming,
+            saving, and playing short sound clips, adding artwork, and organizing clips
+            into soundboards. The app is designed to keep sounds and board data on your
+            device rather than in a Stimmyz cloud account.
+          </p>
+          <p>
+            <strong>For the analytics-disabled beta described here, Stimmyz does not
+            send usage-analytics events.</strong> The app includes an inactive PostHog
+            software component, but its analytics transport is disabled in this build.
+            There are no advertising integrations, app accounts, or cloud
+            synchronization of your sounds in this release. If this changes in a future
+            version, we will update this policy and provide any required choices before
+            enabling the new processing.
+          </p>
+          <p>
+            This policy covers the app, our website, and messages you send to us.
+            Android, Google Play, your browser, and any email app you choose have their
+            own privacy practices.
           </p>
         </section>
         <section aria-labelledby="controller">
-          <h2 id="controller">2. Who is responsible for your data?</h2>
+          <h2 id="controller">2. Who is responsible for your information?</h2>
           <p>
-            App: <strong>Stimmyz</strong>.
+            <strong>App and website:</strong> Stimmyz <br />
+            <strong>Developer / data controller:</strong> Šarūnas Zubė, operating as
+            Stimmyz <br />
+            <strong>Privacy contact:</strong> <a href="mailto:privacy@stimmyz.app">
+            privacy@stimmyz.app</a> <br />
+            <strong>Support contact:</strong> <a href="mailto:support@stimmyz.app">
+            support@stimmyz.app</a>
           </p>
           <p>
-            Developer / data controller:{" "}
-            <strong>Šarūnas Zubė, operating under the name Stimmyz</strong>.
-          </p>
-          <p>
-            Privacy contact:{" "}
-            <strong><a href="mailto:privacy@stimmyz.app">privacy@stimmyz.app</a></strong>.
-          </p>
-          <p>
-            When you contact us, we use the information you provide (such as
-            your email address and message) to respond to your inquiry. We
-            retain correspondence only as needed to handle your request and
-            applicable legal obligations.
+            Please use the privacy contact for questions about your data or requests to
+            exercise privacy rights.
           </p>
         </section>
         <section aria-labelledby="access">
-          <h2 id="access">3. Information and device permissions</h2>
-          <ul>
-            <li>
-              <strong>Device-audio capture:</strong> If you start this feature,
-              Stimmyz requests Android's screen/audio capture authorization
-              (MediaProjection) and captures audio that Android and the source
-              app permit it to capture. A system permission or consent screen
-              appears as applicable. Some apps prohibit capture.
-            </li>
-            <li>
-              <strong>Microphone:</strong> If you choose to record your own
-              voice, the App requests microphone access and uses the microphone
-              audio to create the clip. The App should not record microphone
-              audio when you are not using a recording feature.
-            </li>
-            <li>
-              <strong>Imported media:</strong> If you import audio or video
-              using a file picker, the App accesses the selected file to
-              extract, edit, and store your sound clip.
-            </li>
-            <li>
-              <strong>Gallery artwork:</strong> If you add an image to a sound
-              pad, the App accesses the image you select using Android's photo
-              or document picker and copies it into app storage as needed.
-            </li>
-            <li>
-              <strong>App settings and created content:</strong> The App stores
-              your sounds, clip names, trim points, volume/repeat preferences,
-              pad positions, board settings, appearance theme, and related
-              information needed for the App to work.
-            </li>
-            <li>
-              <strong>Notifications:</strong> When needed by Android, the App
-              requests notification permission to show a recording-status
-              notification with a way to stop ongoing capture.
-            </li>
-          </ul>
+          <h2 id="access">3. Information used by the Android app</h2>
           <p>
-            Features are user-initiated. The permissions used by the final
-            release may vary by Android version.
+            <strong>Device-playback audio.</strong> When you choose to capture sound
+            playing on your device, Stimmyz asks for the Android capture authorization
+            required for that session and processes only audio that Android and the
+            source application permit to be captured. Some applications block playback
+            capture. Android may display a foreground-service notification and a Stop
+            control while capture is active.
+          </p>
+          <p>
+            <strong>Microphone audio.</strong> When you start a microphone recording,
+            Stimmyz asks for microphone permission as required by Android and processes
+            the audio to create your clip. Microphone recording is user-initiated.
+          </p>
+          <p>
+            <strong>Selected files and artwork.</strong> If you import an audio/video
+            file or choose artwork, Android's file, photo, or document picker gives
+            Stimmyz access to the item you select. The app may make its own local copy
+            for editing and playback.
+          </p>
+          <p>
+            <strong>Saved content and settings.</strong> Stimmyz stores the clips you
+            create or import, their names and edits, artwork, library entries, board/pad
+            assignments, and preferences such as volume and appearance on your device.
+            It also keeps local first-run and privacy-setting state necessary for the
+            app to work.
+          </p>
+          <p>
+            These features work without an account or optional analytics. Denying a
+            feature-specific permission may prevent that feature from working, but does
+            not disable unrelated soundboard features.
           </p>
         </section>
-        <section aria-labelledby="purposes">
-          <h2 id="purposes">4. Why we use this information</h2>
+        <section aria-labelledby="analytics">
+          <h2 id="analytics">4. Analytics in this beta</h2>
           <p>
-            Audio, files, images, and app preferences are used to provide the
-            soundboard features you request: creating and editing clips,
-            displaying artwork, remembering settings, and playing saved sounds.
-            Where personal data processing is subject to the GDPR, the
-            applicable legal basis is generally providing the functions you
-            request, your consent where legally required (including for
-            particular device access), or our legitimate interest in answering
-            support inquiries. You may refuse optional permissions, but features
-            requiring them will not operate.
+            The Android beta covered by this policy has <strong>usage analytics disabled</strong>.
+            No sound-creation, playback, board-use, or error analytics events are sent
+            by Stimmyz in this build. The onboarding privacy screen explains this and
+            does not activate tracking. You do not need to agree to analytics to use
+            Stimmyz.
+          </p>
+          <p>
+            The app may include inactive PostHog library code for a potential future
+            opt-in beta. Its presence does not mean the current app sends analytics
+            events. If we introduce optional analytics later, we will first update this
+            notice, confirm the relevant privacy safeguards, and obtain any required
+            valid consent. We will not transmit recordings, audio content, artwork, or
+            sound names as product analytics.
+          </p>
+          <p>
+            Earlier limited development/test versions may have sent optional analytics
+            events when a tester opted in. Those historical records are separate from
+            this disabled beta release. If you used an earlier test build and wish to
+            ask about data previously sent, contact <a href="mailto:privacy@stimmyz.app">
+            privacy@stimmyz.app</a>. We will assess the request against the provider's
+            actual retention and deletion capabilities.
           </p>
         </section>
         <section aria-labelledby="storage">
-          <h2 id="storage">5. Local storage and security</h2>
+          <h2 id="storage">5. Where content is stored and how it can be shared</h2>
           <p>
-            Under the planned local-first design, your created sound clips,
-            imported media copies, optional artwork, and board preferences are
-            stored on your Android device rather than uploaded by Stimmyz to an
-            app-operated cloud service. Android's app storage isolation and
-            system permissions help restrict access to that content.
+            Saved clips, imported copies, artwork, boards, and preferences are kept in
+            app storage on your Android device. The analytics-disabled build does not
+            upload them to a Stimmyz-operated media server. We use Android app isolation
+            and system permission controls, but no device or application can be
+            guaranteed completely secure.
           </p>
           <p>
-            No system can guarantee absolute security. Keep your device secure
-            and avoid recording or importing material you do not have the right
-            to use. If the shipped App introduces accounts, cloud sync, or
-            uploads, this section must be updated before release.
-          </p>
-        </section>
-        <section aria-labelledby="sharing">
-          <h2 id="sharing">6. Third parties and data sharing</h2>
-          <p>
-            The planned version does not deliberately transmit your recorded
-            clips, imported files, pad images, or boards to Stimmyz-operated
-            servers or share them with advertisers. This must be verified by
-            auditing the shipped APK/AAB and its SDKs.
+            If you use an Android sharing option or intentionally export content, <strong>
+            you choose the destination</strong>. Other apps or services that receive
+            your shared files process them under their own terms.
           </p>
           <p>
-            Android and Google Play provide system-level permissions, file
-            pickers, store distribution, and related platform functionality.
-            Google may process information in connection with its services
-            according to its own policies. If you intentionally export or share
-            a sound through an Android sharing feature, the destination is
-            chosen by you.
-          </p>
-          <p>
-            <strong>Important:</strong> If the launch build uses advertising,
-            analytics, crash reporting, remote content, or any third-party SDK
-            that collects or transmits personal or device data, this policy must
-            identify the data categories, uses, recipients, and any relevant
-            cross-border transfers. No such SDK is assumed in this draft.
+            Stimmyz supports <strong>manual ZIP export and restore</strong>. A ZIP
+            export can include saved sounds, referenced artwork, boards, and
+            preferences. The app's first-run completion state, analytics consent state,
+            and analytics identifiers are not included. Protect exported ZIP files
+            because anyone with access to them may be able to access their contents.
           </p>
         </section>
         <section aria-labelledby="retention">
-          <h2 id="retention">7. Data retention and deletion</h2>
+          <h2 id="retention">6. Backups, retention, and deletion</h2>
           <p>
-            Locally saved sounds, images, and settings remain on the device
-            until you delete the content, clear the App's data, or uninstall the
-            App, subject to Android storage and backup behavior. Deleting a
-            sound from your board or library should remove the corresponding
-            data as implemented in the release version.
+            Stimmyz configures Android automatic cloud backup and device-to-device
+            transfer to exclude its app data and sets Android backup to disabled.
+            Behavior of every device manufacturer's own backup or transfer tools has not
+            been verified, so the app cannot guarantee how every separate system or
+            user-operated backup behaves.
           </p>
           <p>
-            Android device backups may preserve App data if backup is enabled in
-            the release configuration and in your device settings. The developer
-            must verify whether backups are enabled and describe how backed-up
-            content can be deleted or excluded. Support correspondence is
-            deleted when no longer needed, subject to legal requirements.
-          </p>
-        </section>
-        <section aria-labelledby="rights">
-          <h2 id="rights">8. Your choices and rights</h2>
-          <p>
-            You can decline recording or file permissions, stop an active
-            recording, manage saved sounds and boards through the App, and clear
-            the App's local data through Android settings. You may also change
-            applicable permissions in Android Settings at any time.
+            Your app-owned clips, artwork, boards, and settings remain locally until you
+            delete the relevant content, clear the app's data, or uninstall it, subject
+            to device behavior. <strong>Removing a sound from a board does not
+            necessarily delete the sound from your Library.</strong> Deleting a sound
+            from the Library removes the app-owned version as implemented by the app. It
+            does not delete the original file you imported, a separately shared copy, or
+            a ZIP you exported. You must manage those external copies yourself.
           </p>
           <p>
-            Depending on where you live, including in the European Economic
-            Area, you may have rights to request access, correction, deletion,
-            restriction, portability, or objection for personal data controlled
-            by the developer, and to withdraw consent where processing relies on
-            consent. Contact the privacy address above to make a request. Where
-            data exists only on your device, the developer may be unable to
-            access or retrieve it. EEA residents may lodge a complaint with
-            their supervisory authority, including Lithuania's State Data
-            Protection Inspectorate.
-          </p>
-        </section>
-        <section aria-labelledby="children">
-          <h2 id="children">9. Children's privacy</h2>
-          <p>
-            Stimmyz does not require creating an account in the planned release.
-            The developer must confirm the intended age audience and applicable
-            Google Play Families obligations before launch. If the App is
-            marketed to children or knowingly processes children's personal
-            data, additional rules and disclosures may apply.
+            If you delete the app or clear its data, we generally cannot restore locally
+            stored sounds or recover them from a Stimmyz cloud account, because no such
+            account exists.
           </p>
         </section>
         <section aria-labelledby="website">
-          <h2 id="website">10. This website and cookies</h2>
+          <h2 id="website">7. Our website</h2>
           <p>
-            The Stimmyz launch website is a static website and currently
-            contains no advertising tags, analytics code, embedded third-party
-            content, or cookies set by its own scripts. The hosting provider may
-            process standard technical information, including IP addresses and
-            request logs, to deliver and secure the site. Hosting-specific
-            practices should be reviewed when a provider is selected.
+            The website at <a href="https://stimmyz.app/">https://stimmyz.app/</a> is
+            hosted using <strong>Vercel</strong>. Opening it causes your browser to send
+            ordinary network requests that may include your IP address, browser/device
+            information, requested URL, and request timestamps. The hosting service may
+            process technical request and security logs needed to deliver and protect
+            the website. <strong>Cloudflare</strong> provides domain and routing
+            infrastructure.
+          </p>
+          <p>
+            The website itself is not intentionally configured with advertising
+            trackers, product analytics, or script-set tracking cookies in the reviewed
+            version. Your browser and service providers may have their own network-level
+            functions. Technical request and security logs are retained according to the
+            hosting arrangement and applicable operational or security requirements. You
+            can contact us for details about relevant retention periods and processing
+            arrangements.
+          </p>
+        </section>
+        <section aria-labelledby="contacts">
+          <h2 id="contacts">8. Email, feedback, and service providers</h2>
+          <p>
+            If you choose <strong>Send feedback</strong> or contact us by email, Stimmyz
+            opens your email app or Android sharing option. It does not automatically
+            attach sound clips, application logs, or device identifiers. You decide
+            whether to send the message and what it contains.
+          </p>
+          <p>
+            We process the contact details, message contents, and any attachments you
+            voluntarily send to respond to your inquiry, handle a privacy request, and
+            follow up where necessary. Incoming messages to our domain are forwarded
+            using <strong>Cloudflare Email Routing</strong> and delivered to a <strong>
+            Google-hosted Gmail mailbox</strong>. Our email providers may process
+            message routing data, sender and recipient addresses, message content,
+            timestamps, and security metadata to provide these services. If an external
+            email-delivery provider is used for replies, it may also process the
+            recipient address, message content, and delivery metadata. We will update
+            this policy when such a provider is used.
+          </p>
+          <p>
+            We use correspondence for responding and resolving requests and for
+            applicable legal obligations, not for advertising. We keep it only for the
+            period needed to handle the issue, reasonable follow-up, and any applicable
+            legal obligations or claims. We review correspondence for continued
+            necessity and delete it when it is no longer needed, subject to applicable
+            legal obligations.
+          </p>
+          <p>
+            Third-party providers such as Vercel, Cloudflare, Google, and (in any future
+            analytics-enabled release) PostHog may process information under their
+            applicable service arrangements. Some processing may occur outside the
+            European Economic Area. When an international transfer of personal data
+            requires safeguards under applicable law, we are responsible for using an
+            appropriate lawful transfer arrangement. Contact us for information about
+            the arrangements that apply to a particular service.
+          </p>
+        </section>
+        <section aria-labelledby="purposes">
+          <h2 id="purposes">9. Purposes and legal bases</h2>
+          <p>
+            Where the GDPR applies to personal information processed by us or our
+            service providers, we process it only for the purposes described above.
+            Website operation and security, and responding to ordinary support requests,
+            generally rely on our legitimate interests in operating, protecting, and
+            supporting Stimmyz (GDPR Article 6(1)(f)), balanced against your rights.
+            Where a legal duty applies, we may process data to meet that duty (Article
+            6(1)(c)). Any future optional analytics that rely on consent will not be
+            enabled without the required consent and disclosures.
+          </p>
+          <p>
+            Audio and other content stored and processed only on your device are not
+            uploaded to us by the current app. Granting an Android permission is not, by
+            itself, consent to unrelated off-device analytics.
+          </p>
+        </section>
+        <section aria-labelledby="rights">
+          <h2 id="rights">10. Your choices and privacy rights</h2>
+          <p>
+            You can stop recordings, decline or revoke Android permissions, delete
+            Library items, and clear app data using Android's controls. You can also
+            avoid sending feedback or visiting the website.
+          </p>
+          <p>
+            If applicable under privacy law, you may ask us for access to, correction or
+            deletion of, or restriction of processing of personal information we hold
+            about you; object to certain processing; and request data portability where
+            applicable. If processing is based on consent, you may withdraw it without
+            affecting earlier lawful processing. Email <a href="mailto:privacy@stimmyz.app">
+            privacy@stimmyz.app</a> with your request. We may need enough information to
+            verify that the request relates to you, but do not send passwords or private
+            sound recordings unless specifically necessary and agreed.
+          </p>
+          <p>
+            We cannot inspect or retrieve sound clips that remain only on your device.
+            If you are in the European Economic Area, you also have the right to
+            complain to your relevant supervisory authority; in Lithuania, this is the <strong>
+            State Data Protection Inspectorate (VDAI)</strong>.
+          </p>
+        </section>
+        <section aria-labelledby="children">
+          <h2 id="children">11. Age audience</h2>
+          <p>
+            Stimmyz's intended beta audience is people aged <strong>16 and older</strong>.
+            The app does not require an account or collect a date of birth in this
+            build. Its intended audience is not a claim that each user's age is
+            verified. Optional product analytics remain disabled for all users in this
+            release.
+          </p>
+          <p>
+            If you believe a child has sent personal information to us through a support
+            message, please contact <a href="mailto:privacy@stimmyz.app">
+            privacy@stimmyz.app</a> so we can review the situation.
           </p>
         </section>
         <section aria-labelledby="changes">
-          <h2 id="changes">11. Policy updates and contact</h2>
+          <h2 id="changes">12. Changes to this policy</h2>
           <p>
-            We may update this policy as App features or data practices change.
-            Changes will be posted here with an updated effective date. If a
-            change requires consent or an in-app disclosure, we will provide it
-            as required.
+            We may update this policy when the app, its data processing, service
+            providers, or legal requirements change. We will publish the revised policy
+            here with an updated date and provide additional notice or choice when
+            required.
           </p>
           <p>
-            For privacy questions, requests, or complaints, contact{" "}
-            <a href="mailto:privacy@stimmyz.app">privacy@stimmyz.app</a>.
+            <strong>Privacy:</strong> <a href="mailto:privacy@stimmyz.app">
+            privacy@stimmyz.app</a> <br />
+            <strong>Support:</strong> <a href="mailto:support@stimmyz.app">
+            support@stimmyz.app</a>
           </p>
         </section>
-        <div class="policy-highlight">
-          <p>
-            <strong>Before this page goes live:</strong> Verify all permission
-            and SDK disclosures, document Android backup and deletion behavior,
-            then remove this drafting notice and the <code>noindex</code> meta
-            tag. Set the actual effective date.
-          </p>
-        </div>
-        <div class="policy-footer-note">
-          This is an implementation draft, not legal advice. It must match the
-          actual release build, app store disclosures, and the developer's
-          circumstances.
-        </div>
       </article>
     </div>
   </main>
